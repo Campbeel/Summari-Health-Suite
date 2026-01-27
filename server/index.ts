@@ -5,6 +5,7 @@ import { createServer } from "http";
 import { runMigrations } from 'stripe-replit-sync';
 import { getStripeSync } from "./stripeClient";
 import { WebhookHandlers } from "./webhookHandlers";
+import { seedDoctors } from "./seed";
 
 const app = express();
 const httpServer = createServer(app);
@@ -77,6 +78,10 @@ async function initStripe() {
 (async () => {
   // Initialize Stripe first
   await initStripe();
+  
+  // Seed demo doctors if none exist
+  log("Checking for demo doctors...", "seed");
+  await seedDoctors();
 
   // CRITICAL: Register Stripe webhook route BEFORE express.json()
   // Webhook needs raw Buffer, not parsed JSON
