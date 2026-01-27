@@ -1,0 +1,407 @@
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Calendar } from "@/components/ui/calendar";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { 
+  ArrowLeft, 
+  ArrowRight, 
+  Calendar as CalendarIcon, 
+  Clock, 
+  Video, 
+  Phone,
+  CreditCard,
+  Check,
+  Stethoscope
+} from "lucide-react";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
+
+interface Doctor {
+  id: number;
+  userId: string;
+  specialty: string;
+  bio?: string;
+  consultationFee: number;
+  availability?: { [day: string]: { start: string; end: string }[] };
+  userName?: string;
+  userImage?: string;
+}
+
+const STEPS = ["Especialista", "Fecha y Hora", "Detalles", "Confirmación"];
+
+const TIME_SLOTS = [
+  "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
+  "12:00", "14:00", "14:30", "15:00", "15:30", "16:00", "16:30", "17:00"
+];
+
+export default function BookAppointmentPage() {
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  
+  const [currentStep, setCurrentStep] = useState(0);
+  const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>();
+  const [selectedTime, setSelectedTime] = useState<string>("");
+  const [consultationType, setConsultationType] = useState<"video" | "audio">("video");
+  const [notes, setNotes] = useState("");
+
+  const { data: doctors, isLoading: loadingDoctors } = useQuery<Doctor[]>({
+    queryKey: ["/api/doctors"],
+  });
+
+  const bookMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/appointments", {
+        doctorId: selectedDoctor?.id,
+        scheduledDate: format(selectedDate!, "yyyy-MM-dd"),
+        scheduledTime: selectedTime,
+        consultationType,
+        notes,
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
+      toast({
+        title: "Consulta agendada",
+        description: "Tu cita ha sido programada exitosamente",
+      });
+      navigate(`/appointments/${data.id}/pay`);
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "No se pudo agendar la consulta. Intenta nuevamente.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const canProceed = () => {
+    switch (currentStep) {
+      case 0: return !!selectedDoctor;
+      case 1: return !!selectedDate && !!selectedTime;
+      case 2: return true;
+      case 3: return true;
+      default: return false;
+    }
+  };
+
+  const handleNext = () => {
+    if (currentStep < STEPS.length - 1) {
+      setCurrentStep(currentStep + 1);
+    } else {
+      bookMutation.mutate();
+    }
+  };
+
+  const handleBack = () => {
+    if (currentStep > 0) {
+      setCurrentStep(currentStep - 1);
+    } else {
+      navigate("/appointments");
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="icon" onClick={handleBack} data-testid="button-back">
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
+        <div>
+          <h1 className="text-2xl font-bold">Agendar Consulta</h1>
+          <p className="text-muted-foreground">Paso {currentStep + 1} de {STEPS.length}</p>
+        </div>
+      </div>
+
+      {/* Progress Steps */}
+      <div className="flex items-center justify-between">
+        {STEPS.map((step, index) => (
+          <div key={step} className="flex items-center">
+            <div className={`
+              flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium
+              ${index < currentStep ? "bg-primary text-primary-foreground" : ""}
+              ${index === currentStep ? "bg-primary text-primary-foreground ring-4 ring-primary/20" : ""}
+              ${index > currentStep ? "bg-muted text-muted-foreground" : ""}
+            `}>
+              {index < currentStep ? <Check className="h-4 w-4" /> : index + 1}
+            </div>
+            {index < STEPS.length - 1 && (
+              <div className={`hidden sm:block w-16 lg:w-24 h-0.5 mx-2 ${index < currentStep ? "bg-primary" : "bg-muted"}`} />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Step Content */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{STEPS[currentStep]}</CardTitle>
+          <CardDescription>
+            {currentStep === 0 && "Selecciona el médico con quien deseas agendar tu consulta"}
+            {currentStep === 1 && "Elige la fecha y hora para tu consulta"}
+            {currentStep === 2 && "Agrega detalles adicionales sobre tu consulta"}
+            {currentStep === 3 && "Revisa y confirma los detalles de tu cita"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {/* Step 0: Select Doctor */}
+          {currentStep === 0 && (
+            <div className="space-y-4">
+              {loadingDoctors ? (
+                <>
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="flex items-center gap-4 p-4 border rounded-lg">
+                      <Skeleton className="h-16 w-16 rounded-full" />
+                      <div className="space-y-2">
+                        <Skeleton className="h-5 w-40" />
+                        <Skeleton className="h-4 w-24" />
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : doctors && doctors.length > 0 ? (
+                doctors.map((doctor) => (
+                  <div
+                    key={doctor.id}
+                    onClick={() => setSelectedDoctor(doctor)}
+                    className={`
+                      flex items-center gap-4 p-4 border rounded-lg cursor-pointer transition-all
+                      ${selectedDoctor?.id === doctor.id 
+                        ? "border-primary bg-primary/5 ring-1 ring-primary" 
+                        : "hover-elevate"}
+                    `}
+                    data-testid={`doctor-${doctor.id}`}
+                  >
+                    <Avatar className="h-16 w-16">
+                      <AvatarImage src={doctor.userImage} />
+                      <AvatarFallback className="bg-primary/10 text-primary text-xl">
+                        <Stethoscope className="h-6 w-6" />
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-lg">{doctor.userName || `Dr. ${doctor.userId}`}</h3>
+                      <p className="text-muted-foreground">{doctor.specialty}</p>
+                      {doctor.bio && (
+                        <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{doctor.bio}</p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-lg">${(doctor.consultationFee / 100).toFixed(0)}</p>
+                      <p className="text-sm text-muted-foreground">por consulta</p>
+                    </div>
+                    {selectedDoctor?.id === doctor.id && (
+                      <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                        <Check className="h-4 w-4 text-primary-foreground" />
+                      </div>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8">
+                  <Stethoscope className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">No hay médicos disponibles en este momento</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 1: Select Date & Time */}
+          {currentStep === 1 && (
+            <div className="grid md:grid-cols-2 gap-6">
+              <div>
+                <Label className="mb-3 block">Fecha</Label>
+                <Calendar
+                  mode="single"
+                  selected={selectedDate}
+                  onSelect={setSelectedDate}
+                  disabled={(date) => date < new Date() || date.getDay() === 0}
+                  className="rounded-md border"
+                  locale={es}
+                />
+              </div>
+              <div>
+                <Label className="mb-3 block">Hora disponible</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {TIME_SLOTS.map((time) => (
+                    <Button
+                      key={time}
+                      type="button"
+                      variant={selectedTime === time ? "default" : "outline"}
+                      onClick={() => setSelectedTime(time)}
+                      className="h-10"
+                      data-testid={`time-slot-${time}`}
+                    >
+                      {time}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Additional Details */}
+          {currentStep === 2 && (
+            <div className="space-y-6">
+              <div>
+                <Label className="mb-3 block">Tipo de consulta</Label>
+                <RadioGroup
+                  value={consultationType}
+                  onValueChange={(v) => setConsultationType(v as "video" | "audio")}
+                  className="grid grid-cols-2 gap-4"
+                >
+                  <div>
+                    <RadioGroupItem value="video" id="video" className="sr-only" />
+                    <Label
+                      htmlFor="video"
+                      className={`
+                        flex items-center gap-3 p-4 border rounded-lg cursor-pointer transition-all
+                        ${consultationType === "video" ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover-elevate"}
+                      `}
+                    >
+                      <Video className="h-5 w-5" />
+                      <div>
+                        <p className="font-medium">Videollamada</p>
+                        <p className="text-sm text-muted-foreground">Consulta con video en vivo</p>
+                      </div>
+                    </Label>
+                  </div>
+                  <div>
+                    <RadioGroupItem value="audio" id="audio" className="sr-only" />
+                    <Label
+                      htmlFor="audio"
+                      className={`
+                        flex items-center gap-3 p-4 border rounded-lg cursor-pointer transition-all
+                        ${consultationType === "audio" ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover-elevate"}
+                      `}
+                    >
+                      <Phone className="h-5 w-5" />
+                      <div>
+                        <p className="font-medium">Llamada de voz</p>
+                        <p className="text-sm text-muted-foreground">Solo audio</p>
+                      </div>
+                    </Label>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              <div>
+                <Label htmlFor="notes" className="mb-3 block">
+                  Motivo de la consulta (opcional)
+                </Label>
+                <Textarea
+                  id="notes"
+                  placeholder="Describe brevemente el motivo de tu consulta..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={4}
+                  data-testid="input-notes"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Confirmation */}
+          {currentStep === 3 && selectedDoctor && selectedDate && (
+            <div className="space-y-6">
+              <div className="bg-muted/50 rounded-lg p-6 space-y-4">
+                <div className="flex items-center gap-4">
+                  <Avatar className="h-16 w-16">
+                    <AvatarImage src={selectedDoctor.userImage} />
+                    <AvatarFallback className="bg-primary/10 text-primary text-xl">
+                      <Stethoscope className="h-6 w-6" />
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <h3 className="font-semibold text-lg">{selectedDoctor.userName || `Dr. ${selectedDoctor.userId}`}</h3>
+                    <p className="text-muted-foreground">{selectedDoctor.specialty}</p>
+                  </div>
+                </div>
+
+                <div className="grid sm:grid-cols-2 gap-4 pt-4 border-t">
+                  <div className="flex items-center gap-3">
+                    <CalendarIcon className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm text-muted-foreground">Fecha</p>
+                      <p className="font-medium">{format(selectedDate, "EEEE d 'de' MMMM, yyyy", { locale: es })}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Clock className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm text-muted-foreground">Hora</p>
+                      <p className="font-medium">{selectedTime}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {consultationType === "video" ? (
+                      <Video className="h-5 w-5 text-muted-foreground" />
+                    ) : (
+                      <Phone className="h-5 w-5 text-muted-foreground" />
+                    )}
+                    <div>
+                      <p className="text-sm text-muted-foreground">Tipo</p>
+                      <p className="font-medium">{consultationType === "video" ? "Videollamada" : "Llamada de voz"}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <CreditCard className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm text-muted-foreground">Costo</p>
+                      <p className="font-medium">${(selectedDoctor.consultationFee / 100).toFixed(0)} USD</p>
+                    </div>
+                  </div>
+                </div>
+
+                {notes && (
+                  <div className="pt-4 border-t">
+                    <p className="text-sm text-muted-foreground mb-1">Notas</p>
+                    <p>{notes}</p>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-sm text-muted-foreground text-center">
+                Al confirmar, serás redirigido al proceso de pago
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Navigation Buttons */}
+      <div className="flex justify-between">
+        <Button variant="outline" onClick={handleBack} data-testid="button-prev-step">
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          {currentStep === 0 ? "Cancelar" : "Anterior"}
+        </Button>
+        <Button 
+          onClick={handleNext} 
+          disabled={!canProceed() || bookMutation.isPending}
+          data-testid="button-next-step"
+        >
+          {currentStep === STEPS.length - 1 ? (
+            bookMutation.isPending ? "Procesando..." : "Confirmar y Pagar"
+          ) : (
+            <>
+              Siguiente
+              <ArrowRight className="h-4 w-4 ml-2" />
+            </>
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
