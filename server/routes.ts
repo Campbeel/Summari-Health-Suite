@@ -1,9 +1,17 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
+import { z } from "zod";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integrations/auth";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { transcribeAudio, generatePrescriptionFromTranscript } from "./openai";
+import {
+  insertPatientSchema,
+  insertAppointmentSchema,
+  insertClinicalRecordSchema,
+  insertPrescriptionSchema,
+  insertMedicalInstructionSchema,
+} from "@shared/schema";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -76,6 +84,16 @@ export async function registerRoutes(
 
   app.put("/api/patients/profile", isAuthenticated, async (req: any, res) => {
     try {
+      // Validate request body against partial patientSchema
+      const validationResult = insertPatientSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          errors: validationResult.error.flatten(),
+        });
+      }
+      
+      const patientData = validationResult.data;
       const userId = req.user.claims.sub;
       let patient = await storage.getPatientByUserId(userId);
       
@@ -83,11 +101,31 @@ export async function registerRoutes(
         patient = await storage.createPatient({ userId });
       }
       
-      const updated = await storage.updatePatient(patient.id, req.body);
+      const updated = await storage.updatePatient(patient.id, patientData);
       res.json(updated);
     } catch (error) {
       console.error("Error updating patient profile:", error);
       res.status(500).json({ error: "Failed to update patient profile" });
+    }
+  });
+
+  app.post("/api/patients", isAuthenticated, async (req: any, res) => {
+    try {
+      // Validate request body against patientSchema
+      const validationResult = insertPatientSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          errors: validationResult.error.flatten(),
+        });
+      }
+      
+      const patientData = validationResult.data;
+      const patient = await storage.createPatient(patientData);
+      res.json(patient);
+    } catch (error) {
+      console.error("Error creating patient:", error);
+      res.status(500).json({ error: "Failed to create patient" });
     }
   });
 
@@ -148,17 +186,20 @@ export async function registerRoutes(
         patient = await storage.createPatient({ userId });
       }
       
-      const { doctorId, scheduledDate, scheduledTime, consultationType, notes } = req.body;
+      // Validate request body against appointmentSchema
+      const validationResult = insertAppointmentSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          errors: validationResult.error.flatten(),
+        });
+      }
+      
+      const appointmentData = validationResult.data;
       
       const appointment = await storage.createAppointment({
         patientId: patient.id,
-        doctorId,
-        scheduledDate,
-        scheduledTime,
-        consultationType: consultationType || "video",
-        notes,
-        status: "scheduled",
-        paymentStatus: "pending",
+        ...appointmentData,
       });
       
       res.json(appointment);
@@ -170,7 +211,17 @@ export async function registerRoutes(
 
   app.patch("/api/appointments/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const updated = await storage.updateAppointment(parseInt(req.params.id), req.body);
+      // Validate request body against partial appointmentSchema
+      const validationResult = insertAppointmentSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          errors: validationResult.error.flatten(),
+        });
+      }
+      
+      const appointmentData = validationResult.data;
+      const updated = await storage.updateAppointment(parseInt(req.params.id), appointmentData);
       res.json(updated);
     } catch (error) {
       console.error("Error updating appointment:", error);
@@ -316,6 +367,26 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/clinical-records", isAuthenticated, async (req: any, res) => {
+    try {
+      // Validate request body against clinicalRecordSchema
+      const validationResult = insertClinicalRecordSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          errors: validationResult.error.flatten(),
+        });
+      }
+      
+      const recordData = validationResult.data;
+      const record = await storage.createClinicalRecord(recordData);
+      res.json(record);
+    } catch (error) {
+      console.error("Error creating clinical record:", error);
+      res.status(500).json({ error: "Failed to create clinical record" });
+    }
+  });
+
   // Prescriptions routes
   app.get("/api/prescriptions", isAuthenticated, async (req: any, res) => {
     try {
@@ -344,6 +415,26 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching prescription:", error);
       res.status(500).json({ error: "Failed to fetch prescription" });
+    }
+  });
+
+  app.post("/api/prescriptions", isAuthenticated, async (req: any, res) => {
+    try {
+      // Validate request body against prescriptionSchema
+      const validationResult = insertPrescriptionSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          errors: validationResult.error.flatten(),
+        });
+      }
+      
+      const prescriptionData = validationResult.data;
+      const prescription = await storage.createPrescription(prescriptionData);
+      res.json(prescription);
+    } catch (error) {
+      console.error("Error creating prescription:", error);
+      res.status(500).json({ error: "Failed to create prescription" });
     }
   });
 
@@ -481,6 +572,27 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error transcribing audio:", error);
       res.status(500).json({ error: "Failed to transcribe audio" });
+    }
+  });
+
+  // Medical Instructions routes
+  app.post("/api/medical-instructions", isAuthenticated, async (req: any, res) => {
+    try {
+      // Validate request body against medicalInstructionSchema
+      const validationResult = insertMedicalInstructionSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          errors: validationResult.error.flatten(),
+        });
+      }
+      
+      const instructionData = validationResult.data;
+      const instruction = await storage.createMedicalInstruction(instructionData);
+      res.json(instruction);
+    } catch (error) {
+      console.error("Error creating medical instruction:", error);
+      res.status(500).json({ error: "Failed to create medical instruction" });
     }
   });
 

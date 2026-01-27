@@ -230,6 +230,7 @@ export default function BookAppointmentPage() {
                   disabled={(date) => date < new Date() || date.getDay() === 0}
                   className="rounded-md border"
                   locale={es}
+                  data-testid="calendar-booking"
                 />
               </div>
               <div>
@@ -261,15 +262,17 @@ export default function BookAppointmentPage() {
                   value={consultationType}
                   onValueChange={(v) => setConsultationType(v as "video" | "audio")}
                   className="grid grid-cols-2 gap-4"
+                  data-testid="radio-group-consultation-type"
                 >
                   <div>
-                    <RadioGroupItem value="video" id="video" className="sr-only" />
+                    <RadioGroupItem value="video" id="video" className="sr-only" data-testid="radio-consultation-video" />
                     <Label
                       htmlFor="video"
                       className={`
                         flex items-center gap-3 p-4 border rounded-lg cursor-pointer transition-all
                         ${consultationType === "video" ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover-elevate"}
                       `}
+                      data-testid="label-consultation-video"
                     >
                       <Video className="h-5 w-5" />
                       <div>
@@ -279,13 +282,14 @@ export default function BookAppointmentPage() {
                     </Label>
                   </div>
                   <div>
-                    <RadioGroupItem value="audio" id="audio" className="sr-only" />
+                    <RadioGroupItem value="audio" id="audio" className="sr-only" data-testid="radio-consultation-audio" />
                     <Label
                       htmlFor="audio"
                       className={`
                         flex items-center gap-3 p-4 border rounded-lg cursor-pointer transition-all
                         ${consultationType === "audio" ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover-elevate"}
                       `}
+                      data-testid="label-consultation-audio"
                     >
                       <Phone className="h-5 w-5" />
                       <div>
@@ -315,7 +319,7 @@ export default function BookAppointmentPage() {
 
           {/* Step 3: Confirmation */}
           {currentStep === 3 && selectedDoctor && selectedDate && (
-            <div className="space-y-6">
+            <div className="space-y-6" data-testid="confirmation-summary">
               <div className="bg-muted/50 rounded-lg p-6 space-y-4">
                 <div className="flex items-center gap-4">
                   <Avatar className="h-16 w-16">
@@ -325,8 +329,8 @@ export default function BookAppointmentPage() {
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <h3 className="font-semibold text-lg">{selectedDoctor.userName || `Dr. ${selectedDoctor.userId}`}</h3>
-                    <p className="text-muted-foreground">{selectedDoctor.specialty}</p>
+                    <h3 className="font-semibold text-lg" data-testid="text-confirmation-doctor">{selectedDoctor.userName || `Dr. ${selectedDoctor.userId}`}</h3>
+                    <p className="text-muted-foreground" data-testid="text-confirmation-specialty">{selectedDoctor.specialty}</p>
                   </div>
                 </div>
 
@@ -335,14 +339,14 @@ export default function BookAppointmentPage() {
                     <CalendarIcon className="h-5 w-5 text-muted-foreground" />
                     <div>
                       <p className="text-sm text-muted-foreground">Fecha</p>
-                      <p className="font-medium">{format(selectedDate, "EEEE d 'de' MMMM, yyyy", { locale: es })}</p>
+                      <p className="font-medium" data-testid="text-confirmation-date">{format(selectedDate, "EEEE d 'de' MMMM, yyyy", { locale: es })}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <Clock className="h-5 w-5 text-muted-foreground" />
                     <div>
                       <p className="text-sm text-muted-foreground">Hora</p>
-                      <p className="font-medium">{selectedTime}</p>
+                      <p className="font-medium" data-testid="text-confirmation-time">{selectedTime}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -353,14 +357,14 @@ export default function BookAppointmentPage() {
                     )}
                     <div>
                       <p className="text-sm text-muted-foreground">Tipo</p>
-                      <p className="font-medium">{consultationType === "video" ? "Videollamada" : "Llamada de voz"}</p>
+                      <p className="font-medium" data-testid="text-confirmation-type">{consultationType === "video" ? "Videollamada" : "Llamada de voz"}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <CreditCard className="h-5 w-5 text-muted-foreground" />
                     <div>
                       <p className="text-sm text-muted-foreground">Costo</p>
-                      <p className="font-medium">${(selectedDoctor.consultationFee / 100).toFixed(0)} USD</p>
+                      <p className="font-medium" data-testid="text-confirmation-fee">${(selectedDoctor.consultationFee / 100).toFixed(0)} USD</p>
                     </div>
                   </div>
                 </div>

@@ -247,14 +247,14 @@ export default function ProfilePage() {
                     onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addAllergy())}
                     data-testid="input-allergy"
                   />
-                  <Button type="button" variant="outline" onClick={addAllergy}>
+                  <Button type="button" variant="outline" onClick={addAllergy} data-testid="button-add-allergy">
                     <Plus className="h-4 w-4" />
                   </Button>
                 </div>
                 {allergies.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2" data-testid="allergies-list">
                     {allergies.map((allergy) => (
-                      <Badge key={allergy} variant="destructive" className="pr-1">
+                      <Badge key={allergy} variant="destructive" className="pr-1" data-testid={`badge-allergy-${allergy}`}>
                         {allergy}
                         <Button
                           type="button"
@@ -262,6 +262,7 @@ export default function ProfilePage() {
                           size="icon"
                           className="h-4 w-4 ml-1 hover:bg-transparent"
                           onClick={() => removeAllergy(allergy)}
+                          data-testid={`button-remove-allergy-${allergy}`}
                         >
                           <X className="h-3 w-3" />
                         </Button>
@@ -269,7 +270,7 @@ export default function ProfilePage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No hay alergias registradas</p>
+                  <p className="text-sm text-muted-foreground" data-testid="text-no-allergies">No hay alergias registradas</p>
                 )}
               </div>
 

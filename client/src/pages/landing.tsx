@@ -27,13 +27,13 @@ export default function LandingPage() {
               <span className="text-xl font-semibold">Summari</span>
             </div>
             <div className="hidden md:flex items-center gap-6">
-              <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors">
+              <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors" data-testid="link-features">
                 Características
               </a>
-              <a href="#how-it-works" className="text-muted-foreground hover:text-foreground transition-colors">
+              <a href="#how-it-works" className="text-muted-foreground hover:text-foreground transition-colors" data-testid="link-how-it-works">
                 Cómo Funciona
               </a>
-              <a href="#pricing" className="text-muted-foreground hover:text-foreground transition-colors">
+              <a href="#pricing" className="text-muted-foreground hover:text-foreground transition-colors" data-testid="link-pricing">
                 Precios
               </a>
             </div>
@@ -52,15 +52,15 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div className="space-y-8">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium" data-testid="badge-hero-tagline">
                 <Heart className="h-4 w-4" />
                 Atención médica de calidad desde casa
               </div>
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight">
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight" data-testid="text-hero-title">
                 Tu salud, 
                 <span className="text-primary"> simplificada</span>
               </h1>
-              <p className="text-lg text-muted-foreground max-w-lg">
+              <p className="text-lg text-muted-foreground max-w-lg" data-testid="text-hero-description">
                 Agenda consultas médicas, accede a tu historial clínico digital y recibe 
                 recetas electrónicas. Todo en una plataforma segura y fácil de usar.
               </p>
@@ -133,7 +133,7 @@ export default function LandingPage() {
             </p>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <Card className="hover-elevate">
+            <Card className="hover-elevate" data-testid="card-feature-scheduling">
               <CardContent className="p-6 space-y-4">
                 <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
                   <Calendar className="h-6 w-6 text-primary" />
@@ -145,7 +145,7 @@ export default function LandingPage() {
                 </p>
               </CardContent>
             </Card>
-            <Card className="hover-elevate">
+            <Card className="hover-elevate" data-testid="card-feature-payments">
               <CardContent className="p-6 space-y-4">
                 <div className="w-12 h-12 rounded-lg bg-secondary/10 flex items-center justify-center">
                   <CreditCard className="h-6 w-6 text-secondary" />
@@ -157,7 +157,7 @@ export default function LandingPage() {
                 </p>
               </CardContent>
             </Card>
-            <Card className="hover-elevate">
+            <Card className="hover-elevate" data-testid="card-feature-records">
               <CardContent className="p-6 space-y-4">
                 <div className="w-12 h-12 rounded-lg bg-accent/20 flex items-center justify-center">
                   <FileText className="h-6 w-6 text-accent" />
@@ -169,7 +169,7 @@ export default function LandingPage() {
                 </p>
               </CardContent>
             </Card>
-            <Card className="hover-elevate">
+            <Card className="hover-elevate" data-testid="card-feature-transcription">
               <CardContent className="p-6 space-y-4">
                 <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
                   <Mic className="h-6 w-6 text-primary" />
@@ -181,7 +181,7 @@ export default function LandingPage() {
                 </p>
               </CardContent>
             </Card>
-            <Card className="hover-elevate">
+            <Card className="hover-elevate" data-testid="card-feature-prescriptions">
               <CardContent className="p-6 space-y-4">
                 <div className="w-12 h-12 rounded-lg bg-secondary/10 flex items-center justify-center">
                   <FileText className="h-6 w-6 text-secondary" />
@@ -193,7 +193,7 @@ export default function LandingPage() {
                 </p>
               </CardContent>
             </Card>
-            <Card className="hover-elevate">
+            <Card className="hover-elevate" data-testid="card-feature-security">
               <CardContent className="p-6 space-y-4">
                 <div className="w-12 h-12 rounded-lg bg-accent/20 flex items-center justify-center">
                   <Shield className="h-6 w-6 text-accent" />

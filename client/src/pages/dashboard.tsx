@@ -35,17 +35,17 @@ interface AppointmentWithDetails {
 function getStatusBadge(status: string) {
   switch (status) {
     case "scheduled":
-      return <Badge variant="outline" className="bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300">Programada</Badge>;
+      return <Badge variant="outline" className="bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300" data-testid={`status-${status}`}>Programada</Badge>;
     case "confirmed":
-      return <Badge className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300">Confirmada</Badge>;
+      return <Badge className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" data-testid={`status-${status}`}>Confirmada</Badge>;
     case "in_progress":
-      return <Badge className="bg-primary text-primary-foreground">En curso</Badge>;
+      return <Badge className="bg-primary text-primary-foreground" data-testid={`status-${status}`}>En curso</Badge>;
     case "completed":
-      return <Badge variant="secondary">Completada</Badge>;
+      return <Badge variant="secondary" data-testid={`status-${status}`}>Completada</Badge>;
     case "cancelled":
-      return <Badge variant="destructive">Cancelada</Badge>;
+      return <Badge variant="destructive" data-testid={`status-${status}`}>Cancelada</Badge>;
     default:
-      return <Badge variant="outline">{status}</Badge>;
+      return <Badge variant="outline" data-testid={`status-${status}`}>{status}</Badge>;
   }
 }
 
@@ -117,46 +117,46 @@ export default function Dashboard() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
+        <Card data-testid="stat-card-appointments">
           <CardContent className="p-4 flex items-center gap-4">
             <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
               <Calendar className="h-6 w-6 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{upcomingAppointments?.length || 0}</p>
+              <p className="text-2xl font-bold" data-testid="text-appointments-count">{upcomingAppointments?.length || 0}</p>
               <p className="text-sm text-muted-foreground">Citas próximas</p>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card data-testid="stat-card-records">
           <CardContent className="p-4 flex items-center gap-4">
             <div className="w-12 h-12 rounded-lg bg-secondary/10 flex items-center justify-center">
               <FileText className="h-6 w-6 text-secondary" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{recentRecords?.length || 0}</p>
+              <p className="text-2xl font-bold" data-testid="text-records-count">{recentRecords?.length || 0}</p>
               <p className="text-sm text-muted-foreground">Registros clínicos</p>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card data-testid="stat-card-specialists">
           <CardContent className="p-4 flex items-center gap-4">
             <div className="w-12 h-12 rounded-lg bg-accent/20 flex items-center justify-center">
               <Stethoscope className="h-6 w-6 text-accent" />
             </div>
             <div>
-              <p className="text-2xl font-bold">3</p>
+              <p className="text-2xl font-bold" data-testid="text-specialists-count">3</p>
               <p className="text-sm text-muted-foreground">Especialistas</p>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card data-testid="stat-card-balance">
           <CardContent className="p-4 flex items-center gap-4">
             <div className="w-12 h-12 rounded-lg bg-green-100 dark:bg-green-950 flex items-center justify-center">
               <CreditCard className="h-6 w-6 text-green-600 dark:text-green-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold">$0</p>
+              <p className="text-2xl font-bold" data-testid="text-balance">$0</p>
               <p className="text-sm text-muted-foreground">Balance pendiente</p>
             </div>
           </CardContent>
@@ -172,7 +172,7 @@ export default function Dashboard() {
                 <CardTitle>Próximas Consultas</CardTitle>
                 <CardDescription>Tus citas médicas programadas</CardDescription>
               </div>
-              <Button variant="ghost" size="sm" asChild>
+              <Button variant="ghost" size="sm" asChild data-testid="link-view-all-appointments">
                 <Link href="/appointments">
                   Ver todas
                   <ChevronRight className="h-4 w-4 ml-1" />
@@ -225,7 +225,7 @@ export default function Dashboard() {
                 <div className="text-center py-8">
                   <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                   <p className="text-muted-foreground mb-4">No tienes consultas programadas</p>
-                  <Button asChild>
+                  <Button asChild data-testid="button-schedule-consultation">
                     <Link href="/appointments/new">Agendar Consulta</Link>
                   </Button>
                 </div>
@@ -247,7 +247,7 @@ export default function Dashboard() {
                     <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
                       Agrega tu información médica para una mejor atención
                     </p>
-                    <Button variant="outline" size="sm" className="mt-3" asChild>
+                    <Button variant="outline" size="sm" className="mt-3" asChild data-testid="button-complete-profile">
                       <Link href="/profile">Completar Perfil</Link>
                     </Button>
                   </div>
@@ -299,7 +299,7 @@ export default function Dashboard() {
                 </p>
               )}
               {recentRecords && recentRecords.length > 0 && (
-                <Button variant="ghost" size="sm" className="w-full" asChild>
+                <Button variant="ghost" size="sm" className="w-full" asChild data-testid="link-view-all-records">
                   <Link href="/records">Ver todos los registros</Link>
                 </Button>
               )}

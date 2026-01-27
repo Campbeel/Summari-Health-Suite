@@ -122,14 +122,14 @@ export default function RecordsPage() {
                       </div>
 
                       {record.symptoms && record.symptoms.length > 0 && (
-                        <div className="flex flex-wrap gap-1 pt-1">
+                        <div className="flex flex-wrap gap-1 pt-1" data-testid={`symptoms-list-${record.id}`}>
                           {record.symptoms.slice(0, 3).map((symptom, i) => (
-                            <Badge key={i} variant="secondary" className="text-xs">
+                            <Badge key={i} variant="secondary" className="text-xs" data-testid={`badge-symptom-${record.id}-${i}`}>
                               {symptom}
                             </Badge>
                           ))}
                           {record.symptoms.length > 3 && (
-                            <Badge variant="secondary" className="text-xs">
+                            <Badge variant="secondary" className="text-xs" data-testid={`badge-symptoms-more-${record.id}`}>
                               +{record.symptoms.length - 3} más
                             </Badge>
                           )}
@@ -142,7 +142,7 @@ export default function RecordsPage() {
             </Link>
           ))
         ) : (
-          <Card>
+          <Card data-testid="records-empty-state">
             <CardContent className="py-12 text-center">
               <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="font-medium text-lg mb-2">
@@ -154,7 +154,7 @@ export default function RecordsPage() {
                   : "Tus registros aparecerán aquí después de tus consultas"}
               </p>
               {!searchTerm && (
-                <Button asChild>
+                <Button asChild data-testid="button-schedule-from-records">
                   <Link href="/appointments/new">Agendar Consulta</Link>
                 </Button>
               )}

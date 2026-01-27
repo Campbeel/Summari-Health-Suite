@@ -24,16 +24,114 @@ import {
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 
+// Custom type definitions for joined queries
+type DoctorWithUserInfo = {
+  id: number;
+  userId: string;
+  specialty: string;
+  bio: string | null;
+  consultationFee: number;
+  availability: { [day: string]: { start: string; end: string }[] } | null;
+  isActive: boolean;
+  userName: string;
+  userImage: string | null | undefined;
+};
+
+type AppointmentWithDoctor = {
+  id: number;
+  scheduledDate: string;
+  scheduledTime: string;
+  durationMinutes: number;
+  status: string;
+  paymentStatus: string;
+  stripePaymentIntentId: string | null;
+  consultationType: string;
+  notes: string | null;
+  doctorName: string;
+  doctorSpecialty: string | null;
+  doctorImage: string;
+};
+
+type AppointmentWithDoctorFull = {
+  id: number;
+  patientId: number;
+  doctorId: number;
+  scheduledDate: string;
+  scheduledTime: string;
+  durationMinutes: number;
+  status: string;
+  paymentStatus: string;
+  stripePaymentIntentId: string | null;
+  consultationType: string;
+  notes: string | null;
+  doctorName: string;
+  doctorSpecialty: string | null;
+  doctorImage: string;
+};
+
+type ClinicalRecordWithDoctor = {
+  id: number;
+  patientId: number;
+  doctorId: number;
+  appointmentId: number | null;
+  recordDate: Date;
+  chiefComplaint: string | null;
+  symptoms: string[] | null;
+  diagnosis: string | null;
+  physicalExamination: string | null;
+  vitalSigns: { bloodPressure?: string; heartRate?: number; temperature?: number; weight?: number; height?: number } | null;
+  notes: string | null;
+  transcription: string | null;
+  doctorName: string;
+  doctorSpecialty: string | null;
+};
+
+type ClinicalRecordSummary = {
+  id: number;
+  recordDate: Date;
+  diagnosis: string | null;
+  doctorName: string;
+};
+
+type ClinicalRecordWithPrescriptionFlag = {
+  id: number;
+  recordDate: Date;
+  chiefComplaint: string | null;
+  symptoms: string[] | null;
+  diagnosis: string | null;
+  notes: string | null;
+  doctorName: string;
+  doctorSpecialty: string | null;
+  hasPrescription: boolean;
+};
+
+type PrescriptionWithDoctor = {
+  id: number;
+  medications: Array<{
+    name: string;
+    dosage: string;
+    frequency: string;
+    duration: string;
+    instructions?: string;
+  }>;
+  instructions: string | null;
+  issuedAt: Date;
+  validUntil: string | null;
+  status: string;
+  doctorName: string;
+  doctorSpecialty: string | null;
+};
+
 export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
-  upsertUser(user: any): Promise<User>;
+  upsertUser(user: Partial<User>): Promise<User>;
 
   // Doctors
   getDoctor(id: number): Promise<Doctor | undefined>;
   getDoctorByUserId(userId: string): Promise<Doctor | undefined>;
-  getAllDoctors(): Promise<any[]>;
+  getAllDoctors(): Promise<DoctorWithUserInfo[]>;
   createDoctor(doctor: InsertDoctor): Promise<Doctor>;
 
   // Patients
@@ -43,28 +141,28 @@ export interface IStorage {
   updatePatient(id: number, patient: Partial<InsertPatient>): Promise<Patient>;
 
   // Appointments
-  getAppointment(id: number): Promise<any | undefined>;
-  getAppointmentsByPatient(patientId: number): Promise<any[]>;
-  getUpcomingAppointments(patientId: number): Promise<any[]>;
-  getAppointmentsByDoctor(doctorId: number): Promise<any[]>;
+  getAppointment(id: number): Promise<AppointmentWithDoctorFull | undefined>;
+  getAppointmentsByPatient(patientId: number): Promise<AppointmentWithDoctor[]>;
+  getUpcomingAppointments(patientId: number): Promise<AppointmentWithDoctor[]>;
+  getAppointmentsByDoctor(doctorId: number): Promise<Appointment[]>;
   createAppointment(appointment: InsertAppointment): Promise<Appointment>;
   updateAppointment(id: number, appointment: Partial<InsertAppointment>): Promise<Appointment>;
 
   // Clinical Records
-  getClinicalRecord(id: number): Promise<any | undefined>;
-  getClinicalRecordsByPatient(patientId: number): Promise<any[]>;
-  getRecentRecordsByPatient(patientId: number, limit?: number): Promise<any[]>;
+  getClinicalRecord(id: number): Promise<ClinicalRecordWithDoctor | undefined>;
+  getClinicalRecordsByPatient(patientId: number): Promise<ClinicalRecordWithPrescriptionFlag[]>;
+  getRecentRecordsByPatient(patientId: number, limit?: number): Promise<ClinicalRecordSummary[]>;
   createClinicalRecord(record: InsertClinicalRecord): Promise<ClinicalRecord>;
   updateClinicalRecord(id: number, record: Partial<InsertClinicalRecord>): Promise<ClinicalRecord>;
 
   // Prescriptions
-  getPrescription(id: number): Promise<any | undefined>;
-  getPrescriptionsByPatient(patientId: number): Promise<any[]>;
+  getPrescription(id: number): Promise<PrescriptionWithDoctor | undefined>;
+  getPrescriptionsByPatient(patientId: number): Promise<PrescriptionWithDoctor[]>;
   createPrescription(prescription: InsertPrescription): Promise<Prescription>;
 
   // Medical Instructions
   getMedicalInstruction(id: number): Promise<MedicalInstruction | undefined>;
-  getInstructionsByPatient(patientId: number): Promise<any[]>;
+  getInstructionsByPatient(patientId: number): Promise<MedicalInstruction[]>;
   createMedicalInstruction(instruction: InsertMedicalInstruction): Promise<MedicalInstruction>;
 }
 
@@ -80,7 +178,7 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async upsertUser(userData: any): Promise<User> {
+  async upsertUser(userData: Partial<User>): Promise<User> {
     const [user] = await db
       .insert(users)
       .values({
@@ -116,7 +214,7 @@ export class DatabaseStorage implements IStorage {
     return doctor;
   }
 
-  async getAllDoctors(): Promise<any[]> {
+  async getAllDoctors(): Promise<DoctorWithUserInfo[]> {
     const result = await db
       .select({
         id: doctors.id,
@@ -162,7 +260,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Appointments
-  async getAppointment(id: number): Promise<any | undefined> {
+  async getAppointment(id: number): Promise<AppointmentWithDoctorFull | undefined> {
     const result = await db
       .select({
         id: appointments.id,
@@ -187,7 +285,7 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async getAppointmentsByPatient(patientId: number): Promise<any[]> {
+  async getAppointmentsByPatient(patientId: number): Promise<AppointmentWithDoctor[]> {
     const result = await db
       .select({
         id: appointments.id,
@@ -196,6 +294,7 @@ export class DatabaseStorage implements IStorage {
         durationMinutes: appointments.durationMinutes,
         status: appointments.status,
         paymentStatus: appointments.paymentStatus,
+        stripePaymentIntentId: appointments.stripePaymentIntentId,
         consultationType: appointments.consultationType,
         notes: appointments.notes,
         doctorName: sql<string>`COALESCE(u.first_name || ' ' || u.last_name, u.email)`.as('doctorName'),
@@ -210,7 +309,7 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getUpcomingAppointments(patientId: number): Promise<any[]> {
+  async getUpcomingAppointments(patientId: number): Promise<AppointmentWithDoctor[]> {
     const today = new Date().toISOString().split('T')[0];
     const result = await db
       .select({
@@ -220,6 +319,7 @@ export class DatabaseStorage implements IStorage {
         durationMinutes: appointments.durationMinutes,
         status: appointments.status,
         paymentStatus: appointments.paymentStatus,
+        stripePaymentIntentId: appointments.stripePaymentIntentId,
         consultationType: appointments.consultationType,
         notes: appointments.notes,
         doctorName: sql<string>`COALESCE(u.first_name || ' ' || u.last_name, u.email)`.as('doctorName'),
@@ -240,7 +340,7 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getAppointmentsByDoctor(doctorId: number): Promise<any[]> {
+  async getAppointmentsByDoctor(doctorId: number): Promise<Appointment[]> {
     const result = await db
       .select()
       .from(appointments)
@@ -264,7 +364,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Clinical Records
-  async getClinicalRecord(id: number): Promise<any | undefined> {
+  async getClinicalRecord(id: number): Promise<ClinicalRecordWithDoctor | undefined> {
     const result = await db
       .select({
         id: clinicalRecords.id,
@@ -289,7 +389,7 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async getClinicalRecordsByPatient(patientId: number): Promise<any[]> {
+  async getClinicalRecordsByPatient(patientId: number): Promise<ClinicalRecordWithPrescriptionFlag[]> {
     const result = await db
       .select({
         id: clinicalRecords.id,
@@ -310,7 +410,7 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getRecentRecordsByPatient(patientId: number, limit = 5): Promise<any[]> {
+  async getRecentRecordsByPatient(patientId: number, limit = 5): Promise<ClinicalRecordSummary[]> {
     const result = await db
       .select({
         id: clinicalRecords.id,
@@ -342,7 +442,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Prescriptions
-  async getPrescription(id: number): Promise<any | undefined> {
+  async getPrescription(id: number): Promise<PrescriptionWithDoctor | undefined> {
     const result = await db
       .select({
         id: prescriptions.id,
@@ -361,7 +461,7 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async getPrescriptionsByPatient(patientId: number): Promise<any[]> {
+  async getPrescriptionsByPatient(patientId: number): Promise<PrescriptionWithDoctor[]> {
     const result = await db
       .select({
         id: prescriptions.id,
@@ -392,7 +492,7 @@ export class DatabaseStorage implements IStorage {
     return instruction;
   }
 
-  async getInstructionsByPatient(patientId: number): Promise<any[]> {
+  async getInstructionsByPatient(patientId: number): Promise<MedicalInstruction[]> {
     const result = await db
       .select()
       .from(medicalInstructions)

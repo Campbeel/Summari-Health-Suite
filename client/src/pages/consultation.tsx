@@ -167,7 +167,7 @@ export default function ConsultationPage() {
 
           {/* Recording Indicator */}
           {isRecording && (
-            <div className="absolute top-4 left-4 flex items-center gap-2 bg-destructive/90 text-destructive-foreground px-3 py-1.5 rounded-full text-sm">
+            <div className="absolute top-4 left-4 flex items-center gap-2 bg-destructive/90 text-destructive-foreground px-3 py-1.5 rounded-full text-sm" data-testid="status-recording">
               <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
               Transcribiendo
             </div>
@@ -175,7 +175,7 @@ export default function ConsultationPage() {
 
           {/* Status Badge */}
           <div className="absolute top-4 right-4">
-            <Badge variant="outline" className="bg-background/80 backdrop-blur-sm">
+            <Badge variant="outline" className="bg-background/80 backdrop-blur-sm" data-testid="badge-consultation-time">
               <Clock className="h-3 w-3 mr-1" />
               {appointment.scheduledTime.slice(0, 5)}
             </Badge>
@@ -246,7 +246,7 @@ export default function ConsultationPage() {
               <ScrollArea className="h-full">
                 <CardContent className="p-4 space-y-4">
                   {/* Patient Info */}
-                  <div className="flex items-center gap-3 pb-4 border-b">
+                  <div className="flex items-center gap-3 pb-4 border-b" data-testid="patient-info">
                     <Avatar className="h-12 w-12">
                       <AvatarImage src={patient.userImage} />
                       <AvatarFallback className="bg-secondary/10 text-secondary">
@@ -254,8 +254,8 @@ export default function ConsultationPage() {
                       </AvatarFallback>
                     </Avatar>
                     <div>
-                      <h3 className="font-semibold">{patient.userName}</h3>
-                      <p className="text-sm text-muted-foreground">
+                      <h3 className="font-semibold" data-testid="text-patient-name">{patient.userName}</h3>
+                      <p className="text-sm text-muted-foreground" data-testid="text-patient-details">
                         {patient.gender || "No especificado"} • {patient.bloodType || "Tipo de sangre no especificado"}
                       </p>
                     </div>
@@ -263,14 +263,14 @@ export default function ConsultationPage() {
 
                   {/* Allergies */}
                   {patient.allergies && patient.allergies.length > 0 && (
-                    <div>
+                    <div data-testid="patient-allergies">
                       <h4 className="text-sm font-medium text-destructive mb-2 flex items-center gap-1">
                         <AlertCircle className="h-4 w-4" />
                         Alergias
                       </h4>
                       <div className="flex flex-wrap gap-1">
                         {patient.allergies.map((allergy, i) => (
-                          <Badge key={i} variant="destructive" className="text-xs">
+                          <Badge key={i} variant="destructive" className="text-xs" data-testid={`badge-allergy-${i}`}>
                             {allergy}
                           </Badge>
                         ))}
@@ -337,11 +337,11 @@ export default function ConsultationPage() {
               <ScrollArea className="h-[calc(100%-4rem)]">
                 <CardContent className="p-4">
                   {transcription || clinicalRecord?.transcription ? (
-                    <p className="text-sm whitespace-pre-wrap">
+                    <p className="text-sm whitespace-pre-wrap" data-testid="text-transcription">
                       {transcription || clinicalRecord?.transcription}
                     </p>
                   ) : (
-                    <div className="text-center py-8 text-muted-foreground">
+                    <div className="text-center py-8 text-muted-foreground" data-testid="transcription-empty-state">
                       <Mic className="h-8 w-8 mx-auto mb-2 opacity-50" />
                       <p className="text-sm">
                         {isRecording 
