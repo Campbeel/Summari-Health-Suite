@@ -122,6 +122,31 @@ type PrescriptionWithDoctor = {
   doctorSpecialty: string | null;
 };
 
+type DoctorDashboardStats = {
+  todayAppointments: number;
+  upcomingAppointments: number;
+  completedConsultations: number;
+};
+
+type AppointmentWithPatient = {
+  id: number;
+  patientId: number;
+  doctorId: number;
+  scheduledDate: string;
+  scheduledTime: string;
+  durationMinutes: number;
+  status: string;
+  paymentStatus: string;
+  stripePaymentIntentId: string | null;
+  consultationType: string;
+  notes: string | null;
+  patientName: string;
+  patientImage: string | null;
+  patientDateOfBirth: string | null;
+  patientGender: string | null;
+  patientBloodType: string | null;
+};
+
 export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
@@ -133,6 +158,8 @@ export interface IStorage {
   getDoctorByUserId(userId: string): Promise<Doctor | undefined>;
   getAllDoctors(): Promise<DoctorWithUserInfo[]>;
   createDoctor(doctor: InsertDoctor): Promise<Doctor>;
+  getDoctorDashboardStats(doctorId: number): Promise<DoctorDashboardStats>;
+  updateDoctorProfile(doctorId: number, data: Partial<InsertDoctor>): Promise<Doctor>;
 
   // Patients
   getPatient(id: number): Promise<Patient | undefined>;
@@ -145,8 +172,11 @@ export interface IStorage {
   getAppointmentsByPatient(patientId: number): Promise<AppointmentWithDoctor[]>;
   getUpcomingAppointments(patientId: number): Promise<AppointmentWithDoctor[]>;
   getAppointmentsByDoctor(doctorId: number): Promise<Appointment[]>;
+  getAppointmentsByDoctorWithPatient(doctorId: number): Promise<AppointmentWithPatient[]>;
+  getUpcomingAppointmentsByDoctor(doctorId: number): Promise<AppointmentWithPatient[]>;
   createAppointment(appointment: InsertAppointment): Promise<Appointment>;
   updateAppointment(id: number, appointment: Partial<InsertAppointment>): Promise<Appointment>;
+  updateAppointmentStatus(id: number, status: string): Promise<Appointment>;
 
   // Clinical Records
   getClinicalRecord(id: number): Promise<ClinicalRecordWithDoctor | undefined>;
@@ -236,6 +266,56 @@ export class DatabaseStorage implements IStorage {
   async createDoctor(doctor: InsertDoctor): Promise<Doctor> {
     const [created] = await db.insert(doctors).values(doctor).returning();
     return created;
+  }
+
+  async getDoctorDashboardStats(doctorId: number): Promise<DoctorDashboardStats> {
+    const today = new Date().toISOString().split('T')[0];
+    
+    const [todayResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(appointments)
+      .where(
+        and(
+          eq(appointments.doctorId, doctorId),
+          eq(appointments.scheduledDate, today)
+        )
+      );
+    
+    const [upcomingResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(appointments)
+      .where(
+        and(
+          eq(appointments.doctorId, doctorId),
+          gte(appointments.scheduledDate, today),
+          sql`${appointments.status} NOT IN ('completed', 'cancelled')`
+        )
+      );
+    
+    const [completedResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(appointments)
+      .where(
+        and(
+          eq(appointments.doctorId, doctorId),
+          eq(appointments.status, 'completed')
+        )
+      );
+    
+    return {
+      todayAppointments: todayResult?.count || 0,
+      upcomingAppointments: upcomingResult?.count || 0,
+      completedConsultations: completedResult?.count || 0,
+    };
+  }
+
+  async updateDoctorProfile(doctorId: number, data: Partial<InsertDoctor>): Promise<Doctor> {
+    const [updated] = await db
+      .update(doctors)
+      .set(data)
+      .where(eq(doctors.id, doctorId))
+      .returning();
+    return updated;
   }
 
   // Patients
@@ -349,6 +429,69 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
+  async getAppointmentsByDoctorWithPatient(doctorId: number): Promise<AppointmentWithPatient[]> {
+    const result = await db
+      .select({
+        id: appointments.id,
+        patientId: appointments.patientId,
+        doctorId: appointments.doctorId,
+        scheduledDate: appointments.scheduledDate,
+        scheduledTime: appointments.scheduledTime,
+        durationMinutes: appointments.durationMinutes,
+        status: appointments.status,
+        paymentStatus: appointments.paymentStatus,
+        stripePaymentIntentId: appointments.stripePaymentIntentId,
+        consultationType: appointments.consultationType,
+        notes: appointments.notes,
+        patientName: sql<string>`COALESCE(u.first_name || ' ' || u.last_name, u.email)`.as('patientName'),
+        patientImage: sql<string | null>`u.profile_image_url`.as('patientImage'),
+        patientDateOfBirth: patients.dateOfBirth,
+        patientGender: patients.gender,
+        patientBloodType: patients.bloodType,
+      })
+      .from(appointments)
+      .leftJoin(patients, eq(appointments.patientId, patients.id))
+      .leftJoin(sql`users u`, sql`${patients.userId} = u.id`)
+      .where(eq(appointments.doctorId, doctorId))
+      .orderBy(desc(appointments.scheduledDate), desc(appointments.scheduledTime));
+    return result;
+  }
+
+  async getUpcomingAppointmentsByDoctor(doctorId: number): Promise<AppointmentWithPatient[]> {
+    const today = new Date().toISOString().split('T')[0];
+    const result = await db
+      .select({
+        id: appointments.id,
+        patientId: appointments.patientId,
+        doctorId: appointments.doctorId,
+        scheduledDate: appointments.scheduledDate,
+        scheduledTime: appointments.scheduledTime,
+        durationMinutes: appointments.durationMinutes,
+        status: appointments.status,
+        paymentStatus: appointments.paymentStatus,
+        stripePaymentIntentId: appointments.stripePaymentIntentId,
+        consultationType: appointments.consultationType,
+        notes: appointments.notes,
+        patientName: sql<string>`COALESCE(u.first_name || ' ' || u.last_name, u.email)`.as('patientName'),
+        patientImage: sql<string | null>`u.profile_image_url`.as('patientImage'),
+        patientDateOfBirth: patients.dateOfBirth,
+        patientGender: patients.gender,
+        patientBloodType: patients.bloodType,
+      })
+      .from(appointments)
+      .leftJoin(patients, eq(appointments.patientId, patients.id))
+      .leftJoin(sql`users u`, sql`${patients.userId} = u.id`)
+      .where(
+        and(
+          eq(appointments.doctorId, doctorId),
+          gte(appointments.scheduledDate, today),
+          sql`${appointments.status} NOT IN ('completed', 'cancelled')`
+        )
+      )
+      .orderBy(appointments.scheduledDate, appointments.scheduledTime);
+    return result;
+  }
+
   async createAppointment(appointment: InsertAppointment): Promise<Appointment> {
     const [created] = await db.insert(appointments).values(appointment).returning();
     return created;
@@ -358,6 +501,15 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db
       .update(appointments)
       .set({ ...appointment, updatedAt: new Date() })
+      .where(eq(appointments.id, id))
+      .returning();
+    return updated;
+  }
+
+  async updateAppointmentStatus(id: number, status: string): Promise<Appointment> {
+    const [updated] = await db
+      .update(appointments)
+      .set({ status, updatedAt: new Date() })
       .where(eq(appointments.id, id))
       .returning();
     return updated;

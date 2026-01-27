@@ -11,6 +11,7 @@ import {
   insertClinicalRecordSchema,
   insertPrescriptionSchema,
   insertMedicalInstructionSchema,
+  insertDoctorSchema,
 } from "@shared/schema";
 
 export async function registerRoutes(
@@ -52,6 +53,159 @@ export async function registerRoutes(
     }
   });
 
+  // Doctor (current user) routes - must be before :id routes to prevent "me" being matched as an id
+  app.get("/api/doctors/me", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const doctor = await storage.getDoctorByUserId(userId);
+      
+      if (!doctor) {
+        return res.status(403).json({ error: "User is not a doctor" });
+      }
+      
+      const user = await storage.getUser(userId);
+      res.json({
+        ...doctor,
+        userName: user?.firstName ? `${user.firstName} ${user.lastName}` : user?.email,
+        userImage: user?.profileImageUrl,
+      });
+    } catch (error) {
+      console.error("Error fetching doctor profile:", error);
+      res.status(500).json({ error: "Failed to fetch doctor profile" });
+    }
+  });
+
+  app.get("/api/doctors/me/stats", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const doctor = await storage.getDoctorByUserId(userId);
+      
+      if (!doctor) {
+        return res.status(403).json({ error: "User is not a doctor" });
+      }
+      
+      const stats = await storage.getDoctorDashboardStats(doctor.id);
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching doctor stats:", error);
+      res.status(500).json({ error: "Failed to fetch doctor stats" });
+    }
+  });
+
+  app.get("/api/doctors/me/appointments", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const doctor = await storage.getDoctorByUserId(userId);
+      
+      if (!doctor) {
+        return res.status(403).json({ error: "User is not a doctor" });
+      }
+      
+      const appointments = await storage.getAppointmentsByDoctorWithPatient(doctor.id);
+      res.json(appointments);
+    } catch (error) {
+      console.error("Error fetching doctor appointments:", error);
+      res.status(500).json({ error: "Failed to fetch doctor appointments" });
+    }
+  });
+
+  app.patch("/api/doctors/me/profile", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const doctor = await storage.getDoctorByUserId(userId);
+      
+      if (!doctor) {
+        return res.status(403).json({ error: "User is not a doctor" });
+      }
+      
+      const allowedFields = insertDoctorSchema.pick({ bio: true, consultationFee: true }).partial();
+      const validationResult = allowedFields.safeParse(req.body);
+      
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          errors: validationResult.error.flatten(),
+        });
+      }
+      
+      const updated = await storage.updateDoctorProfile(doctor.id, validationResult.data);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating doctor profile:", error);
+      res.status(500).json({ error: "Failed to update doctor profile" });
+    }
+  });
+
+  app.patch("/api/doctors/me/availability", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const doctor = await storage.getDoctorByUserId(userId);
+      
+      if (!doctor) {
+        return res.status(403).json({ error: "User is not a doctor" });
+      }
+      
+      const availabilitySchema = z.object({
+        availability: z.record(z.string(), z.array(z.object({
+          start: z.string(),
+          end: z.string(),
+        }))).nullable(),
+      });
+      
+      const validationResult = availabilitySchema.safeParse(req.body);
+      
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          errors: validationResult.error.flatten(),
+        });
+      }
+      
+      const updated = await storage.updateDoctorProfile(doctor.id, { availability: validationResult.data.availability });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating doctor availability:", error);
+      res.status(500).json({ error: "Failed to update doctor availability" });
+    }
+  });
+
+  app.patch("/api/appointments/:id/status", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      
+      const statusSchema = z.object({
+        status: z.enum(["confirmed", "cancelled", "in_progress", "completed"]),
+      });
+      
+      const validationResult = statusSchema.safeParse(req.body);
+      
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          errors: validationResult.error.flatten(),
+        });
+      }
+      
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment) {
+        return res.status(404).json({ error: "Appointment not found" });
+      }
+      
+      const doctor = await storage.getDoctorByUserId(userId);
+      if (!doctor || doctor.id !== appointment.doctorId) {
+        return res.status(403).json({ error: "Not authorized to update this appointment" });
+      }
+      
+      const updated = await storage.updateAppointmentStatus(appointmentId, validationResult.data.status);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating appointment status:", error);
+      res.status(500).json({ error: "Failed to update appointment status" });
+    }
+  });
+
+  // Get doctor by ID - must be after /api/doctors/me routes
   app.get("/api/doctors/:id", async (req, res) => {
     try {
       const doctor = await storage.getDoctor(parseInt(req.params.id));
@@ -195,7 +349,7 @@ export async function registerRoutes(
         });
       }
       
-      const appointmentData = validationResult.data;
+      const { patientId: _, ...appointmentData } = validationResult.data;
       
       const appointment = await storage.createAppointment({
         patientId: patient.id,

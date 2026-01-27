@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { useDoctor, type UserRole } from "@/hooks/use-doctor";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,40 +26,36 @@ import {
   Home, 
   Calendar, 
   FileText, 
-  Users, 
   CreditCard, 
   Settings, 
   Stethoscope,
   LogOut,
   ChevronUp,
   Pill,
-  ClipboardList
+  LayoutDashboard,
+  User
 } from "lucide-react";
 
 const patientMenuItems = [
-  { title: "Inicio", url: "/", icon: Home },
-  { title: "Mis Consultas", url: "/appointments", icon: Calendar },
-  { title: "Historial Clínico", url: "/records", icon: FileText },
-  { title: "Recetas", url: "/prescriptions", icon: Pill },
-  { title: "Pagos", url: "/payments", icon: CreditCard },
+  { title: "Inicio", url: "/", icon: Home, testId: "nav-home" },
+  { title: "Mis Consultas", url: "/appointments", icon: Calendar, testId: "nav-appointments" },
+  { title: "Historial Clínico", url: "/records", icon: FileText, testId: "nav-records" },
+  { title: "Recetas", url: "/prescriptions", icon: Pill, testId: "nav-prescriptions" },
+  { title: "Pagos", url: "/payments", icon: CreditCard, testId: "nav-payments" },
 ];
 
 const doctorMenuItems = [
-  { title: "Inicio", url: "/", icon: Home },
-  { title: "Agenda", url: "/schedule", icon: Calendar },
-  { title: "Pacientes", url: "/patients", icon: Users },
-  { title: "Consultas Hoy", url: "/consultations", icon: ClipboardList },
+  { title: "Panel", url: "/doctor/dashboard", icon: LayoutDashboard, testId: "link-doctor-dashboard" },
+  { title: "Mis Citas", url: "/doctor/appointments", icon: Calendar, testId: "link-doctor-appointments" },
+  { title: "Mi Perfil Profesional", url: "/doctor/profile", icon: User, testId: "link-doctor-profile" },
 ];
 
-interface AppSidebarProps {
-  userRole?: "patient" | "doctor";
-}
-
-export function AppSidebar({ userRole = "patient" }: AppSidebarProps) {
+export function AppSidebar() {
   const { user, logout } = useAuth();
+  const { isDoctor, currentRole, switchRole } = useDoctor();
   const [location] = useLocation();
 
-  const menuItems = userRole === "doctor" ? doctorMenuItems : patientMenuItems;
+  const menuItems = currentRole === "doctor" ? doctorMenuItems : patientMenuItems;
 
   return (
     <Sidebar>
@@ -75,9 +72,36 @@ export function AppSidebar({ userRole = "patient" }: AppSidebarProps) {
       </SidebarHeader>
 
       <SidebarContent>
+        {isDoctor && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <div className="px-2 flex gap-1">
+                <Button
+                  variant={currentRole === "patient" ? "default" : "ghost"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => switchRole("patient")}
+                  data-testid="button-role-switch-patient"
+                >
+                  Vista de Paciente
+                </Button>
+                <Button
+                  variant={currentRole === "doctor" ? "default" : "ghost"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => switchRole("doctor")}
+                  data-testid="button-role-switch-doctor"
+                >
+                  Vista de Doctor
+                </Button>
+              </div>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
         <SidebarGroup>
           <SidebarGroupLabel>
-            {userRole === "doctor" ? "Panel Médico" : "Menú Principal"}
+            {currentRole === "doctor" ? "Panel Médico" : "Menú Principal"}
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -86,7 +110,7 @@ export function AppSidebar({ userRole = "patient" }: AppSidebarProps) {
                   <SidebarMenuButton 
                     asChild 
                     isActive={location === item.url}
-                    data-testid={`nav-${item.url.replace("/", "") || "home"}`}
+                    data-testid={item.testId}
                   >
                     <Link href={item.url}>
                       <item.icon className="h-4 w-4" />
@@ -99,7 +123,7 @@ export function AppSidebar({ userRole = "patient" }: AppSidebarProps) {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {userRole === "patient" && (
+        {currentRole === "patient" && (
           <SidebarGroup>
             <SidebarGroupLabel>Acciones Rápidas</SidebarGroupLabel>
             <SidebarGroupContent>
@@ -139,7 +163,7 @@ export function AppSidebar({ userRole = "patient" }: AppSidebarProps) {
                         : user?.email || "Usuario"}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {userRole === "doctor" ? "Médico" : "Paciente"}
+                      {currentRole === "doctor" ? "Médico" : "Paciente"}
                     </span>
                   </div>
                   <ChevronUp className="ml-auto h-4 w-4" />

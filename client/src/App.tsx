@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/use-auth";
+import { useDoctor } from "@/hooks/use-doctor";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/sidebar";
 
@@ -19,6 +20,9 @@ import RecordsPage from "@/pages/records";
 import PrescriptionsPage from "@/pages/prescriptions";
 import PaymentsPage from "@/pages/payments";
 import ProfilePage from "@/pages/profile";
+import DoctorDashboard from "@/pages/doctor/dashboard";
+import DoctorAppointmentsPage from "@/pages/doctor/appointments";
+import DoctorProfilePage from "@/pages/doctor/profile";
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -57,6 +61,36 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   }
 
   if (!isAuthenticated) {
+    navigate("/");
+    return null;
+  }
+
+  return (
+    <AuthenticatedLayout>
+      <Component />
+    </AuthenticatedLayout>
+  );
+}
+
+function DoctorProtectedRoute({ component: Component }: { component: React.ComponentType }) {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isDoctor, isLoading: doctorLoading } = useDoctor();
+  const [, navigate] = useLocation();
+
+  if (authLoading || doctorLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    navigate("/");
+    return null;
+  }
+
+  if (!isDoctor) {
     navigate("/");
     return null;
   }
@@ -108,6 +142,15 @@ function Router() {
       </Route>
       <Route path="/profile">
         <ProtectedRoute component={ProfilePage} />
+      </Route>
+      <Route path="/doctor/dashboard">
+        <DoctorProtectedRoute component={DoctorDashboard} />
+      </Route>
+      <Route path="/doctor/appointments">
+        <DoctorProtectedRoute component={DoctorAppointmentsPage} />
+      </Route>
+      <Route path="/doctor/profile">
+        <DoctorProtectedRoute component={DoctorProfilePage} />
       </Route>
       <Route component={NotFound} />
     </Switch>
