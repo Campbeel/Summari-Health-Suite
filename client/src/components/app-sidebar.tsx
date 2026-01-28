@@ -51,7 +51,16 @@ const doctorMenuItems = [
 export function AppSidebar() {
   const { user, logout } = useAuth();
   const { isDoctor, currentRole, switchRole } = useDoctor();
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
+
+  const handleRoleSwitch = (role: "patient" | "doctor") => {
+    switchRole(role);
+    if (role === "doctor") {
+      navigate("/doctor/dashboard");
+    } else {
+      navigate("/");
+    }
+  };
 
   const menuItems = currentRole === "doctor" ? doctorMenuItems : patientMenuItems;
 
@@ -78,7 +87,7 @@ export function AppSidebar() {
                   variant={currentRole === "patient" ? "default" : "ghost"}
                   size="sm"
                   className="flex-1"
-                  onClick={() => switchRole("patient")}
+                  onClick={() => handleRoleSwitch("patient")}
                   data-testid="button-role-switch-patient"
                 >
                   Vista de Paciente
@@ -87,7 +96,7 @@ export function AppSidebar() {
                   variant={currentRole === "doctor" ? "default" : "ghost"}
                   size="sm"
                   className="flex-1"
-                  onClick={() => switchRole("doctor")}
+                  onClick={() => handleRoleSwitch("doctor")}
                   data-testid="button-role-switch-doctor"
                 >
                   Vista de Doctor
