@@ -340,8 +340,9 @@ export async function registerRoutes(
         patient = await storage.createPatient({ userId });
       }
       
-      // Validate request body against appointmentSchema
-      const validationResult = insertAppointmentSchema.safeParse(req.body);
+      // Validate request body (patientId comes from authenticated user, not request)
+      const bookingSchema = insertAppointmentSchema.omit({ patientId: true });
+      const validationResult = bookingSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({
           error: "Validation failed",
@@ -349,11 +350,13 @@ export async function registerRoutes(
         });
       }
       
-      const { patientId: _, ...appointmentData } = validationResult.data;
+      const appointmentData = validationResult.data;
       
       const appointment = await storage.createAppointment({
         patientId: patient.id,
         ...appointmentData,
+        status: "confirmed",
+        paymentStatus: "paid",
       });
       
       res.json(appointment);

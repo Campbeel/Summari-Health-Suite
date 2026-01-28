@@ -19,7 +19,6 @@ import {
   Clock, 
   Video, 
   Phone,
-  CreditCard,
   Check,
   Stethoscope
 } from "lucide-react";
@@ -70,13 +69,13 @@ export default function BookAppointmentPage() {
       });
       return response.json();
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
       toast({
         title: "Consulta agendada",
-        description: "Tu cita ha sido programada exitosamente",
+        description: "Tu cita ha sido confirmada exitosamente",
       });
-      navigate(`/appointments/${data.id}/pay`);
+      navigate("/appointments");
     },
     onError: () => {
       toast({
@@ -360,14 +359,7 @@ export default function BookAppointmentPage() {
                       <p className="font-medium" data-testid="text-confirmation-type">{consultationType === "video" ? "Videollamada" : "Llamada de voz"}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <CreditCard className="h-5 w-5 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm text-muted-foreground">Costo</p>
-                      <p className="font-medium" data-testid="text-confirmation-fee">${(selectedDoctor.consultationFee / 100).toFixed(0)} USD</p>
-                    </div>
                   </div>
-                </div>
 
                 {notes && (
                   <div className="pt-4 border-t">
@@ -378,7 +370,7 @@ export default function BookAppointmentPage() {
               </div>
 
               <p className="text-sm text-muted-foreground text-center">
-                Al confirmar, serás redirigido al proceso de pago
+                Al confirmar, tu cita quedará agendada automáticamente
               </p>
             </div>
           )}
@@ -397,7 +389,7 @@ export default function BookAppointmentPage() {
           data-testid="button-next-step"
         >
           {currentStep === STEPS.length - 1 ? (
-            bookMutation.isPending ? "Procesando..." : "Confirmar y Pagar"
+            bookMutation.isPending ? "Procesando..." : "Confirmar Cita"
           ) : (
             <>
               Siguiente

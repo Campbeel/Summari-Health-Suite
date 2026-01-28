@@ -26,7 +26,6 @@ import {
   Home, 
   Calendar, 
   FileText, 
-  CreditCard, 
   Settings, 
   Stethoscope,
   LogOut,
@@ -41,7 +40,6 @@ const patientMenuItems = [
   { title: "Mis Consultas", url: "/appointments", icon: Calendar, testId: "nav-appointments" },
   { title: "Historial Clínico", url: "/records", icon: FileText, testId: "nav-records" },
   { title: "Recetas", url: "/prescriptions", icon: Pill, testId: "nav-prescriptions" },
-  { title: "Pagos", url: "/payments", icon: CreditCard, testId: "nav-payments" },
 ];
 
 const doctorMenuItems = [

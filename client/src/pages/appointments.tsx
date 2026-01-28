@@ -36,18 +36,6 @@ function getStatusBadge(status: string) {
   return <Badge variant={s.variant}>{s.label}</Badge>;
 }
 
-function getPaymentBadge(status: string) {
-  switch (status) {
-    case "paid":
-      return <Badge className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300">Pagado</Badge>;
-    case "pending":
-      return <Badge variant="outline" className="text-amber-600 border-amber-300">Pendiente</Badge>;
-    case "refunded":
-      return <Badge variant="secondary">Reembolsado</Badge>;
-    default:
-      return null;
-  }
-}
 
 function AppointmentCard({ appointment }: { appointment: AppointmentWithDetails }) {
   const isUpcoming = isAfter(parseISO(appointment.scheduledDate), new Date()) || 
@@ -73,7 +61,6 @@ function AppointmentCard({ appointment }: { appointment: AppointmentWithDetails 
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 {getStatusBadge(appointment.status)}
-                {getPaymentBadge(appointment.paymentStatus)}
               </div>
             </div>
 
