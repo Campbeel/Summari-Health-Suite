@@ -753,5 +753,103 @@ export async function registerRoutes(
     }
   });
 
+  // Admin middleware
+  const isAdmin = async (req: any, res: Response, next: Function) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const user = await storage.getUser(userId);
+      if (!user?.isAdmin) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      next();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to verify admin status" });
+    }
+  };
+
+  // Admin routes
+  app.get("/api/admin/users", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const allUsers = await storage.getAllUsers();
+      // Get doctor info for each user
+      const usersWithDoctorStatus = await Promise.all(
+        allUsers.map(async (user) => {
+          const doctor = await storage.getDoctorByUserId(user.id);
+          return {
+            ...user,
+            isDoctor: !!doctor,
+            doctorId: doctor?.id || null,
+            specialty: doctor?.specialty || null,
+          };
+        })
+      );
+      res.json(usersWithDoctorStatus);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({ error: "Failed to fetch users" });
+    }
+  });
+
+  app.post("/api/admin/promote-to-doctor", isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const promoteSchema = z.object({
+        userId: z.string(),
+        specialty: z.string().min(1, "Specialty is required"),
+        licenseNumber: z.string().min(1, "License number is required"),
+        bio: z.string().optional(),
+        consultationFee: z.number().min(0).default(25000),
+      });
+      
+      const validationResult = promoteSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Validation failed",
+          errors: validationResult.error.flatten(),
+        });
+      }
+      
+      const { userId, specialty, licenseNumber, bio, consultationFee } = validationResult.data;
+      
+      // Check if user exists
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      // Check if already a doctor
+      const existingDoctor = await storage.getDoctorByUserId(userId);
+      if (existingDoctor) {
+        return res.status(400).json({ error: "User is already a doctor" });
+      }
+      
+      // Create doctor profile
+      const doctor = await storage.createDoctor({
+        userId,
+        specialty,
+        licenseNumber,
+        bio: bio || null,
+        consultationFee,
+      });
+      
+      res.json({ success: true, doctor });
+    } catch (error) {
+      console.error("Error promoting user to doctor:", error);
+      res.status(500).json({ error: "Failed to promote user to doctor" });
+    }
+  });
+
+  app.get("/api/admin/check", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const user = await storage.getUser(userId);
+      res.json({ isAdmin: !!user?.isAdmin });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to check admin status" });
+    }
+  });
+
   return httpServer;
 }

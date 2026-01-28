@@ -23,6 +23,7 @@ import ProfilePage from "@/pages/profile";
 import DoctorDashboard from "@/pages/doctor/dashboard";
 import DoctorAppointmentsPage from "@/pages/doctor/appointments";
 import DoctorProfilePage from "@/pages/doctor/profile";
+import AdminUsersPage from "@/pages/admin/users";
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -151,6 +152,9 @@ function Router() {
       </Route>
       <Route path="/doctor/profile">
         <DoctorProtectedRoute component={DoctorProfilePage} />
+      </Route>
+      <Route path="/admin/users">
+        <ProtectedRoute component={AdminUsersPage} />
       </Route>
       <Route component={NotFound} />
     </Switch>

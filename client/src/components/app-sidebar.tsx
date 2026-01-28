@@ -1,6 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useDoctor, type UserRole } from "@/hooks/use-doctor";
+import { useAdmin } from "@/hooks/use-admin";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,7 +33,8 @@ import {
   ChevronUp,
   Pill,
   LayoutDashboard,
-  User
+  User,
+  Shield
 } from "lucide-react";
 
 const patientMenuItems = [
@@ -51,6 +53,7 @@ const doctorMenuItems = [
 export function AppSidebar() {
   const { user, logout } = useAuth();
   const { isDoctor, currentRole, switchRole } = useDoctor();
+  const { isAdmin } = useAdmin();
   const [location, navigate] = useLocation();
 
   const handleRoleSwitch = (role: "patient" | "doctor") => {
@@ -140,6 +143,28 @@ export function AppSidebar() {
                   </Link>
                 </Button>
               </div>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Administración</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton 
+                    asChild 
+                    isActive={location === "/admin/users"}
+                    data-testid="nav-admin-users"
+                  >
+                    <Link href="/admin/users">
+                      <Shield className="h-4 w-4" />
+                      <span>Gestionar Usuarios</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
         )}

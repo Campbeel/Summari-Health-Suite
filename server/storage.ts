@@ -8,7 +8,7 @@ import {
   prescriptions, 
   medicalInstructions,
   type User, 
-  type InsertUser,
+  type UpsertUser,
   type Doctor,
   type InsertDoctor,
   type Patient,
@@ -152,6 +152,7 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   upsertUser(user: Partial<User>): Promise<User>;
+  getAllUsers(): Promise<User[]>;
 
   // Doctors
   getDoctor(id: number): Promise<Doctor | undefined>;
@@ -206,6 +207,10 @@ export class DatabaseStorage implements IStorage {
   async getUserByUsername(username: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.username, username));
     return user;
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return await db.select().from(users).orderBy(users.createdAt);
   }
 
   async upsertUser(userData: Partial<User>): Promise<User> {
