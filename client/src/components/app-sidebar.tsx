@@ -84,24 +84,24 @@ export function AppSidebar() {
       <SidebarContent>
         {isDoctor && (
           <SidebarGroup className="px-2 py-2">
-            <div className="flex gap-2 p-1 bg-muted/50 rounded-md">
+            <div className="flex gap-1 p-1 bg-muted/50 rounded-md">
               <Button
                 variant={currentRole === "patient" ? "default" : "ghost"}
                 size="sm"
-                className="flex-1 text-xs"
+                className="flex-1"
                 onClick={() => handleRoleSwitch("patient")}
                 data-testid="button-role-switch-patient"
               >
-                Vista de Paciente
+                Paciente
               </Button>
               <Button
                 variant={currentRole === "doctor" ? "default" : "ghost"}
                 size="sm"
-                className="flex-1 text-xs"
+                className="flex-1"
                 onClick={() => handleRoleSwitch("doctor")}
                 data-testid="button-role-switch-doctor"
               >
-                Vista de Doctor
+                Médico
               </Button>
             </div>
           </SidebarGroup>
