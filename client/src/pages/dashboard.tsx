@@ -1,21 +1,27 @@
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
-import { 
-  Calendar, 
-  Clock, 
-  FileText, 
-  CreditCard, 
+import {
+  Calendar,
+  Clock,
+  FileText,
+  CreditCard,
   Plus,
   ChevronRight,
   Stethoscope,
   Activity,
-  AlertCircle
+  AlertCircle,
 } from "lucide-react";
 import { format, parseISO, isToday, isTomorrow } from "date-fns";
 import { es } from "date-fns/locale";
@@ -35,17 +41,51 @@ interface AppointmentWithDetails {
 function getStatusBadge(status: string) {
   switch (status) {
     case "scheduled":
-      return <Badge variant="outline" className="bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300" data-testid={`status-${status}`}>Programada</Badge>;
+      return (
+        <Badge
+          variant="outline"
+          className="bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+          data-testid={`status-${status}`}
+        >
+          Programada
+        </Badge>
+      );
     case "confirmed":
-      return <Badge className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" data-testid={`status-${status}`}>Confirmada</Badge>;
+      return (
+        <Badge
+          className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300"
+          data-testid={`status-${status}`}
+        >
+          Confirmada
+        </Badge>
+      );
     case "in_progress":
-      return <Badge className="bg-primary text-primary-foreground" data-testid={`status-${status}`}>En curso</Badge>;
+      return (
+        <Badge
+          className="bg-primary text-primary-foreground"
+          data-testid={`status-${status}`}
+        >
+          En curso
+        </Badge>
+      );
     case "completed":
-      return <Badge variant="secondary" data-testid={`status-${status}`}>Completada</Badge>;
+      return (
+        <Badge variant="secondary" data-testid={`status-${status}`}>
+          Completada
+        </Badge>
+      );
     case "cancelled":
-      return <Badge variant="destructive" data-testid={`status-${status}`}>Cancelada</Badge>;
+      return (
+        <Badge variant="destructive" data-testid={`status-${status}`}>
+          Cancelada
+        </Badge>
+      );
     default:
-      return <Badge variant="outline" data-testid={`status-${status}`}>{status}</Badge>;
+      return (
+        <Badge variant="outline" data-testid={`status-${status}`}>
+          {status}
+        </Badge>
+      );
   }
 }
 
@@ -59,9 +99,10 @@ function formatAppointmentDate(dateStr: string) {
 export default function Dashboard() {
   const { user } = useAuth();
 
-  const { data: upcomingAppointments, isLoading: loadingAppointments } = useQuery<AppointmentWithDetails[]>({
-    queryKey: ["/api/appointments/upcoming"],
-  });
+  const { data: upcomingAppointments, isLoading: loadingAppointments } =
+    useQuery<AppointmentWithDetails[]>({
+      queryKey: ["/api/appointments/upcoming"],
+    });
 
   const { data: recentRecords, isLoading: loadingRecords } = useQuery<any[]>({
     queryKey: ["/api/clinical-records/recent"],
@@ -71,7 +112,9 @@ export default function Dashboard() {
     queryKey: ["/api/patients/profile"],
   });
 
-  const hasActiveAppointment = upcomingAppointments?.some(a => a.status === "in_progress");
+  const hasActiveAppointment = upcomingAppointments?.some(
+    (a) => a.status === "in_progress",
+  );
 
   return (
     <div className="space-y-8">
@@ -103,11 +146,15 @@ export default function Dashboard() {
               </div>
               <div>
                 <p className="font-medium">Tienes una consulta en curso</p>
-                <p className="text-sm text-muted-foreground">Únete ahora para continuar</p>
+                <p className="text-sm text-muted-foreground">
+                  Únete ahora para continuar
+                </p>
               </div>
             </div>
             <Button asChild data-testid="button-join-consultation">
-              <Link href={`/consultation/${upcomingAppointments?.find(a => a.status === "in_progress")?.id}`}>
+              <Link
+                href={`/consultation/${upcomingAppointments?.find((a) => a.status === "in_progress")?.id}`}
+              >
                 Unirse
               </Link>
             </Button>
@@ -123,7 +170,12 @@ export default function Dashboard() {
               <Calendar className="h-6 w-6 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-bold" data-testid="text-appointments-count">{upcomingAppointments?.length || 0}</p>
+              <p
+                className="text-2xl font-bold"
+                data-testid="text-appointments-count"
+              >
+                {upcomingAppointments?.length || 0}
+              </p>
               <p className="text-sm text-muted-foreground">Citas próximas</p>
             </div>
           </CardContent>
@@ -134,8 +186,15 @@ export default function Dashboard() {
               <FileText className="h-6 w-6 text-secondary" />
             </div>
             <div>
-              <p className="text-2xl font-bold" data-testid="text-records-count">{recentRecords?.length || 0}</p>
-              <p className="text-sm text-muted-foreground">Registros clínicos</p>
+              <p
+                className="text-2xl font-bold"
+                data-testid="text-records-count"
+              >
+                {recentRecords?.length || 0}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Registros clínicos
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -145,7 +204,12 @@ export default function Dashboard() {
               <Stethoscope className="h-6 w-6 text-accent" />
             </div>
             <div>
-              <p className="text-2xl font-bold" data-testid="text-specialists-count">3</p>
+              <p
+                className="text-2xl font-bold"
+                data-testid="text-specialists-count"
+              >
+                3
+              </p>
               <p className="text-sm text-muted-foreground">Especialistas</p>
             </div>
           </CardContent>
@@ -156,7 +220,9 @@ export default function Dashboard() {
               <CreditCard className="h-6 w-6 text-green-600 dark:text-green-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold" data-testid="text-balance">$0</p>
+              <p className="text-2xl font-bold" data-testid="text-balance">
+                $0
+              </p>
               <p className="text-sm text-muted-foreground">Balance pendiente</p>
             </div>
           </CardContent>
@@ -170,9 +236,14 @@ export default function Dashboard() {
             <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">
               <div>
                 <CardTitle>Próximas Consultas</CardTitle>
-                <CardDescription>Tus citas médicas programadas</CardDescription>
+                <CardDescription>Tus citas médicas agendadas</CardDescription>
               </div>
-              <Button variant="ghost" size="sm" asChild data-testid="link-view-all-appointments">
+              <Button
+                variant="ghost"
+                size="sm"
+                asChild
+                data-testid="link-view-all-appointments"
+              >
                 <Link href="/appointments">
                   Ver todas
                   <ChevronRight className="h-4 w-4 ml-1" />
@@ -183,7 +254,10 @@ export default function Dashboard() {
               {loadingAppointments ? (
                 <>
                   {[1, 2].map((i) => (
-                    <div key={i} className="flex items-center gap-4 p-4 rounded-lg border">
+                    <div
+                      key={i}
+                      className="flex items-center gap-4 p-4 rounded-lg border"
+                    >
                       <Skeleton className="h-12 w-12 rounded-full" />
                       <div className="flex-1 space-y-2">
                         <Skeleton className="h-4 w-32" />
@@ -202,29 +276,38 @@ export default function Dashboard() {
                     <Avatar className="h-12 w-12">
                       <AvatarImage src={appointment.doctorImage} />
                       <AvatarFallback className="bg-primary/10 text-primary">
-                        {appointment.doctorName?.split(" ").map(n => n[0]).join("") || "DR"}
+                        {appointment.doctorName
+                          ?.split(" ")
+                          .map((n) => n[0])
+                          .join("") || "DR"}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{appointment.doctorName}</p>
-                      <p className="text-sm text-muted-foreground">{appointment.doctorSpecialty}</p>
+                      <p className="font-medium truncate">
+                        {appointment.doctorName}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {appointment.doctorSpecialty}
+                      </p>
                     </div>
                     <div className="text-right">
-                      <p className="font-medium">{formatAppointmentDate(appointment.scheduledDate)}</p>
+                      <p className="font-medium">
+                        {formatAppointmentDate(appointment.scheduledDate)}
+                      </p>
                       <p className="text-sm text-muted-foreground flex items-center gap-1 justify-end">
                         <Clock className="h-3 w-3" />
                         {appointment.scheduledTime.slice(0, 5)}
                       </p>
                     </div>
-                    <div>
-                      {getStatusBadge(appointment.status)}
-                    </div>
+                    <div>{getStatusBadge(appointment.status)}</div>
                   </div>
                 ))
               ) : (
                 <div className="text-center py-8">
                   <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground mb-4">No tienes consultas programadas</p>
+                  <p className="text-muted-foreground mb-4">
+                    No tienes consultas programadas
+                  </p>
                   <Button asChild data-testid="button-schedule-consultation">
                     <Link href="/appointments/new">Agendar Consulta</Link>
                   </Button>
@@ -243,11 +326,19 @@ export default function Dashboard() {
                 <div className="flex items-start gap-3">
                   <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5" />
                   <div>
-                    <p className="font-medium text-amber-800 dark:text-amber-200">Completa tu perfil</p>
+                    <p className="font-medium text-amber-800 dark:text-amber-200">
+                      Completa tu perfil
+                    </p>
                     <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
                       Agrega tu información médica para una mejor atención
                     </p>
-                    <Button variant="outline" size="sm" className="mt-3" asChild data-testid="button-complete-profile">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      asChild
+                      data-testid="button-complete-profile"
+                    >
                       <Link href="/profile">Completar Perfil</Link>
                     </Button>
                   </div>
@@ -265,7 +356,10 @@ export default function Dashboard() {
               {loadingRecords ? (
                 <>
                   {[1, 2].map((i) => (
-                    <div key={i} className="flex items-center gap-3 p-3 rounded-lg border">
+                    <div
+                      key={i}
+                      className="flex items-center gap-3 p-3 rounded-lg border"
+                    >
                       <Skeleton className="h-8 w-8 rounded" />
                       <div className="flex-1 space-y-1">
                         <Skeleton className="h-3 w-24" />
@@ -286,9 +380,13 @@ export default function Dashboard() {
                       <FileText className="h-4 w-4 text-secondary" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{record.diagnosis || "Consulta"}</p>
+                      <p className="text-sm font-medium truncate">
+                        {record.diagnosis || "Consulta"}
+                      </p>
                       <p className="text-xs text-muted-foreground">
-                        {format(parseISO(record.recordDate), "d MMM yyyy", { locale: es })}
+                        {format(parseISO(record.recordDate), "d MMM yyyy", {
+                          locale: es,
+                        })}
                       </p>
                     </div>
                   </Link>
@@ -299,7 +397,13 @@ export default function Dashboard() {
                 </p>
               )}
               {recentRecords && recentRecords.length > 0 && (
-                <Button variant="ghost" size="sm" className="w-full" asChild data-testid="link-view-all-records">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full"
+                  asChild
+                  data-testid="link-view-all-records"
+                >
                   <Link href="/records">Ver todos los registros</Link>
                 </Button>
               )}
