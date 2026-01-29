@@ -38,6 +38,10 @@ Preferred communication style: Simple, everyday language.
 - **User Sync**: Auto-creates patient profiles on first login
 
 ### Real-time Features
+- **Video Calling**: WebRTC peer-to-peer video/audio calls with WebSocket signaling server on `/ws` path
+- **WebRTC Hook**: `client/src/hooks/use-webrtc.ts` manages peer connections, media streams, and signaling
+- **Security**: Appointment-based authorization validates users are doctor or patient for the consultation
+- **Room Limits**: Maximum 2 participants per consultation room
 - **Audio Processing**: Voice recording with WebM/Opus format, AudioWorklet for playback
 - **Transcription**: OpenAI Whisper via Replit AI Integrations for speech-to-text
 - **AI Features**: GPT-4o for extracting prescription data from consultation transcripts
