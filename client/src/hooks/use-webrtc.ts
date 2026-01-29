@@ -3,8 +3,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 interface UseWebRTCOptions {
   roomId: string;
   userId: string;
+  appointmentId?: string;
   onRemoteStream?: (stream: MediaStream) => void;
   onConnectionStateChange?: (state: RTCPeerConnectionState) => void;
+  onError?: (error: string) => void;
 }
 
 interface SignalingMessage {
@@ -15,6 +17,7 @@ interface SignalingMessage {
   candidate?: RTCIceCandidateInit;
   participants?: string[];
   clientId?: string;
+  message?: string;
 }
 
 const ICE_SERVERS: RTCConfiguration = {
@@ -24,7 +27,7 @@ const ICE_SERVERS: RTCConfiguration = {
   ]
 };
 
-export function useWebRTC({ roomId, userId, onRemoteStream, onConnectionStateChange }: UseWebRTCOptions) {
+export function useWebRTC({ roomId, userId, appointmentId, onRemoteStream, onConnectionStateChange, onError }: UseWebRTCOptions) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -176,6 +179,20 @@ export function useWebRTC({ roomId, userId, onRemoteStream, onConnectionStateCha
   const connect = useCallback(async () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
+    // Validate userId before connecting
+    if (!userId) {
+      setError('Debes iniciar sesión para unirte a la videollamada');
+      onError?.('Debes iniciar sesión para unirte a la videollamada');
+      return;
+    }
+
+    // Validate appointmentId before connecting
+    if (!appointmentId) {
+      setError('ID de cita requerido');
+      onError?.('ID de cita requerido');
+      return;
+    }
+
     // First get media access
     const stream = await startMedia();
     if (!stream) return;
@@ -191,7 +208,8 @@ export function useWebRTC({ roomId, userId, onRemoteStream, onConnectionStateCha
       sendMessage({
         type: 'join',
         roomId,
-        clientId: userId
+        userId,
+        appointmentId
       });
     };
 
@@ -200,6 +218,12 @@ export function useWebRTC({ roomId, userId, onRemoteStream, onConnectionStateCha
         const message: SignalingMessage = JSON.parse(event.data);
 
         switch (message.type) {
+          case 'error':
+            setError(message.message || 'Error de conexión');
+            onError?.(message.message || 'Error de conexión');
+            setIsConnecting(false);
+            break;
+
           case 'room-joined':
             // If there are existing participants, initiate call to them
             if (message.participants && message.participants.length > 0) {

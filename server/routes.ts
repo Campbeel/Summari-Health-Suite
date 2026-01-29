@@ -871,26 +871,78 @@ export async function registerRoutes(
   // WebRTC Signaling Server
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
 
-  wss.on('connection', (ws: WebSocket) => {
+  wss.on('connection', async (ws: WebSocket, req) => {
     let currentRoom: string | null = null;
     let participantId: string | null = null;
+    let isAuthenticated = false;
+    let authenticatedUserId: string | null = null;
 
-    ws.on('message', (data: Buffer) => {
+    ws.on('message', async (data: Buffer) => {
       try {
         const message = JSON.parse(data.toString());
         
         switch (message.type) {
           case 'join': {
-            const { roomId, odientId } = message;
+            const { roomId, userId, appointmentId } = message;
+            
+            // Validate userId is provided
+            if (!userId) {
+              ws.send(JSON.stringify({ type: 'error', message: 'User ID required' }));
+              return;
+            }
+
+            // Require appointmentId for all joins
+            if (!appointmentId) {
+              ws.send(JSON.stringify({ type: 'error', message: 'Appointment ID required' }));
+              return;
+            }
+
+            // Validate appointment access
+            try {
+              const appointment = await storage.getAppointment(parseInt(appointmentId));
+              if (!appointment) {
+                ws.send(JSON.stringify({ type: 'error', message: 'Appointment not found' }));
+                return;
+              }
+
+              // Check if user is the patient or doctor for this appointment
+              const patient = await storage.getPatientByUserId(userId);
+              const doctor = await storage.getDoctorByUserId(userId);
+              
+              const isPatient = patient && appointment.patientId === patient.id;
+              const isDoctor = doctor && appointment.doctorId === doctor.id;
+              
+              if (!isPatient && !isDoctor) {
+                ws.send(JSON.stringify({ type: 'error', message: 'Not authorized to join this consultation' }));
+                log(`Unauthorized join attempt: user ${userId} for appointment ${appointmentId}`);
+                return;
+              }
+              
+              isAuthenticated = true;
+              authenticatedUserId = userId;
+            } catch (err) {
+              console.error('Error validating appointment access:', err);
+              ws.send(JSON.stringify({ type: 'error', message: 'Authorization failed' }));
+              return;
+            }
+
             currentRoom = roomId;
-            participantId = odientId || `user-${Date.now()}`;
+            const newParticipantId = userId;
+            participantId = newParticipantId;
 
             if (!signalingRooms.has(roomId)) {
               signalingRooms.set(roomId, { participants: new Map() });
             }
 
             const room = signalingRooms.get(roomId)!;
-            room.participants.set(participantId, ws);
+            
+            // Limit to 2 participants per consultation room
+            if (room.participants.size >= 2 && !room.participants.has(newParticipantId)) {
+              ws.send(JSON.stringify({ type: 'error', message: 'Room is full' }));
+              return;
+            }
+            
+            room.participants.set(newParticipantId, ws);
 
             log(`User ${participantId} joined room ${roomId}. Total: ${room.participants.size}`);
 

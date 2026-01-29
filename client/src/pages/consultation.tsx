@@ -10,6 +10,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { useWebRTC } from "@/hooks/use-webrtc";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { 
   Mic, 
@@ -24,7 +26,8 @@ import {
   Activity,
   AlertCircle,
   Send,
-  Loader2
+  Loader2,
+  Phone
 } from "lucide-react";
 
 interface ConsultationData {
@@ -66,16 +69,97 @@ export default function ConsultationPage() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { user } = useAuth();
 
-  const [isMuted, setIsMuted] = useState(false);
-  const [isVideoOn, setIsVideoOn] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const [transcription, setTranscription] = useState("");
   const [notes, setNotes] = useState("");
+  const [hasJoinedCall, setHasJoinedCall] = useState(false);
+
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
   const { data: consultation, isLoading } = useQuery<ConsultationData>({
     queryKey: ["/api/consultations", id],
   });
+
+  const roomId = `consultation-${id}`;
+  const userId = user?.id || '';
+
+  const {
+    localStream,
+    remoteStream,
+    isConnected,
+    isConnecting,
+    error: webrtcError,
+    isMuted,
+    isVideoEnabled,
+    connect,
+    disconnect,
+    toggleMute,
+    toggleVideo
+  } = useWebRTC({
+    roomId,
+    userId,
+    appointmentId: id,
+    onError: (error) => {
+      toast({
+        title: "Error de videollamada",
+        description: error,
+        variant: "destructive",
+      });
+    },
+    onConnectionStateChange: (state) => {
+      if (state === 'connected') {
+        toast({
+          title: "Conectado",
+          description: "La videollamada se ha establecido correctamente",
+        });
+      } else if (state === 'disconnected' || state === 'failed') {
+        toast({
+          title: "Desconectado",
+          description: "La conexión de video se ha interrumpido",
+          variant: "destructive",
+        });
+      }
+    }
+  });
+
+  // Attach local stream to video element
+  useEffect(() => {
+    if (localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
+    }
+  }, [localStream]);
+
+  // Attach remote stream to video element
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStream) {
+      remoteVideoRef.current.srcObject = remoteStream;
+    }
+  }, [remoteStream]);
+
+  // Show WebRTC errors
+  useEffect(() => {
+    if (webrtcError) {
+      toast({
+        title: "Error de videollamada",
+        description: webrtcError,
+        variant: "destructive",
+      });
+    }
+  }, [webrtcError, toast]);
+
+  const handleJoinCall = async () => {
+    setHasJoinedCall(true);
+    await connect();
+  };
+
+  const handleEndCall = () => {
+    disconnect();
+    setHasJoinedCall(false);
+    endConsultationMutation.mutate();
+  };
 
   const endConsultationMutation = useMutation({
     mutationFn: async () => {
@@ -144,25 +228,74 @@ export default function ConsultationPage() {
       <div className="flex-1 flex flex-col min-h-0">
         {/* Video Container */}
         <div className="flex-1 bg-muted rounded-xl relative overflow-hidden min-h-[300px]">
-          {/* Doctor Video (Main) */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center">
-              <Avatar className="h-32 w-32 mx-auto mb-4">
-                <AvatarImage src={doctor.userImage} />
-                <AvatarFallback className="bg-primary/10 text-primary text-4xl">
-                  {doctor.userName?.[0] || "DR"}
-                </AvatarFallback>
-              </Avatar>
-              <h3 className="text-xl font-semibold">{doctor.userName}</h3>
-              <p className="text-muted-foreground">{doctor.specialty}</p>
+          {/* Remote Video (Main) or Waiting State */}
+          {!hasJoinedCall ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center">
+                <Avatar className="h-32 w-32 mx-auto mb-4">
+                  <AvatarImage src={doctor.userImage} />
+                  <AvatarFallback className="bg-primary/10 text-primary text-4xl">
+                    {doctor.userName?.[0] || "DR"}
+                  </AvatarFallback>
+                </Avatar>
+                <h3 className="text-xl font-semibold">{doctor.userName}</h3>
+                <p className="text-muted-foreground mb-4">{doctor.specialty}</p>
+                <Button 
+                  size="lg" 
+                  onClick={handleJoinCall}
+                  data-testid="button-join-call"
+                >
+                  <Phone className="h-5 w-5 mr-2" />
+                  Unirse a la videollamada
+                </Button>
+              </div>
             </div>
-          </div>
+          ) : remoteStream ? (
+            <video 
+              ref={remoteVideoRef}
+              autoPlay 
+              playsInline
+              className="absolute inset-0 w-full h-full object-cover"
+              data-testid="video-remote"
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center">
+                <Avatar className="h-32 w-32 mx-auto mb-4">
+                  <AvatarImage src={doctor.userImage} />
+                  <AvatarFallback className="bg-primary/10 text-primary text-4xl">
+                    {doctor.userName?.[0] || "DR"}
+                  </AvatarFallback>
+                </Avatar>
+                <h3 className="text-xl font-semibold">{doctor.userName}</h3>
+                <p className="text-muted-foreground">{doctor.specialty}</p>
+                {isConnecting && (
+                  <div className="flex items-center justify-center gap-2 mt-4 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Esperando al otro participante...
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
-          {/* Self Video (Picture-in-Picture) */}
-          <div className="absolute bottom-4 right-4 w-32 h-24 bg-background rounded-lg border overflow-hidden">
-            <div className="h-full flex items-center justify-center">
-              <User className="h-8 w-8 text-muted-foreground" />
-            </div>
+          {/* Local Video (Picture-in-Picture) */}
+          <div className="absolute bottom-4 right-4 w-40 h-28 bg-background rounded-lg border overflow-hidden shadow-lg">
+            {localStream ? (
+              <video 
+                ref={localVideoRef}
+                autoPlay 
+                playsInline 
+                muted
+                className={`w-full h-full object-cover ${!isVideoEnabled ? 'hidden' : ''}`}
+                data-testid="video-local"
+              />
+            ) : null}
+            {(!localStream || !isVideoEnabled) && (
+              <div className="h-full flex items-center justify-center bg-muted">
+                <User className="h-8 w-8 text-muted-foreground" />
+              </div>
+            )}
           </div>
 
           {/* Recording Indicator */}
@@ -170,6 +303,28 @@ export default function ConsultationPage() {
             <div className="absolute top-4 left-4 flex items-center gap-2 bg-destructive/90 text-destructive-foreground px-3 py-1.5 rounded-full text-sm" data-testid="status-recording">
               <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
               Transcribiendo
+            </div>
+          )}
+
+          {/* Connection Status */}
+          {hasJoinedCall && (
+            <div className="absolute top-4 left-4 flex items-center gap-2">
+              {isConnected ? (
+                <Badge variant="default" className="bg-green-500" data-testid="badge-connected">
+                  <span className="w-2 h-2 bg-white rounded-full mr-1.5" />
+                  Conectado
+                </Badge>
+              ) : isConnecting ? (
+                <Badge variant="outline" className="bg-background/80 backdrop-blur-sm" data-testid="badge-connecting">
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  Conectando...
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="bg-background/80 backdrop-blur-sm" data-testid="badge-waiting">
+                  <Clock className="h-3 w-3 mr-1" />
+                  Esperando...
+                </Badge>
+              )}
             </div>
           )}
 
@@ -188,19 +343,21 @@ export default function ConsultationPage() {
             variant={isMuted ? "destructive" : "outline"}
             size="icon"
             className="h-12 w-12 rounded-full"
-            onClick={() => setIsMuted(!isMuted)}
+            onClick={toggleMute}
+            disabled={!hasJoinedCall}
             data-testid="button-mute"
           >
             {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
           </Button>
           <Button
-            variant={!isVideoOn ? "destructive" : "outline"}
+            variant={!isVideoEnabled ? "destructive" : "outline"}
             size="icon"
             className="h-12 w-12 rounded-full"
-            onClick={() => setIsVideoOn(!isVideoOn)}
+            onClick={toggleVideo}
+            disabled={!hasJoinedCall}
             data-testid="button-video"
           >
-            {isVideoOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+            {isVideoEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
           </Button>
           <Button
             variant={isRecording ? "default" : "outline"}
@@ -215,7 +372,7 @@ export default function ConsultationPage() {
             variant="destructive"
             size="icon"
             className="h-12 w-12 rounded-full"
-            onClick={() => endConsultationMutation.mutate()}
+            onClick={handleEndCall}
             data-testid="button-end-call"
           >
             <PhoneOff className="h-5 w-5" />
