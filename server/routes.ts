@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
+import { WebSocketServer, WebSocket } from "ws";
 import { z } from "zod";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integrations/auth";
@@ -13,6 +14,22 @@ import {
   insertMedicalInstructionSchema,
   insertDoctorSchema,
 } from "@shared/schema";
+
+// WebRTC signaling room management
+interface SignalingRoom {
+  participants: Map<string, WebSocket>;
+}
+const signalingRooms = new Map<string, SignalingRoom>();
+
+function log(message: string, source = "webrtc") {
+  const formattedTime = new Date().toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+  console.log(`${formattedTime} [${source}] ${message}`);
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -850,6 +867,122 @@ export async function registerRoutes(
       res.status(500).json({ error: "Failed to check admin status" });
     }
   });
+
+  // WebRTC Signaling Server
+  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+
+  wss.on('connection', (ws: WebSocket) => {
+    let currentRoom: string | null = null;
+    let participantId: string | null = null;
+
+    ws.on('message', (data: Buffer) => {
+      try {
+        const message = JSON.parse(data.toString());
+        
+        switch (message.type) {
+          case 'join': {
+            const { roomId, odientId } = message;
+            currentRoom = roomId;
+            participantId = odientId || `user-${Date.now()}`;
+
+            if (!signalingRooms.has(roomId)) {
+              signalingRooms.set(roomId, { participants: new Map() });
+            }
+
+            const room = signalingRooms.get(roomId)!;
+            room.participants.set(participantId, ws);
+
+            log(`User ${participantId} joined room ${roomId}. Total: ${room.participants.size}`);
+
+            // Notify other participants that someone joined
+            room.participants.forEach((client, odient) => {
+              if (odient !== participantId && client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({
+                  type: 'user-joined',
+                  odientId: participantId
+                }));
+              }
+            });
+
+            // Notify the joiner about existing participants
+            const existingParticipants = Array.from(room.participants.keys()).filter(id => id !== participantId);
+            ws.send(JSON.stringify({
+              type: 'room-joined',
+              roomId,
+              participants: existingParticipants
+            }));
+            break;
+          }
+
+          case 'offer':
+          case 'answer':
+          case 'ice-candidate': {
+            if (!currentRoom) break;
+            
+            const room = signalingRooms.get(currentRoom);
+            if (!room) break;
+
+            const targetClient = room.participants.get(message.target);
+            if (targetClient && targetClient.readyState === WebSocket.OPEN) {
+              targetClient.send(JSON.stringify({
+                ...message,
+                from: participantId
+              }));
+            }
+            break;
+          }
+
+          case 'leave': {
+            if (currentRoom && participantId) {
+              const room = signalingRooms.get(currentRoom);
+              if (room) {
+                room.participants.delete(participantId);
+                room.participants.forEach((client) => {
+                  if (client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify({
+                      type: 'user-left',
+                      odientId: participantId
+                    }));
+                  }
+                });
+                if (room.participants.size === 0) {
+                  signalingRooms.delete(currentRoom);
+                }
+              }
+            }
+            break;
+          }
+        }
+      } catch (error) {
+        console.error('WebSocket message error:', error);
+      }
+    });
+
+    ws.on('close', () => {
+      if (currentRoom && participantId) {
+        const room = signalingRooms.get(currentRoom);
+        if (room) {
+          room.participants.delete(participantId);
+          log(`User ${participantId} left room ${currentRoom}. Remaining: ${room.participants.size}`);
+          
+          room.participants.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({
+                type: 'user-left',
+                odientId: participantId
+              }));
+            }
+          });
+
+          if (room.participants.size === 0) {
+            signalingRooms.delete(currentRoom);
+          }
+        }
+      }
+    });
+  });
+
+  log('WebRTC signaling server initialized on /ws');
 
   return httpServer;
 }
