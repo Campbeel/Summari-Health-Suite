@@ -188,6 +188,7 @@ export interface IStorage {
 
   // Prescriptions
   getPrescription(id: number): Promise<PrescriptionWithDoctor | undefined>;
+  getPrescriptionByRecordId(clinicalRecordId: number): Promise<PrescriptionWithDoctor | undefined>;
   getPrescriptionsByPatient(patientId: number): Promise<PrescriptionWithDoctor[]>;
   createPrescription(prescription: InsertPrescription): Promise<Prescription>;
 
@@ -615,6 +616,25 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(doctors, eq(prescriptions.doctorId, doctors.id))
       .leftJoin(sql`users u`, sql`${doctors.userId} = u.id`)
       .where(eq(prescriptions.id, id));
+    return result[0];
+  }
+
+  async getPrescriptionByRecordId(clinicalRecordId: number): Promise<PrescriptionWithDoctor | undefined> {
+    const result = await db
+      .select({
+        id: prescriptions.id,
+        medications: prescriptions.medications,
+        instructions: prescriptions.instructions,
+        issuedAt: prescriptions.issuedAt,
+        validUntil: prescriptions.validUntil,
+        status: prescriptions.status,
+        doctorName: sql<string>`COALESCE(u.first_name || ' ' || u.last_name, u.email)`.as('doctorName'),
+        doctorSpecialty: doctors.specialty,
+      })
+      .from(prescriptions)
+      .leftJoin(doctors, eq(prescriptions.doctorId, doctors.id))
+      .leftJoin(sql`users u`, sql`${doctors.userId} = u.id`)
+      .where(eq(prescriptions.clinicalRecordId, clinicalRecordId));
     return result[0];
   }
 

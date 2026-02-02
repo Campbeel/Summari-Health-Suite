@@ -530,11 +530,19 @@ export async function registerRoutes(
 
   app.get("/api/clinical-records/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const record = await storage.getClinicalRecord(parseInt(req.params.id));
+      const recordId = parseInt(req.params.id);
+      const record = await storage.getClinicalRecord(recordId);
       if (!record) {
         return res.status(404).json({ error: "Record not found" });
       }
-      res.json(record);
+      
+      // Get associated prescription if exists
+      const prescription = await storage.getPrescriptionByRecordId(recordId);
+      
+      res.json({
+        ...record,
+        prescription: prescription || null
+      });
     } catch (error) {
       console.error("Error fetching clinical record:", error);
       res.status(500).json({ error: "Failed to fetch clinical record" });

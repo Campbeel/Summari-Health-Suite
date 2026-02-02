@@ -17,6 +17,7 @@ import AppointmentsPage from "@/pages/appointments";
 import BookAppointmentPage from "@/pages/book-appointment";
 import ConsultationPage from "@/pages/consultation";
 import RecordsPage from "@/pages/records";
+import RecordDetailPage from "@/pages/record-detail";
 import PrescriptionsPage from "@/pages/prescriptions";
 import PaymentsPage from "@/pages/payments";
 import ProfilePage from "@/pages/profile";
@@ -134,6 +135,9 @@ function Router() {
       </Route>
       <Route path="/records">
         <ProtectedRoute component={RecordsPage} />
+      </Route>
+      <Route path="/records/:id">
+        <ProtectedRoute component={RecordDetailPage} />
       </Route>
       <Route path="/prescriptions">
         <ProtectedRoute component={PrescriptionsPage} />
