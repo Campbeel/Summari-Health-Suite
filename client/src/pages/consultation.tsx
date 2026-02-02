@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -75,9 +75,13 @@ export default function ConsultationPage() {
   const [transcription, setTranscription] = useState("");
   const [notes, setNotes] = useState("");
   const [hasJoinedCall, setHasJoinedCall] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const transcriptionIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const { data: consultation, isLoading } = useQuery<ConsultationData>({
     queryKey: ["/api/consultations", id],
@@ -156,10 +160,24 @@ export default function ConsultationPage() {
   };
 
   const handleEndCall = () => {
+    if (isRecording) {
+      stopRecording();
+    }
     disconnect();
     setHasJoinedCall(false);
     endConsultationMutation.mutate();
   };
+
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      if (transcriptionIntervalRef.current) {
+        clearInterval(transcriptionIntervalRef.current);
+      }
+    };
+  }, []);
 
   const endConsultationMutation = useMutation({
     mutationFn: async () => {
@@ -186,19 +204,118 @@ export default function ConsultationPage() {
     },
   });
 
-  const startTranscriptionMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest("POST", `/api/consultations/${id}/transcribe`, {});
-      return response.json();
-    },
-    onSuccess: () => {
+  const transcribeAudio = useCallback(async (audioBlob: Blob) => {
+    try {
+      setIsTranscribing(true);
+      const reader = new FileReader();
+      reader.readAsDataURL(audioBlob);
+      reader.onloadend = async () => {
+        const base64Audio = (reader.result as string).split(',')[1];
+        try {
+          const response = await apiRequest("POST", "/api/transcribe", {
+            audioData: base64Audio,
+          });
+          const data = await response.json();
+          if (data.transcript) {
+            setTranscription(prev => prev + (prev ? " " : "") + data.transcript);
+          }
+        } catch (error) {
+          console.error("Transcription error:", error);
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+    } catch (error) {
+      console.error("Error preparing audio for transcription:", error);
+      setIsTranscribing(false);
+    }
+  }, []);
+
+  const startRecording = useCallback(() => {
+    if (!localStream) {
+      toast({
+        title: "Error",
+        description: "Debes unirte a la llamada primero",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const audioTracks = localStream.getAudioTracks();
+      if (audioTracks.length === 0) {
+        toast({
+          title: "Error",
+          description: "No se encontró micrófono activo",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const audioStream = new MediaStream(audioTracks);
+      const mediaRecorder = new MediaRecorder(audioStream, {
+        mimeType: 'audio/webm;codecs=opus',
+      });
+      
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.start(5000);
       setIsRecording(true);
+
+      transcriptionIntervalRef.current = setInterval(() => {
+        if (audioChunksRef.current.length > 0) {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          audioChunksRef.current = [];
+          transcribeAudio(audioBlob);
+        }
+      }, 10000);
+
       toast({
         title: "Transcripción iniciada",
         description: "La consulta está siendo transcrita automáticamente",
       });
-    },
-  });
+    } catch (error) {
+      console.error("Error starting recording:", error);
+      toast({
+        title: "Error",
+        description: "No se pudo iniciar la transcripción",
+        variant: "destructive",
+      });
+    }
+  }, [localStream, toast, transcribeAudio]);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    if (transcriptionIntervalRef.current) {
+      clearInterval(transcriptionIntervalRef.current);
+      transcriptionIntervalRef.current = null;
+    }
+    
+    if (audioChunksRef.current.length > 0) {
+      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      audioChunksRef.current = [];
+      transcribeAudio(audioBlob);
+    }
+    
+    setIsRecording(false);
+  }, [transcribeAudio]);
+
+  const handleToggleRecording = useCallback(() => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  }, [isRecording, startRecording, stopRecording]);
 
   if (isLoading) {
     return (
@@ -363,7 +480,7 @@ export default function ConsultationPage() {
             variant={isRecording ? "default" : "outline"}
             size="icon"
             className="h-12 w-12 rounded-full"
-            onClick={() => !isRecording && startTranscriptionMutation.mutate()}
+            onClick={handleToggleRecording}
             data-testid="button-record"
           >
             <Activity className={`h-5 w-5 ${isRecording ? "animate-pulse" : ""}`} />
