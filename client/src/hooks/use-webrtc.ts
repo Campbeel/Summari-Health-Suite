@@ -24,7 +24,27 @@ const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-  ]
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    // Free TURN servers from OpenRelay
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
+  ],
+  iceCandidatePoolSize: 10
 };
 
 export function useWebRTC({ roomId, userId, appointmentId, onRemoteStream, onConnectionStateChange, onError }: UseWebRTCOptions) {
@@ -66,6 +86,7 @@ export function useWebRTC({ roomId, userId, appointmentId, onRemoteStream, onCon
     // Handle ICE candidates
     pc.onicecandidate = (event) => {
       if (event.candidate) {
+        console.log('[WebRTC] Sending ICE candidate to:', targetId);
         sendMessage({
           type: 'ice-candidate',
           target: targetId,
@@ -74,8 +95,19 @@ export function useWebRTC({ roomId, userId, appointmentId, onRemoteStream, onCon
       }
     };
 
+    // Handle ICE connection state changes
+    pc.oniceconnectionstatechange = () => {
+      console.log('[WebRTC] ICE connection state:', pc.iceConnectionState);
+    };
+
+    // Handle ICE gathering state
+    pc.onicegatheringstatechange = () => {
+      console.log('[WebRTC] ICE gathering state:', pc.iceGatheringState);
+    };
+
     // Handle remote stream
     pc.ontrack = (event) => {
+      console.log('[WebRTC] Received remote track:', event.track.kind);
       const [stream] = event.streams;
       setRemoteStream(stream);
       onRemoteStream?.(stream);
@@ -84,6 +116,7 @@ export function useWebRTC({ roomId, userId, appointmentId, onRemoteStream, onCon
     // Handle connection state
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
+      console.log('[WebRTC] Connection state changed to:', state);
       onConnectionStateChange?.(state);
       
       if (state === 'connected') {
@@ -92,6 +125,9 @@ export function useWebRTC({ roomId, userId, appointmentId, onRemoteStream, onCon
       } else if (state === 'disconnected' || state === 'failed') {
         setIsConnected(false);
         setIsConnecting(false);
+        if (state === 'failed') {
+          setError('La conexión de video falló. Por favor, intenta de nuevo.');
+        }
       }
     };
 
@@ -177,10 +213,16 @@ export function useWebRTC({ roomId, userId, appointmentId, onRemoteStream, onCon
   }, []);
 
   const connect = useCallback(async () => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    console.log('[WebRTC] Attempting to connect...', { roomId, userId, appointmentId });
+    
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log('[WebRTC] Already connected to WebSocket');
+      return;
+    }
 
     // Validate userId before connecting
     if (!userId) {
+      console.error('[WebRTC] No userId provided');
       setError('Debes iniciar sesión para unirte a la videollamada');
       onError?.('Debes iniciar sesión para unirte a la videollamada');
       return;
@@ -188,23 +230,34 @@ export function useWebRTC({ roomId, userId, appointmentId, onRemoteStream, onCon
 
     // Validate appointmentId before connecting
     if (!appointmentId) {
+      console.error('[WebRTC] No appointmentId provided');
       setError('ID de cita requerido');
       onError?.('ID de cita requerido');
       return;
     }
 
+    setIsConnecting(true);
+
     // First get media access
+    console.log('[WebRTC] Requesting media access...');
     const stream = await startMedia();
-    if (!stream) return;
+    if (!stream) {
+      console.error('[WebRTC] Failed to get media stream');
+      setIsConnecting(false);
+      return;
+    }
+    console.log('[WebRTC] Media access granted');
 
     // Connect to signaling server
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
     
+    console.log('[WebRTC] Connecting to WebSocket:', wsUrl);
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
+      console.log('[WebRTC] WebSocket connected, joining room:', roomId);
       sendMessage({
         type: 'join',
         roomId,
@@ -212,42 +265,58 @@ export function useWebRTC({ roomId, userId, appointmentId, onRemoteStream, onCon
         appointmentId
       });
     };
+    
+    ws.onerror = (event) => {
+      console.error('[WebRTC] WebSocket error:', event);
+      setError('Error de conexión WebSocket');
+      setIsConnecting(false);
+    };
 
     ws.onmessage = (event) => {
       try {
         const message: SignalingMessage = JSON.parse(event.data);
+        console.log('[WebRTC] Received message:', message.type, message);
 
         switch (message.type) {
           case 'error':
+            console.error('[WebRTC] Server error:', message.message);
             setError(message.message || 'Error de conexión');
             onError?.(message.message || 'Error de conexión');
             setIsConnecting(false);
             break;
 
           case 'room-joined':
+            console.log('[WebRTC] Joined room, existing participants:', message.participants);
             // If there are existing participants, initiate call to them
             if (message.participants && message.participants.length > 0) {
+              console.log('[WebRTC] Initiating call to:', message.participants[0]);
               initiateCall(message.participants[0]);
+            } else {
+              console.log('[WebRTC] No participants yet, waiting for others to join');
             }
             break;
 
           case 'user-joined':
             // New user joined, they will initiate the call
+            console.log('[WebRTC] New user joined, waiting for their offer');
             break;
 
           case 'offer':
+            console.log('[WebRTC] Received offer from:', message.from);
             if (message.from && message.sdp) {
               handleOffer(message.from, message.sdp);
             }
             break;
 
           case 'answer':
+            console.log('[WebRTC] Received answer');
             if (message.sdp) {
               handleAnswer(message.sdp);
             }
             break;
 
           case 'ice-candidate':
+            console.log('[WebRTC] Received ICE candidate');
             if (message.candidate) {
               handleIceCandidate(message.candidate);
             }
