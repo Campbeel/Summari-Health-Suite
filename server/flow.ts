@@ -1,5 +1,45 @@
 import { randomUUID } from 'crypto';
 
+export async function verifyFlowSignature(
+  params: Record<string, any>,
+  receivedSignature: string
+): Promise<boolean> {
+  const subtleCrypto = crypto.subtle;
+  const enc = new TextEncoder();
+  const algorithm = { name: 'HMAC', hash: 'SHA-256' };
+
+  const secretKey = process.env.FLOW_SECRET;
+  if (!secretKey) {
+    throw new Error('FLOW_SECRET environment variable is not set');
+  }
+
+  const key = await subtleCrypto.importKey(
+    'raw',
+    enc.encode(secretKey),
+    algorithm,
+    false,
+    ['sign', 'verify']
+  );
+
+  // Sort params alphabetically and create signature body (excluding 's')
+  const body = Object.entries(params)
+    .filter(([key]) => key !== 's')
+    .sort(([a], [b]) => a.localeCompare(b))
+    .reduce((res, [key, value]) => res + `${key}${value}`, '');
+
+  const signature = await subtleCrypto.sign(
+    algorithm.name,
+    key,
+    enc.encode(body)
+  );
+
+  const expectedSignature = Array.from(new Uint8Array(signature), (b) =>
+    b.toString(16).padStart(2, '0')
+  ).join('');
+
+  return expectedSignature === receivedSignature;
+}
+
 interface CreatePaymentParams {
   apiKey: string;
   commerceOrder: string;

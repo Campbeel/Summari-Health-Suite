@@ -4,7 +4,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { z } from "zod";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integrations/auth";
-import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText } from "./flow";
+import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText, verifyFlowSignature } from "./flow";
 import { transcribeAudio, generatePrescriptionFromTranscript } from "./openai";
 import {
   insertPatientSchema,
@@ -424,7 +424,28 @@ export async function registerRoutes(
       }
       
       const subject = `Consulta médica - ${doctor.specialty}`;
+      // consultationFee is stored in CLP (not cents), send directly to Flow
       const amount = doctor.consultationFee;
+      
+      // Verify user owns this appointment
+      const patient = await storage.getPatientByUserId(req.user.claims.sub);
+      if (!patient || appointment.patientId !== patient.id) {
+        return res.status(403).json({ error: "No tienes permiso para pagar esta cita" });
+      }
+      
+      // Prevent duplicate payments - check if already paid or payment in progress
+      if (appointment.paymentStatus === "paid") {
+        return res.status(400).json({ error: "Esta cita ya fue pagada" });
+      }
+      if (appointment.flowToken) {
+        // Payment already initiated, redirect to existing payment
+        const flowBaseUrl = process.env.FLOW_BASE_URL || "https://sandbox.flow.cl/api";
+        return res.json({ 
+          redirectUrl: `${flowBaseUrl.replace('/api', '')}/app/web/pay.php?token=${appointment.flowToken}`,
+          token: appointment.flowToken,
+          commerceOrderID: appointment.flowCommerceOrderId
+        });
+      }
       
       const { token, url, commerceOrderID } = await createPayment(
         user.email,
@@ -452,19 +473,51 @@ export async function registerRoutes(
 
   app.post("/api/flow/confirm", async (req, res) => {
     try {
-      const { token } = req.body;
+      const { token, s: signature } = req.body;
       
       if (!token) {
+        console.error("Flow webhook: Missing token in request body");
         return res.status(400).json({ error: "Token is required" });
       }
       
-      const paymentStatus = await getPaymentStatus(token);
-      const optional = JSON.parse(paymentStatus.optional || '{}');
-      const appointmentId = optional.appointmentId;
+      // Security: Verify Flow signature if provided
+      if (signature) {
+        const isValidSignature = await verifyFlowSignature(req.body, signature);
+        if (!isValidSignature) {
+          console.error("Flow webhook: Invalid signature");
+          return res.status(403).json({ error: "Invalid signature" });
+        }
+      }
       
-      if (!appointmentId) {
-        console.error("No appointmentId in payment optional data");
-        return res.status(400).json({ error: "Invalid payment data" });
+      // Verify the token matches an appointment in our database first
+      const appointment = await storage.getAppointmentByFlowToken(token);
+      if (!appointment) {
+        console.error("Flow webhook: No appointment found for token");
+        return res.status(404).json({ error: "Appointment not found" });
+      }
+      
+      // Idempotency: if already paid, return success without re-processing
+      if (appointment.paymentStatus === "paid") {
+        console.log(`Flow webhook: Appointment ${appointment.id} already paid, skipping`);
+        return res.json({ message: "Payment already processed", status: "paid" });
+      }
+      
+      // Fetch current status from Flow API to ensure data integrity
+      let paymentStatus;
+      try {
+        paymentStatus = await getPaymentStatus(token);
+      } catch (apiError) {
+        console.error("Flow webhook: Failed to fetch status from Flow API", apiError);
+        return res.status(500).json({ error: "Failed to verify payment with Flow" });
+      }
+      
+      const optional = JSON.parse(paymentStatus.optional || '{}');
+      const appointmentId = optional.appointmentId || appointment.id;
+      
+      // Double-check appointmentId matches
+      if (appointmentId !== appointment.id) {
+        console.error("Flow webhook: AppointmentId mismatch", { expected: appointment.id, received: appointmentId });
+        return res.status(400).json({ error: "Payment data mismatch" });
       }
       
       const newStatus = getPaymentStatusText(paymentStatus.status);
@@ -485,10 +538,17 @@ export async function registerRoutes(
   app.get("/api/flow/status/:commerceOrderId", isAuthenticated, async (req: any, res) => {
     try {
       const { commerceOrderId } = req.params;
+      const userId = req.user.claims.sub;
       
       const appointment = await storage.getAppointmentByCommerceOrderId(commerceOrderId);
       if (!appointment) {
         return res.status(404).json({ error: "Pago no encontrado" });
+      }
+      
+      // Verify user owns this appointment
+      const patient = await storage.getPatientByUserId(userId);
+      if (!patient || appointment.patientId !== patient.id) {
+        return res.status(403).json({ error: "No tienes permiso para ver este pago" });
       }
       
       if (!appointment.flowToken) {

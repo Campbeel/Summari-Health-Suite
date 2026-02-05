@@ -173,6 +173,7 @@ export interface IStorage {
   // Appointments
   getAppointment(id: number): Promise<AppointmentWithDoctorFull | undefined>;
   getAppointmentByCommerceOrderId(commerceOrderId: string): Promise<Appointment | undefined>;
+  getAppointmentByFlowToken(flowToken: string): Promise<Appointment | undefined>;
   getAppointmentsByPatient(patientId: number): Promise<AppointmentWithDoctor[]>;
   getUpcomingAppointments(patientId: number): Promise<AppointmentWithDoctor[]>;
   getAppointmentsByDoctor(doctorId: number): Promise<Appointment[]>;
@@ -380,6 +381,14 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(appointments)
       .where(eq(appointments.flowCommerceOrderId, commerceOrderId));
+    return result;
+  }
+
+  async getAppointmentByFlowToken(flowToken: string): Promise<Appointment | undefined> {
+    const [result] = await db
+      .select()
+      .from(appointments)
+      .where(eq(appointments.flowToken, flowToken));
     return result;
   }
 
