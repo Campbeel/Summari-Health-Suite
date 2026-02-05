@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -6,9 +6,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link } from "wouter";
-import { Calendar, Clock, Plus, Video, Phone, MapPin } from "lucide-react";
+import { Calendar, Clock, Plus, Video, Phone, MapPin, CreditCard, Loader2 } from "lucide-react";
 import { format, parseISO, isAfter, isBefore } from "date-fns";
 import { es } from "date-fns/locale";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface AppointmentWithDetails {
   id: number;
@@ -38,9 +40,29 @@ function getStatusBadge(status: string) {
 
 
 function AppointmentCard({ appointment }: { appointment: AppointmentWithDetails }) {
+  const { toast } = useToast();
   const isUpcoming = isAfter(parseISO(appointment.scheduledDate), new Date()) || 
     (format(new Date(), "yyyy-MM-dd") === appointment.scheduledDate);
   const canJoin = appointment.status === "confirmed" || appointment.status === "in_progress";
+
+  const payMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/appointments/${appointment.id}/pay`);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.redirectUrl) {
+        window.location.href = data.redirectUrl;
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error al procesar el pago",
+        description: error.message || "Por favor intenta nuevamente",
+        variant: "destructive",
+      });
+    },
+  });
 
   return (
     <Card className="hover-elevate" data-testid={`appointment-${appointment.id}`}>
@@ -99,10 +121,18 @@ function AppointmentCard({ appointment }: { appointment: AppointmentWithDetails 
                 </Button>
               )}
               {isUpcoming && appointment.paymentStatus === "pending" && (
-                <Button variant="outline" asChild>
-                  <Link href={`/appointments/${appointment.id}/pay`}>
-                    Pagar consulta
-                  </Link>
+                <Button 
+                  variant="outline" 
+                  onClick={() => payMutation.mutate()}
+                  disabled={payMutation.isPending}
+                  data-testid={`pay-appointment-${appointment.id}`}
+                >
+                  {payMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <CreditCard className="h-4 w-4 mr-2" />
+                  )}
+                  Pagar consulta
                 </Button>
               )}
               <Button variant="ghost" asChild>

@@ -43,8 +43,9 @@ export const appointments = pgTable("appointments", {
   scheduledTime: time("scheduled_time").notNull(),
   durationMinutes: integer("duration_minutes").notNull().default(30),
   status: text("status").notNull().default("scheduled"), // scheduled, confirmed, in_progress, completed, cancelled
-  paymentStatus: text("payment_status").notNull().default("pending"), // pending, paid, refunded
-  stripePaymentIntentId: text("stripe_payment_intent_id"),
+  paymentStatus: text("payment_status").notNull().default("pending"), // pending, paid, rejected, cancelled
+  flowToken: text("flow_token"),
+  flowCommerceOrderId: text("flow_commerce_order_id"),
   consultationType: text("consultation_type").notNull().default("video"), // video, audio
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

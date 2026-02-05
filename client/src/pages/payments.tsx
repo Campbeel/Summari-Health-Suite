@@ -28,6 +28,7 @@ interface PaymentRecord {
 function getStatusBadge(status: string) {
   switch (status) {
     case "succeeded":
+    case "paid":
       return (
         <Badge className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300">
           <CheckCircle2 className="h-3 w-3 mr-1" />
@@ -44,6 +45,8 @@ function getStatusBadge(status: string) {
       );
     case "failed":
     case "canceled":
+    case "rejected":
+    case "cancelled":
       return (
         <Badge variant="destructive">
           <XCircle className="h-3 w-3 mr-1" />
@@ -82,7 +85,7 @@ export default function PaymentsPage() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Total pagado</p>
-              <p className="text-2xl font-bold">${(totalPaid / 100).toFixed(2)} USD</p>
+              <p className="text-2xl font-bold">${totalPaid.toLocaleString()} CLP</p>
             </div>
           </div>
         </CardContent>
@@ -128,7 +131,7 @@ export default function PaymentsPage() {
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold">${(payment.amount / 100).toFixed(2)}</p>
+                    <p className="font-semibold">${payment.amount.toLocaleString()}</p>
                     <p className="text-xs text-muted-foreground uppercase">{payment.currency}</p>
                   </div>
                   <div className="flex items-center gap-2">

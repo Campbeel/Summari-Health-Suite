@@ -44,7 +44,8 @@ type AppointmentWithDoctor = {
   durationMinutes: number;
   status: string;
   paymentStatus: string;
-  stripePaymentIntentId: string | null;
+  flowToken: string | null;
+  flowCommerceOrderId: string | null;
   consultationType: string;
   notes: string | null;
   doctorName: string;
@@ -61,7 +62,8 @@ type AppointmentWithDoctorFull = {
   durationMinutes: number;
   status: string;
   paymentStatus: string;
-  stripePaymentIntentId: string | null;
+  flowToken: string | null;
+  flowCommerceOrderId: string | null;
   consultationType: string;
   notes: string | null;
   doctorName: string;
@@ -137,7 +139,7 @@ type AppointmentWithPatient = {
   durationMinutes: number;
   status: string;
   paymentStatus: string;
-  stripePaymentIntentId: string | null;
+  flowToken: string | null;
   consultationType: string;
   notes: string | null;
   patientName: string;
@@ -170,6 +172,7 @@ export interface IStorage {
 
   // Appointments
   getAppointment(id: number): Promise<AppointmentWithDoctorFull | undefined>;
+  getAppointmentByCommerceOrderId(commerceOrderId: string): Promise<Appointment | undefined>;
   getAppointmentsByPatient(patientId: number): Promise<AppointmentWithDoctor[]>;
   getUpcomingAppointments(patientId: number): Promise<AppointmentWithDoctor[]>;
   getAppointmentsByDoctor(doctorId: number): Promise<Appointment[]>;
@@ -357,7 +360,8 @@ export class DatabaseStorage implements IStorage {
         durationMinutes: appointments.durationMinutes,
         status: appointments.status,
         paymentStatus: appointments.paymentStatus,
-        stripePaymentIntentId: appointments.stripePaymentIntentId,
+        flowToken: appointments.flowToken,
+        flowCommerceOrderId: appointments.flowCommerceOrderId,
         consultationType: appointments.consultationType,
         notes: appointments.notes,
         doctorName: sql<string>`COALESCE(u.first_name || ' ' || u.last_name, u.email)`.as('doctorName'),
@@ -371,6 +375,14 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  async getAppointmentByCommerceOrderId(commerceOrderId: string): Promise<Appointment | undefined> {
+    const [result] = await db
+      .select()
+      .from(appointments)
+      .where(eq(appointments.flowCommerceOrderId, commerceOrderId));
+    return result;
+  }
+
   async getAppointmentsByPatient(patientId: number): Promise<AppointmentWithDoctor[]> {
     const result = await db
       .select({
@@ -380,7 +392,8 @@ export class DatabaseStorage implements IStorage {
         durationMinutes: appointments.durationMinutes,
         status: appointments.status,
         paymentStatus: appointments.paymentStatus,
-        stripePaymentIntentId: appointments.stripePaymentIntentId,
+        flowToken: appointments.flowToken,
+        flowCommerceOrderId: appointments.flowCommerceOrderId,
         consultationType: appointments.consultationType,
         notes: appointments.notes,
         doctorName: sql<string>`COALESCE(u.first_name || ' ' || u.last_name, u.email)`.as('doctorName'),
@@ -405,7 +418,8 @@ export class DatabaseStorage implements IStorage {
         durationMinutes: appointments.durationMinutes,
         status: appointments.status,
         paymentStatus: appointments.paymentStatus,
-        stripePaymentIntentId: appointments.stripePaymentIntentId,
+        flowToken: appointments.flowToken,
+        flowCommerceOrderId: appointments.flowCommerceOrderId,
         consultationType: appointments.consultationType,
         notes: appointments.notes,
         doctorName: sql<string>`COALESCE(u.first_name || ' ' || u.last_name, u.email)`.as('doctorName'),
@@ -446,7 +460,7 @@ export class DatabaseStorage implements IStorage {
         durationMinutes: appointments.durationMinutes,
         status: appointments.status,
         paymentStatus: appointments.paymentStatus,
-        stripePaymentIntentId: appointments.stripePaymentIntentId,
+        flowToken: appointments.flowToken,
         consultationType: appointments.consultationType,
         notes: appointments.notes,
         patientName: sql<string>`COALESCE(u.first_name || ' ' || u.last_name, u.email)`.as('patientName'),
@@ -475,7 +489,7 @@ export class DatabaseStorage implements IStorage {
         durationMinutes: appointments.durationMinutes,
         status: appointments.status,
         paymentStatus: appointments.paymentStatus,
-        stripePaymentIntentId: appointments.stripePaymentIntentId,
+        flowToken: appointments.flowToken,
         consultationType: appointments.consultationType,
         notes: appointments.notes,
         patientName: sql<string>`COALESCE(u.first_name || ' ' || u.last_name, u.email)`.as('patientName'),

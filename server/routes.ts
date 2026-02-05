@@ -4,7 +4,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { z } from "zod";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integrations/auth";
-import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
+import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText } from "./flow";
 import { transcribeAudio, generatePrescriptionFromTranscript } from "./openai";
 import {
   insertPatientSchema,
@@ -403,62 +403,115 @@ export async function registerRoutes(
     }
   });
 
-  // Payment routes
-  app.get("/api/stripe/publishable-key", async (req, res) => {
-    try {
-      const publishableKey = await getStripePublishableKey();
-      res.json({ publishableKey });
-    } catch (error) {
-      console.error("Error getting Stripe publishable key:", error);
-      res.status(500).json({ error: "Failed to get Stripe key" });
-    }
-  });
-
+  // Payment routes - Flow integration
   app.post("/api/appointments/:id/pay", isAuthenticated, async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id);
       const appointment = await storage.getAppointment(appointmentId);
       
       if (!appointment) {
-        return res.status(404).json({ error: "Appointment not found" });
+        return res.status(404).json({ error: "Cita no encontrada" });
       }
       
       const doctor = await storage.getDoctor(appointment.doctorId);
       if (!doctor) {
-        return res.status(404).json({ error: "Doctor not found" });
+        return res.status(404).json({ error: "Médico no encontrado" });
       }
       
-      const stripe = await getUncachableStripeClient();
       const user = await storage.getUser(req.user.claims.sub);
+      if (!user?.email) {
+        return res.status(400).json({ error: "Se requiere un email para procesar el pago" });
+      }
       
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ["card"],
-        line_items: [
-          {
-            price_data: {
-              currency: "usd",
-              product_data: {
-                name: `Consulta médica - ${doctor.specialty}`,
-                description: `Consulta con Dr. ${appointment.doctorName}`,
-              },
-              unit_amount: doctor.consultationFee,
-            },
-            quantity: 1,
-          },
-        ],
-        mode: "payment",
-        success_url: `${req.protocol}://${req.get("host")}/appointments?payment=success`,
-        cancel_url: `${req.protocol}://${req.get("host")}/appointments?payment=cancelled`,
-        customer_email: user?.email || undefined,
-        metadata: {
-          appointmentId: appointmentId.toString(),
-        },
+      const subject = `Consulta médica - ${doctor.specialty}`;
+      const amount = doctor.consultationFee;
+      
+      const { token, url, commerceOrderID } = await createPayment(
+        user.email,
+        amount,
+        appointmentId,
+        subject
+      );
+      
+      await storage.updateAppointment(appointmentId, {
+        flowToken: token,
+        flowCommerceOrderId: commerceOrderID,
+        paymentStatus: "pending",
       });
       
-      res.json({ url: session.url });
+      res.json({ 
+        redirectUrl: `${url}?token=${token}`,
+        token,
+        commerceOrderID
+      });
     } catch (error) {
-      console.error("Error creating checkout session:", error);
-      res.status(500).json({ error: "Failed to create payment session" });
+      console.error("Error creating Flow payment:", error);
+      res.status(500).json({ error: "Error al crear la sesión de pago" });
+    }
+  });
+
+  app.post("/api/flow/confirm", async (req, res) => {
+    try {
+      const { token } = req.body;
+      
+      if (!token) {
+        return res.status(400).json({ error: "Token is required" });
+      }
+      
+      const paymentStatus = await getPaymentStatus(token);
+      const optional = JSON.parse(paymentStatus.optional || '{}');
+      const appointmentId = optional.appointmentId;
+      
+      if (!appointmentId) {
+        console.error("No appointmentId in payment optional data");
+        return res.status(400).json({ error: "Invalid payment data" });
+      }
+      
+      const newStatus = getPaymentStatusText(paymentStatus.status);
+      
+      await storage.updateAppointment(appointmentId, {
+        paymentStatus: newStatus,
+        status: isPaymentSuccessful(paymentStatus.status) ? "confirmed" : "scheduled",
+      });
+      
+      console.log(`Flow payment confirmed for appointment ${appointmentId}: ${newStatus}`);
+      res.json({ message: "Payment status updated", status: newStatus });
+    } catch (error) {
+      console.error("Error confirming Flow payment:", error);
+      res.status(500).json({ error: "Failed to confirm payment" });
+    }
+  });
+
+  app.get("/api/flow/status/:commerceOrderId", isAuthenticated, async (req: any, res) => {
+    try {
+      const { commerceOrderId } = req.params;
+      
+      const appointment = await storage.getAppointmentByCommerceOrderId(commerceOrderId);
+      if (!appointment) {
+        return res.status(404).json({ error: "Pago no encontrado" });
+      }
+      
+      if (!appointment.flowToken) {
+        return res.status(400).json({ error: "No hay token de pago" });
+      }
+      
+      const paymentStatus = await getPaymentStatus(appointment.flowToken);
+      const status = getPaymentStatusText(paymentStatus.status);
+      
+      await storage.updateAppointment(appointment.id, {
+        paymentStatus: status,
+        status: isPaymentSuccessful(paymentStatus.status) ? "confirmed" : appointment.status,
+      });
+      
+      res.json({
+        status,
+        isSuccessful: isPaymentSuccessful(paymentStatus.status),
+        amount: paymentStatus.amount,
+        currency: paymentStatus.currency,
+      });
+    } catch (error) {
+      console.error("Error checking Flow payment status:", error);
+      res.status(500).json({ error: "Error al verificar el estado del pago" });
     }
   });
 
@@ -471,15 +524,14 @@ export async function registerRoutes(
         return res.json([]);
       }
       
-      // Get appointments with payment info
       const appointments = await storage.getAppointmentsByPatient(patient.id);
       const payments = appointments
-        .filter(a => a.stripePaymentIntentId || a.paymentStatus === "paid")
+        .filter(a => a.flowToken || a.paymentStatus === "paid")
         .map(a => ({
-          id: a.stripePaymentIntentId || `appt-${a.id}`,
-          amount: 5000, // Default consultation fee
-          currency: "usd",
-          status: a.paymentStatus === "paid" ? "succeeded" : "pending",
+          id: a.flowCommerceOrderId || `appt-${a.id}`,
+          amount: 5000,
+          currency: "CLP",
+          status: a.paymentStatus === "paid" ? "succeeded" : a.paymentStatus,
           createdAt: a.scheduledDate,
           appointmentId: a.id,
           doctorName: a.doctorName,
