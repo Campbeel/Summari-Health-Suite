@@ -81,9 +81,11 @@ export default function PatientRegisterPage() {
       const response = await apiRequest("PUT", "/api/patients/profile", data);
       return response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/patients/registration-status"] });
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/patients/registration-status"] }),
+      ]);
       toast({
         title: "Registro completado",
         description: "Tu información ha sido guardada correctamente",
