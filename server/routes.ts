@@ -271,14 +271,14 @@ export async function registerRoutes(
   app.put("/api/patients/profile", isAuthenticated, async (req: any, res) => {
     try {
       const profileUpdateSchema = insertPatientSchema.partial().extend({
-        rut: z.string().regex(/^(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])$/, "Formato de RUT inválido").optional(),
-        email: z.string().email("Correo electrónico inválido").optional(),
-        whatsapp: z.string().regex(/^\+\d{8,15}$/, "Formato de WhatsApp inválido").optional(),
+        rut: z.string().regex(/^(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])$/, "Formato de RUT inválido").optional().or(z.literal("")),
+        email: z.string().email("Correo electrónico inválido").optional().or(z.literal("")),
+        whatsapp: z.string().regex(/^\+\d{8,15}$/, "Formato de WhatsApp inválido").optional().or(z.literal("")),
       });
       const validationResult = profileUpdateSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({
-          error: "Validation failed",
+          error: "Datos inválidos",
           errors: validationResult.error.flatten(),
         });
       }
@@ -290,12 +290,29 @@ export async function registerRoutes(
       if (!patient) {
         patient = await storage.createPatient({ userId });
       }
-      
-      const updated = await storage.updatePatient(patient.id, patientData);
+
+      const cleanedData: Record<string, any> = {};
+      for (const [key, value] of Object.entries(patientData)) {
+        if (value === "") {
+          if (key === "rut") continue;
+          cleanedData[key] = null;
+        } else {
+          cleanedData[key] = value;
+        }
+      }
+
+      if (cleanedData.email && cleanedData.email !== patient.email) {
+        const user = await storage.getUser(userId);
+        if (user) {
+          await storage.updateUser(userId, { email: cleanedData.email });
+        }
+      }
+
+      const updated = await storage.updatePatient(patient.id, cleanedData);
       res.json(updated);
     } catch (error) {
       console.error("Error updating patient profile:", error);
-      res.status(500).json({ error: "Failed to update patient profile" });
+      res.status(500).json({ error: "No se pudo actualizar el perfil" });
     }
   });
 
