@@ -608,7 +608,7 @@ export async function registerRoutes(
         .filter(a => a.flowToken || a.paymentStatus === "paid")
         .map(a => ({
           id: a.flowCommerceOrderId || `appt-${a.id}`,
-          amount: 5000,
+          amount: a.consultationFee || 5000,
           currency: "CLP",
           status: a.paymentStatus === "paid" ? "succeeded" : a.paymentStatus,
           createdAt: a.scheduledDate,

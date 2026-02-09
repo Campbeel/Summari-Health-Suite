@@ -198,7 +198,7 @@ export default function BookAppointmentPage() {
                       )}
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-lg">${(doctor.consultationFee / 100).toFixed(0)}</p>
+                      <p className="font-semibold text-lg">${doctor.consultationFee.toLocaleString()}</p>
                       <p className="text-sm text-muted-foreground">por consulta</p>
                     </div>
                     {selectedDoctor?.id === doctor.id && (

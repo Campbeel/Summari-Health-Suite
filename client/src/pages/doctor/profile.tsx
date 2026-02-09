@@ -106,7 +106,7 @@ function transformToApiFormat(uiAvailability: WeeklyAvailability): ApiAvailabili
 
 const profileSchema = z.object({
   bio: z.string().optional(),
-  consultationFeeCents: z.number().min(0, "La tarifa no puede ser negativa"),
+  consultationFee: z.number().min(0, "La tarifa no puede ser negativa"),
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -121,14 +121,14 @@ const defaultAvailability: WeeklyAvailability = {
   sunday: { enabled: false, startTime: "09:00", endTime: "13:00" },
 };
 
-function formatCurrency(cents: number): string {
-  return (cents / 100).toFixed(2);
+function formatCurrency(amount: number): string {
+  return amount.toString();
 }
 
 function parseCurrency(value: string): number {
-  const parsed = parseFloat(value);
+  const parsed = parseInt(value);
   if (isNaN(parsed)) return 0;
-  return Math.round(parsed * 100);
+  return parsed;
 }
 
 export default function DoctorProfilePage() {
@@ -142,7 +142,7 @@ export default function DoctorProfilePage() {
     resolver: zodResolver(profileSchema),
     defaultValues: {
       bio: "",
-      consultationFeeCents: 0,
+      consultationFee: 0,
     },
   });
 
@@ -152,7 +152,7 @@ export default function DoctorProfilePage() {
     if (profile) {
       form.reset({
         bio: profile.bio || "",
-        consultationFeeCents: profile.consultationFee || 0,
+        consultationFee: profile.consultationFee || 0,
       });
     }
   }, [profile, form]);
@@ -292,7 +292,7 @@ export default function DoctorProfilePage() {
 
               <FormField
                 control={form.control}
-                name="consultationFeeCents"
+                name="consultationFee"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Tarifa de Consulta</FormLabel>
@@ -301,9 +301,9 @@ export default function DoctorProfilePage() {
                         <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                         <Input
                           type="number"
-                          step="0.01"
+                          step="1"
                           min="0"
-                          placeholder="0.00"
+                          placeholder="0"
                           className="pl-9"
                           data-testid="input-consultation-fee"
                           value={formatCurrency(field.value)}
@@ -312,7 +312,7 @@ export default function DoctorProfilePage() {
                       </div>
                     </FormControl>
                     <FormDescription>
-                      Tarifa en USD para cada consulta
+                      Tarifa en CLP para cada consulta
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

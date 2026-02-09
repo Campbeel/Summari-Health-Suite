@@ -14,7 +14,7 @@ export const doctors = pgTable("doctors", {
   specialty: text("specialty").notNull(),
   licenseNumber: text("license_number").notNull(),
   bio: text("bio"),
-  consultationFee: integer("consultation_fee").notNull().default(5000), // in CLP (Chilean Pesos)
+  consultationFee: integer("consultation_fee").notNull().default(25000), // in CLP (Chilean Pesos)
   availability: jsonb("availability").$type<{ [day: string]: { start: string; end: string }[] }>(),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
