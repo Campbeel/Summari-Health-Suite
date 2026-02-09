@@ -3,7 +3,7 @@ import { doctors, patients, users, appointments, clinicalRecords, prescriptions,
 import { eq, ne, and, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 
-const TARGET_RUT = "19.684.371-K";
+const TARGET_RUT = "19684371-K";
 
 export async function cleanAndSetupDatabase() {
   try {
