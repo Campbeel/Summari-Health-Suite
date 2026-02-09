@@ -115,7 +115,7 @@ export async function createPayment(
 ): Promise<{ token: string; url: string; commerceOrderID: string }> {
   const flowBaseUrl = process.env.FLOW_BASE_URL;
   const flowKey = process.env.FLOW_KEY;
-  const baseUrl = process.env.BASE_URL || `https://${process.env.REPL_SLUG}.${process.env.REPLIT_DEV_DOMAIN}`;
+  const baseUrl = process.env.BASE_URL || `https://${process.env.REPLIT_DEV_DOMAIN}`;
 
   if (!flowBaseUrl || !flowKey) {
     throw new Error('Flow environment variables (FLOW_BASE_URL, FLOW_KEY) are not set');

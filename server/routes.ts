@@ -370,8 +370,13 @@ export async function registerRoutes(
   app.post("/api/appointments", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
+
+      const user = await storage.getUser(userId);
+      if (!user?.email) {
+        return res.status(400).json({ error: "Se requiere un email registrado en tu cuenta para procesar el pago. Actualiza tu perfil e intenta nuevamente." });
+      }
+
       let patient = await storage.getPatientByUserId(userId);
-      
       if (!patient) {
         patient = await storage.createPatient({ userId });
       }
@@ -380,12 +385,17 @@ export async function registerRoutes(
       const validationResult = bookingSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({
-          error: "Validation failed",
+          error: "Datos de la cita inválidos",
           errors: validationResult.error.flatten(),
         });
       }
       
       const appointmentData = validationResult.data;
+
+      const doctor = await storage.getDoctor(appointmentData.doctorId);
+      if (!doctor) {
+        return res.status(404).json({ error: "Médico no encontrado" });
+      }
       
       const appointment = await storage.createAppointment({
         patientId: patient.id,
@@ -393,16 +403,6 @@ export async function registerRoutes(
         status: "scheduled",
         paymentStatus: "pending",
       });
-
-      const doctor = await storage.getDoctor(appointment.doctorId);
-      if (!doctor) {
-        return res.status(404).json({ error: "Médico no encontrado" });
-      }
-
-      const user = await storage.getUser(userId);
-      if (!user?.email) {
-        return res.status(400).json({ error: "Se requiere un email para procesar el pago" });
-      }
 
       const subject = `Consulta médica - ${doctor.specialty}`;
       const amount = doctor.consultationFee;
@@ -436,7 +436,7 @@ export async function registerRoutes(
       }
     } catch (error) {
       console.error("Error creating appointment:", error);
-      res.status(500).json({ error: "Failed to create appointment" });
+      res.status(500).json({ error: "No se pudo agendar la consulta. Intenta nuevamente." });
     }
   });
 

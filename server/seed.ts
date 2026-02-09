@@ -39,6 +39,7 @@ export async function cleanAndSetupDatabase() {
         username: TARGET_RUT,
         firstName: "Usuario",
         lastName: "Prueba",
+        email: "test@test.com",
         passwordHash,
       });
 

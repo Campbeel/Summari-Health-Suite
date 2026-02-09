@@ -90,10 +90,19 @@ export default function BookAppointmentPage() {
         navigate("/appointments");
       }
     },
-    onError: () => {
+    onError: (error: any) => {
+      let message = "No se pudo agendar la consulta. Intenta nuevamente.";
+      try {
+        const errorText = error?.message || "";
+        const jsonStart = errorText.indexOf("{");
+        if (jsonStart >= 0) {
+          const parsed = JSON.parse(errorText.substring(jsonStart));
+          message = parsed.error || message;
+        }
+      } catch {}
       toast({
         title: "Error",
-        description: "No se pudo agendar la consulta. Intenta nuevamente.",
+        description: message,
         variant: "destructive",
       });
     },
