@@ -36,6 +36,7 @@ Preferred communication style: Simple, everyday language.
 - **Session Storage**: PostgreSQL via connect-pg-simple
 - **Protected Routes**: `isAuthenticated` middleware validates user sessions
 - **User Sync**: Auto-creates patient profiles on first login
+- **Patient Registration**: Mandatory fields (RUT, email, WhatsApp) required before accessing patient features. Registration check via `/api/patients/registration-status`. Doctors bypass this requirement. Registration page at `/registro` (added 2026-02-09).
 
 ### Real-time Features
 - **Video Calling**: WebRTC peer-to-peer video/audio calls with WebSocket signaling server on `/ws` path

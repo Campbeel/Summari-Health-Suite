@@ -32,6 +32,9 @@ import { User, Save, AlertCircle, Plus, X } from "lucide-react";
 import { useState } from "react";
 
 const profileSchema = z.object({
+  rut: z.string().optional(),
+  email: z.string().email("Correo electrónico inválido").optional().or(z.literal("")),
+  whatsapp: z.string().regex(/^\+\d{8,15}$/, "Formato inválido (ej: +56912345678)").optional().or(z.literal("")),
   dateOfBirth: z.string().optional(),
   gender: z.string().optional(),
   bloodType: z.string().optional(),
@@ -64,6 +67,9 @@ export default function ProfilePage() {
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
+      rut: profile?.rut || "",
+      email: profile?.email || "",
+      whatsapp: profile?.whatsapp || "",
       dateOfBirth: profile?.dateOfBirth || "",
       gender: profile?.gender || "",
       bloodType: profile?.bloodType || "",
@@ -80,6 +86,7 @@ export default function ProfilePage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/patients/profile"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       toast({
         title: "Perfil actualizado",
         description: "Tu información ha sido guardada correctamente",
@@ -125,6 +132,8 @@ export default function ProfilePage() {
     );
   }
 
+  const hasRut = !!profile?.rut;
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div>
@@ -134,7 +143,6 @@ export default function ProfilePage() {
         </p>
       </div>
 
-      {/* User Info Card */}
       <Card>
         <CardContent className="p-6">
           <div className="flex items-center gap-4">
@@ -156,7 +164,6 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      {/* Medical Profile Form */}
       <Card>
         <CardHeader>
           <CardTitle>Información Médica</CardTitle>
@@ -167,6 +174,70 @@ export default function ProfilePage() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <div className="grid sm:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="rut"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>RUT</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="12.345.678-9"
+                          {...field}
+                          disabled={hasRut}
+                          data-testid="input-rut"
+                        />
+                      </FormControl>
+                      {hasRut && (
+                        <FormDescription>
+                          El RUT no se puede modificar
+                        </FormDescription>
+                      )}
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Correo electrónico</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="email"
+                          placeholder="tu@correo.cl"
+                          {...field}
+                          data-testid="input-patient-email"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="whatsapp"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>WhatsApp</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="tel"
+                          placeholder="+56912345678"
+                          {...field}
+                          data-testid="input-patient-whatsapp"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
               <div className="grid sm:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -233,7 +304,6 @@ export default function ProfilePage() {
                 />
               </div>
 
-              {/* Allergies */}
               <div>
                 <FormLabel>Alergias</FormLabel>
                 <FormDescription className="mt-1 mb-3">
@@ -322,7 +392,7 @@ export default function ProfilePage() {
                       <FormItem>
                         <FormLabel>Teléfono</FormLabel>
                         <FormControl>
-                          <Input placeholder="+1 234 567 8900" {...field} data-testid="input-emergency-phone" />
+                          <Input placeholder="+56 9 1234 5678" {...field} data-testid="input-emergency-phone" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

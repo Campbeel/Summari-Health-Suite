@@ -24,6 +24,9 @@ export const doctors = pgTable("doctors", {
 export const patients = pgTable("patients", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull(),
+  rut: text("rut"),
+  email: text("email"),
+  whatsapp: text("whatsapp"),
   dateOfBirth: date("date_of_birth"),
   gender: text("gender"),
   bloodType: text("blood_type"),

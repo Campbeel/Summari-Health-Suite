@@ -1,7 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@shared/models/auth";
+import type { Patient } from "@shared/schema";
 
-async function fetchUser(): Promise<User | null> {
+interface AuthResponse {
+  user: User;
+  patient: Patient;
+}
+
+async function fetchUser(): Promise<AuthResponse | null> {
   const response = await fetch("/api/auth/user", {
     credentials: "include",
   });
@@ -23,11 +29,11 @@ async function logout(): Promise<void> {
 
 export function useAuth() {
   const queryClient = useQueryClient();
-  const { data: user, isLoading } = useQuery<User | null>({
+  const { data, isLoading } = useQuery<AuthResponse | null>({
     queryKey: ["/api/auth/user"],
     queryFn: fetchUser,
     retry: false,
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 60 * 5,
   });
 
   const logoutMutation = useMutation({
@@ -38,9 +44,10 @@ export function useAuth() {
   });
 
   return {
-    user,
+    user: data?.user ?? null,
+    patient: data?.patient ?? null,
     isLoading,
-    isAuthenticated: !!user,
+    isAuthenticated: !!data,
     logout: logoutMutation.mutate,
     isLoggingOut: logoutMutation.isPending,
   };

@@ -236,6 +236,22 @@ export async function registerRoutes(
     }
   });
 
+  // Patient registration status
+  app.get("/api/patients/registration-status", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      let patient = await storage.getPatientByUserId(userId);
+      if (!patient) {
+        patient = await storage.createPatient({ userId });
+      }
+      const registered = !!(patient.rut && patient.email && patient.whatsapp);
+      res.json({ registered, patient });
+    } catch (error) {
+      console.error("Error checking registration status:", error);
+      res.status(500).json({ error: "Failed to check registration status" });
+    }
+  });
+
   // Patient routes
   app.get("/api/patients/profile", isAuthenticated, async (req: any, res) => {
     try {
@@ -255,8 +271,12 @@ export async function registerRoutes(
 
   app.put("/api/patients/profile", isAuthenticated, async (req: any, res) => {
     try {
-      // Validate request body against partial patientSchema
-      const validationResult = insertPatientSchema.partial().safeParse(req.body);
+      const profileUpdateSchema = insertPatientSchema.partial().extend({
+        rut: z.string().regex(/^(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])$/, "Formato de RUT inválido").optional(),
+        email: z.string().email("Correo electrónico inválido").optional(),
+        whatsapp: z.string().regex(/^\+\d{8,15}$/, "Formato de WhatsApp inválido").optional(),
+      });
+      const validationResult = profileUpdateSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({
           error: "Validation failed",

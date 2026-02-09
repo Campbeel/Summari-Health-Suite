@@ -1,6 +1,7 @@
+import { useEffect } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -26,6 +27,7 @@ import DoctorDashboard from "@/pages/doctor/dashboard";
 import DoctorAppointmentsPage from "@/pages/doctor/appointments";
 import DoctorProfilePage from "@/pages/doctor/profile";
 import AdminUsersPage from "@/pages/admin/users";
+import PatientRegisterPage from "@/pages/patient-register";
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -53,9 +55,31 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading } = useAuth();
-  const [, navigate] = useLocation();
+  const { isDoctor, isLoading: doctorLoading } = useDoctor();
+  const [location, navigate] = useLocation();
 
-  if (isLoading) {
+  const { data: registrationStatus, isLoading: regLoading } = useQuery<{ registered: boolean; patient: any }>({
+    queryKey: ["/api/patients/registration-status"],
+    enabled: isAuthenticated && !doctorLoading && !isDoctor,
+  });
+
+  const needsRegCheck = isAuthenticated && !doctorLoading && !isDoctor;
+  const shouldRedirectToLogin = !isLoading && !isAuthenticated;
+  const shouldRedirectToRegistro = !isDoctor && registrationStatus && !registrationStatus.registered;
+
+  useEffect(() => {
+    if (shouldRedirectToLogin && location !== "/") {
+      navigate("/");
+    }
+  }, [shouldRedirectToLogin, location, navigate]);
+
+  useEffect(() => {
+    if (shouldRedirectToRegistro && location !== "/registro") {
+      navigate("/registro");
+    }
+  }, [shouldRedirectToRegistro, location, navigate]);
+
+  if (isLoading || doctorLoading || (needsRegCheck && regLoading)) {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -63,8 +87,7 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
     );
   }
 
-  if (!isAuthenticated) {
-    navigate("/");
+  if (shouldRedirectToLogin || shouldRedirectToRegistro) {
     return null;
   }
 
@@ -80,6 +103,14 @@ function DoctorProtectedRoute({ component: Component }: { component: React.Compo
   const { isDoctor, isLoading: doctorLoading } = useDoctor();
   const [, navigate] = useLocation();
 
+  const shouldRedirect = !authLoading && !doctorLoading && (!isAuthenticated || !isDoctor);
+
+  useEffect(() => {
+    if (shouldRedirect) {
+      navigate("/");
+    }
+  }, [shouldRedirect, navigate]);
+
   if (authLoading || doctorLoading) {
     return (
       <div className="h-screen flex items-center justify-center">
@@ -88,13 +119,7 @@ function DoctorProtectedRoute({ component: Component }: { component: React.Compo
     );
   }
 
-  if (!isAuthenticated) {
-    navigate("/");
-    return null;
-  }
-
-  if (!isDoctor) {
-    navigate("/");
+  if (shouldRedirect) {
     return null;
   }
 
@@ -124,6 +149,9 @@ function Router() {
         ) : (
           <LandingPage />
         )}
+      </Route>
+      <Route path="/registro">
+        {isAuthenticated ? <PatientRegisterPage /> : <LandingPage />}
       </Route>
       <Route path="/appointments">
         <ProtectedRoute component={AppointmentsPage} />
