@@ -301,11 +301,15 @@ export async function registerRoutes(
         }
       }
 
+      const userUpdates: Record<string, any> = {};
       if (cleanedData.email && cleanedData.email !== patient.email) {
-        const user = await storage.getUser(userId);
-        if (user) {
-          await storage.updateUser(userId, { email: cleanedData.email });
-        }
+        userUpdates.email = cleanedData.email;
+      }
+      if (cleanedData.whatsapp !== undefined && cleanedData.whatsapp !== patient.whatsapp) {
+        userUpdates.whatsapp = cleanedData.whatsapp;
+      }
+      if (Object.keys(userUpdates).length > 0) {
+        await storage.updateUser(userId, userUpdates);
       }
 
       const updated = await storage.updatePatient(patient.id, cleanedData);
