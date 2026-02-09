@@ -5,8 +5,10 @@ interface AdminCheckResponse {
 }
 
 async function fetchAdminStatus(): Promise<boolean> {
+  const token = localStorage.getItem("auth_token");
+  if (!token) return false;
   const response = await fetch("/api/admin/check", {
-    credentials: "include",
+    headers: { Authorization: `Bearer ${token}` },
   });
 
   if (!response.ok) {

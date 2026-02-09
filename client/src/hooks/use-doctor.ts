@@ -14,8 +14,10 @@ interface Doctor {
 }
 
 async function fetchDoctorProfile(): Promise<Doctor | null> {
+  const token = localStorage.getItem("auth_token");
+  if (!token) return null;
   const response = await fetch("/api/doctors/me", {
-    credentials: "include",
+    headers: { Authorization: `Bearer ${token}` },
   });
 
   if (response.status === 403 || response.status === 401) {

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Summari is a full-stack telemedicine platform built for Spanish-speaking users. It enables patients to schedule video/audio medical consultations, maintain digital clinical records, receive digital prescriptions, and process payments through Stripe. The platform features real-time audio transcription for medical consultations and AI-powered prescription generation.
+Summari is a full-stack telemedicine platform built for Spanish-speaking users. It enables patients to schedule video/audio medical consultations, maintain digital clinical records, receive digital prescriptions, and process payments through Flow (Chilean payment gateway). The platform features real-time audio transcription for medical consultations and AI-powered prescription generation.
 
 ## User Preferences
 
@@ -23,20 +23,26 @@ Preferred communication style: Simple, everyday language.
 - **Language**: TypeScript with ESM modules
 - **Build Tool**: esbuild for production bundling, tsx for development
 - **API Pattern**: RESTful endpoints under `/api/` prefix
-- **Authentication**: Replit Auth integration with OpenID Connect, session-based with PostgreSQL session store
+- **Authentication**: Custom JWT-based authentication (bcryptjs + jsonwebtoken)
 
 ### Data Storage
 - **Database**: PostgreSQL with Drizzle ORM
 - **Schema Location**: `shared/schema.ts` contains all table definitions
-- **Key Tables**: users, sessions, doctors, patients, appointments, clinical_records, prescriptions, medical_instructions, conversations, messages
+- **Key Tables**: users, sessions, doctors, patients, appointments, clinical_records, prescriptions, medical_instructions
 - **Migrations**: Managed via `drizzle-kit push` command
 
 ### Authentication & Authorization
-- **Provider**: Replit Auth (OpenID Connect)
-- **Session Storage**: PostgreSQL via connect-pg-simple
-- **Protected Routes**: `isAuthenticated` middleware validates user sessions
-- **User Sync**: Auto-creates patient profiles on first login
-- **Patient Registration**: Mandatory fields (RUT, email, WhatsApp) required before accessing patient features. Registration check via `/api/patients/registration-status`. Doctors bypass this requirement. Registration page at `/registro` (added 2026-02-09).
+- **Provider**: Custom JWT-based authentication system (replaced Replit Auth on 2026-02-09)
+- **Auth Module**: `server/auth.ts` - contains register/login endpoints and isAuthenticated JWT middleware
+- **Password Hashing**: bcryptjs with salt rounds 10
+- **JWT Token**: Signed with SESSION_SECRET, expires in 7 days
+- **Frontend Storage**: JWT token stored in localStorage, sent as `Authorization: Bearer <token>` header
+- **Protected Routes**: `isAuthenticated` middleware verifies JWT and sets `req.userId`
+- **User Registration**: POST `/api/auth/register` (email, password, firstName, lastName)
+- **User Login**: POST `/api/auth/login` (email, password) → returns JWT token + user data
+- **User Sync**: Auto-creates patient profiles on first authenticated request to /api/auth/user
+- **Patient Registration**: Mandatory fields (RUT, email, WhatsApp) required before accessing patient features. Registration check via `/api/patients/registration-status`. Doctors bypass this requirement. Registration page at `/registro`.
+- **Frontend Auth Pages**: `/login` (sign in), `/crear-cuenta` (sign up), `/registro` (patient mandatory fields)
 
 ### Real-time Features
 - **Video Calling**: WebRTC peer-to-peer video/audio calls with WebSocket signaling server on `/ws` path
@@ -48,35 +54,39 @@ Preferred communication style: Simple, everyday language.
 - **AI Features**: GPT-4o for extracting prescription data from consultation transcripts
 
 ### Payment Processing
-- **Provider**: Stripe integration via Replit connector
-- **Webhook Handling**: Automatic payment status updates for appointments
-- **Schema Sync**: stripe-replit-sync manages Stripe-related database tables
+- **Provider**: Flow (Chilean payment gateway) with HMAC-SHA256 webhook signature verification
+- **Payment Flow**: Create payment → Flow redirect → webhook confirmation → appointment status update
+- **Security**: Duplicate payment prevention, idempotent webhook processing, ownership verification
+- **Configuration**: FLOW_KEY, FLOW_SECRET environment variables, FLOW_BASE_URL defaults to sandbox
 
 ## External Dependencies
 
 ### Third-Party Services
-- **Stripe**: Payment processing for consultation fees, managed webhooks
+- **Flow**: Chilean payment processing for consultation fees (sandbox: https://sandbox.flow.cl/api)
 - **OpenAI**: Audio transcription (Whisper) and text generation (GPT-4o) via Replit AI Integrations
-- **Replit Auth**: User authentication and session management
 
 ### Database
 - **PostgreSQL**: Primary database, connection via `DATABASE_URL` environment variable
-- **Required Tables**: sessions (mandatory for auth), users (mandatory for auth), plus application tables
+- **Required Tables**: users (with passwordHash), plus application tables
 
 ### Environment Variables Required
 - `DATABASE_URL`: PostgreSQL connection string
-- `SESSION_SECRET`: Express session encryption key
+- `SESSION_SECRET`: JWT signing secret key
+- `FLOW_KEY`: Flow payment gateway API key
+- `FLOW_SECRET`: Flow payment gateway secret key
 - `AI_INTEGRATIONS_OPENAI_API_KEY`: OpenAI API key from Replit integrations
 - `AI_INTEGRATIONS_OPENAI_BASE_URL`: OpenAI base URL from Replit integrations
-- `REPL_ID`: Replit environment identifier
-- `ISSUER_URL`: OpenID Connect issuer (defaults to Replit)
 
 ### Key NPM Packages
 - `drizzle-orm` + `drizzle-zod`: Database ORM and schema validation
-- `express` + `express-session`: HTTP server and session handling
+- `express`: HTTP server
+- `bcryptjs` + `jsonwebtoken`: Custom JWT authentication
 - `openai`: AI integrations for transcription and text generation
-- `stripe` + `stripe-replit-sync`: Payment processing
-- `passport` + `openid-client`: Authentication
 - `@tanstack/react-query`: Client-side data fetching
 - `wouter`: Client-side routing
 - `react-day-picker`, `date-fns`: Date handling for appointment scheduling
+
+## Recent Changes
+- **2026-02-09**: Replaced Replit Auth (OIDC/Passport) with custom JWT-based authentication. Added login page (/login), register page (/crear-cuenta). Removed passport, openid-client, express-session dependencies from auth flow. Users now register with email/password and receive JWT tokens.
+- **2026-02-09**: Added mandatory patient registration (RUT, email, WhatsApp) before platform access.
+- **2026-02-09**: Integrated Flow payment gateway with HMAC-SHA256 webhook verification.

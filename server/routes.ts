@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { z } from "zod";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integrations/auth";
+import { isAuthenticated, registerAuthRoutes } from "./auth";
 import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText, verifyFlowSignature } from "./flow";
 import { transcribeAudio, generatePrescriptionFromTranscript } from "./openai";
 import {
@@ -36,14 +36,12 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
-  // Setup Replit Auth
-  await setupAuth(app);
   registerAuthRoutes(app);
 
   // Auth routes
   app.get("/api/auth/user", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const user = await storage.getUser(userId);
       
       // Ensure patient profile exists
@@ -52,7 +50,8 @@ export async function registerRoutes(
         patient = await storage.createPatient({ userId });
       }
       
-      res.json({ user, patient });
+      const { passwordHash, ...safeUser } = user || {};
+      res.json({ user: safeUser, patient });
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ error: "Failed to fetch user" });
@@ -73,7 +72,7 @@ export async function registerRoutes(
   // Doctor (current user) routes - must be before :id routes to prevent "me" being matched as an id
   app.get("/api/doctors/me", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
       
       if (!doctor) {
@@ -94,7 +93,7 @@ export async function registerRoutes(
 
   app.get("/api/doctors/me/stats", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
       
       if (!doctor) {
@@ -111,7 +110,7 @@ export async function registerRoutes(
 
   app.get("/api/doctors/me/appointments", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
       
       if (!doctor) {
@@ -128,7 +127,7 @@ export async function registerRoutes(
 
   app.patch("/api/doctors/me/profile", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
       
       if (!doctor) {
@@ -155,7 +154,7 @@ export async function registerRoutes(
 
   app.patch("/api/doctors/me/availability", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
       
       if (!doctor) {
@@ -189,7 +188,7 @@ export async function registerRoutes(
   app.patch("/api/appointments/:id/status", isAuthenticated, async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id);
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       
       const statusSchema = z.object({
         status: z.enum(["confirmed", "cancelled", "in_progress", "completed"]),
@@ -239,7 +238,7 @@ export async function registerRoutes(
   // Patient registration status
   app.get("/api/patients/registration-status", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       let patient = await storage.getPatientByUserId(userId);
       if (!patient) {
         patient = await storage.createPatient({ userId });
@@ -255,7 +254,7 @@ export async function registerRoutes(
   // Patient routes
   app.get("/api/patients/profile", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       let patient = await storage.getPatientByUserId(userId);
       
       if (!patient) {
@@ -285,7 +284,7 @@ export async function registerRoutes(
       }
       
       const patientData = validationResult.data;
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       let patient = await storage.getPatientByUserId(userId);
       
       if (!patient) {
@@ -323,7 +322,7 @@ export async function registerRoutes(
   // Appointments routes
   app.get("/api/appointments", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const patient = await storage.getPatientByUserId(userId);
       
       if (!patient) {
@@ -340,7 +339,7 @@ export async function registerRoutes(
 
   app.get("/api/appointments/upcoming", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const patient = await storage.getPatientByUserId(userId);
       
       if (!patient) {
@@ -370,7 +369,7 @@ export async function registerRoutes(
 
   app.post("/api/appointments", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       let patient = await storage.getPatientByUserId(userId);
       
       if (!patient) {
@@ -438,7 +437,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Médico no encontrado" });
       }
       
-      const user = await storage.getUser(req.user.claims.sub);
+      const user = await storage.getUser(req.userId);
       if (!user?.email) {
         return res.status(400).json({ error: "Se requiere un email para procesar el pago" });
       }
@@ -448,7 +447,7 @@ export async function registerRoutes(
       const amount = doctor.consultationFee;
       
       // Verify user owns this appointment
-      const patient = await storage.getPatientByUserId(req.user.claims.sub);
+      const patient = await storage.getPatientByUserId(req.userId);
       if (!patient || appointment.patientId !== patient.id) {
         return res.status(403).json({ error: "No tienes permiso para pagar esta cita" });
       }
@@ -558,7 +557,7 @@ export async function registerRoutes(
   app.get("/api/flow/status/:commerceOrderId", isAuthenticated, async (req: any, res) => {
     try {
       const { commerceOrderId } = req.params;
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       
       const appointment = await storage.getAppointmentByCommerceOrderId(commerceOrderId);
       if (!appointment) {
@@ -597,7 +596,7 @@ export async function registerRoutes(
 
   app.get("/api/payments", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const patient = await storage.getPatientByUserId(userId);
       
       if (!patient) {
@@ -628,7 +627,7 @@ export async function registerRoutes(
   // Clinical Records routes
   app.get("/api/clinical-records", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const patient = await storage.getPatientByUserId(userId);
       
       if (!patient) {
@@ -645,7 +644,7 @@ export async function registerRoutes(
 
   app.get("/api/clinical-records/recent", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const patient = await storage.getPatientByUserId(userId);
       
       if (!patient) {
@@ -704,7 +703,7 @@ export async function registerRoutes(
   // Prescriptions routes
   app.get("/api/prescriptions", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const patient = await storage.getPatientByUserId(userId);
       
       if (!patient) {
@@ -763,7 +762,7 @@ export async function registerRoutes(
       }
       
       const doctor = await storage.getDoctor(appointment.doctorId);
-      const userId = req.user.claims.sub;
+      const userId = req.userId;
       const patient = await storage.getPatientByUserId(userId);
       const user = await storage.getUser(userId);
       
@@ -913,7 +912,7 @@ export async function registerRoutes(
   // Admin middleware
   const isAdmin = async (req: any, res: Response, next: Function) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = req.userId;
       if (!userId) {
         return res.status(401).json({ error: "Not authenticated" });
       }
@@ -931,12 +930,12 @@ export async function registerRoutes(
   app.get("/api/admin/users", isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       const allUsers = await storage.getAllUsers();
-      // Get doctor info for each user
       const usersWithDoctorStatus = await Promise.all(
         allUsers.map(async (user) => {
           const doctor = await storage.getDoctorByUserId(user.id);
+          const { passwordHash, ...safeUser } = user;
           return {
-            ...user,
+            ...safeUser,
             isDoctor: !!doctor,
             doctorId: doctor?.id || null,
             specialty: doctor?.specialty || null,
@@ -1000,7 +999,7 @@ export async function registerRoutes(
 
   app.get("/api/admin/check", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = req.userId;
       const user = await storage.getUser(userId);
       res.json({ isAdmin: !!user?.isAdmin });
     } catch (error) {

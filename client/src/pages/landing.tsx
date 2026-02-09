@@ -40,7 +40,7 @@ export default function LandingPage() {
             <div className="flex items-center gap-3">
               <ThemeToggle />
               <Button variant="outline" asChild data-testid="button-login">
-                <a href="/api/login">Iniciar Sesión</a>
+                <a href="/login">Iniciar Sesión</a>
               </Button>
             </div>
           </div>
@@ -66,7 +66,7 @@ export default function LandingPage() {
               </p>
               <div className="flex flex-wrap gap-4">
                 <Button size="lg" asChild data-testid="button-get-started">
-                  <a href="/api/login">Comenzar Ahora</a>
+                  <a href="/crear-cuenta">Comenzar Ahora</a>
                 </Button>
                 <Button size="lg" variant="outline" asChild data-testid="button-learn-more">
                   <a href="#features">Conocer Más</a>
@@ -263,7 +263,7 @@ export default function LandingPage() {
               Únete a miles de pacientes que ya confían en Summari para su atención médica
             </p>
             <Button size="lg" variant="secondary" asChild data-testid="button-cta-signup">
-              <a href="/api/login">Crear Cuenta Gratis</a>
+              <a href="/crear-cuenta">Crear Cuenta Gratis</a>
             </Button>
           </div>
         </div>

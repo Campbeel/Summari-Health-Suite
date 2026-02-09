@@ -13,6 +13,8 @@ import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/s
 
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
+import AuthLoginPage from "@/pages/auth-login";
+import AuthRegisterPage from "@/pages/auth-register";
 import Dashboard from "@/pages/dashboard";
 import AppointmentsPage from "@/pages/appointments";
 import BookAppointmentPage from "@/pages/book-appointment";
@@ -69,7 +71,7 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 
   useEffect(() => {
     if (shouldRedirectToLogin && location !== "/") {
-      navigate("/");
+      navigate("/login");
     }
   }, [shouldRedirectToLogin, location, navigate]);
 
@@ -107,7 +109,7 @@ function DoctorProtectedRoute({ component: Component }: { component: React.Compo
 
   useEffect(() => {
     if (shouldRedirect) {
-      navigate("/");
+      navigate("/login");
     }
   }, [shouldRedirect, navigate]);
 
@@ -150,8 +152,14 @@ function Router() {
           <LandingPage />
         )}
       </Route>
+      <Route path="/login">
+        {isAuthenticated ? <ProtectedRoute component={Dashboard} /> : <AuthLoginPage />}
+      </Route>
+      <Route path="/crear-cuenta">
+        {isAuthenticated ? <ProtectedRoute component={Dashboard} /> : <AuthRegisterPage />}
+      </Route>
       <Route path="/registro">
-        {isAuthenticated ? <PatientRegisterPage /> : <LandingPage />}
+        {isAuthenticated ? <PatientRegisterPage /> : <AuthLoginPage />}
       </Route>
       <Route path="/appointments">
         <ProtectedRoute component={AppointmentsPage} />
