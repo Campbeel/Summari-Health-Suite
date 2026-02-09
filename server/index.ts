@@ -2,7 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-import { seedDoctors } from "./seed";
+import { cleanAndSetupDatabase } from "./seed";
 
 const app = express();
 const httpServer = createServer(app);
@@ -19,8 +19,8 @@ export function log(message: string, source = "express") {
 }
 
 (async () => {
-  log("Checking for demo doctors...", "seed");
-  await seedDoctors();
+  log("Running database cleanup and setup...", "seed");
+  await cleanAndSetupDatabase();
 
   app.use(
     express.json({

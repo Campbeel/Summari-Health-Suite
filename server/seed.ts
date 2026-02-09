@@ -1,116 +1,87 @@
 import { db } from "./db";
-import { doctors, users } from "@shared/schema";
-import { sql } from "drizzle-orm";
+import { doctors, patients, users, appointments, clinicalRecords, prescriptions, medicalInstructions, conversations, messages, sessions } from "@shared/schema";
+import { eq, ne, and, sql } from "drizzle-orm";
+import bcrypt from "bcryptjs";
 
-// Seed demo doctors for the telemedicine platform
-export async function seedDoctors() {
+const TARGET_RUT = "19.684.371-K";
+
+export async function cleanAndSetupDatabase() {
   try {
-    // Check if doctors already exist
-    const existingDoctors = await db.select().from(doctors);
-    if (existingDoctors.length > 0) {
-      console.log("Doctors already seeded, skipping...");
-      return;
+    console.log("Running database cleanup...");
+
+    const targetUsers = await db.select().from(users).where(eq(users.rut, TARGET_RUT));
+    const targetUserId = targetUsers.length > 0 ? targetUsers[0].id : null;
+
+    await db.delete(prescriptions);
+    await db.delete(medicalInstructions);
+    await db.delete(clinicalRecords);
+    await db.delete(appointments);
+    await db.delete(messages);
+    await db.delete(conversations);
+    await db.delete(sessions);
+
+    if (targetUserId) {
+      await db.delete(doctors).where(ne(doctors.userId, targetUserId));
+      await db.delete(patients).where(ne(patients.userId, targetUserId));
+      await db.delete(users).where(ne(users.id, targetUserId));
+    } else {
+      await db.delete(doctors);
+      await db.delete(patients);
+      await db.delete(users);
     }
 
-    // Create demo doctor users
-    const doctorUsers = [
-      {
-        id: "doctor-1",
-        username: "dr.garcia",
-        email: "maria.garcia@summari.com",
-        firstName: "María",
-        lastName: "García",
-        profileImageUrl: null,
-      },
-      {
-        id: "doctor-2",
-        username: "dr.rodriguez",
-        email: "carlos.rodriguez@summari.com",
-        firstName: "Carlos",
-        lastName: "Rodríguez",
-        profileImageUrl: null,
-      },
-      {
-        id: "doctor-3",
-        username: "dr.lopez",
-        email: "ana.lopez@summari.com",
-        firstName: "Ana",
-        lastName: "López",
-        profileImageUrl: null,
-      },
-    ];
+    if (!targetUserId) {
+      const passwordHash = await bcrypt.hash("admin", 10);
+      const newUserId = `user_${crypto.randomUUID()}`;
+      await db.insert(users).values({
+        id: newUserId,
+        rut: TARGET_RUT,
+        username: TARGET_RUT,
+        firstName: "Usuario",
+        lastName: "Prueba",
+        passwordHash,
+      });
 
-    for (const user of doctorUsers) {
-      await db
-        .insert(users)
-        .values(user)
-        .onConflictDoNothing();
-    }
-
-    // Create doctor profiles
-    const doctorProfiles = [
-      {
-        userId: "doctor-1",
+      await db.insert(doctors).values({
+        userId: newUserId,
         specialty: "Medicina General",
-        licenseNumber: "MG-12345",
-        bio: "Médico general con más de 15 años de experiencia en atención primaria. Especializada en medicina preventiva y manejo de enfermedades crónicas.",
-        consultationFee: 5000, // $50.00
-        availability: {
-          monday: [{ start: "09:00", end: "17:00" }],
-          tuesday: [{ start: "09:00", end: "17:00" }],
-          wednesday: [{ start: "09:00", end: "17:00" }],
-          thursday: [{ start: "09:00", end: "17:00" }],
-          friday: [{ start: "09:00", end: "14:00" }],
-        },
-        isActive: true,
-      },
-      {
-        userId: "doctor-2",
-        specialty: "Cardiología",
-        licenseNumber: "CA-67890",
-        bio: "Cardiólogo certificado especializado en prevención y tratamiento de enfermedades cardiovasculares. Experiencia en ecocardiografía y pruebas de esfuerzo.",
-        consultationFee: 7500, // $75.00
-        availability: {
-          monday: [{ start: "10:00", end: "18:00" }],
-          tuesday: [{ start: "10:00", end: "18:00" }],
-          wednesday: [{ start: "10:00", end: "18:00" }],
-          thursday: [{ start: "10:00", end: "18:00" }],
-        },
-        isActive: true,
-      },
-      {
-        userId: "doctor-3",
-        specialty: "Dermatología",
-        licenseNumber: "DE-11111",
-        bio: "Dermatóloga con especialización en dermatología clínica y estética. Experta en tratamiento de acné, psoriasis y detección temprana de cáncer de piel.",
-        consultationFee: 6000, // $60.00
-        availability: {
-          tuesday: [{ start: "08:00", end: "14:00" }],
-          wednesday: [{ start: "08:00", end: "14:00" }],
-          thursday: [{ start: "08:00", end: "14:00" }],
-          friday: [{ start: "08:00", end: "14:00" }],
-          saturday: [{ start: "09:00", end: "13:00" }],
-        },
-        isActive: true,
-      },
-    ];
+        licenseNumber: "123456",
+        consultationFee: 25000,
+      });
 
-    for (const doctor of doctorProfiles) {
-      await db.insert(doctors).values(doctor);
+      await db.insert(patients).values({
+        userId: newUserId,
+        rut: TARGET_RUT,
+      });
+
+      console.log("Created target user with doctor and patient profiles");
+    } else {
+      const existingDoctors = await db.select().from(doctors).where(eq(doctors.userId, targetUserId));
+      if (existingDoctors.length === 0) {
+        await db.insert(doctors).values({
+          userId: targetUserId,
+          specialty: "Medicina General",
+          licenseNumber: "123456",
+          consultationFee: 25000,
+        });
+      }
+
+      const existingPatients = await db.select().from(patients).where(eq(patients.userId, targetUserId));
+      if (existingPatients.length === 0) {
+        await db.insert(patients).values({
+          userId: targetUserId,
+          rut: TARGET_RUT,
+        });
+      }
+
+      console.log("Ensured target user has doctor and patient profiles");
     }
 
-    console.log("Seeded 3 demo doctors successfully");
+    const finalUsers = await db.select().from(users);
+    const finalDoctors = await db.select().from(doctors);
+    const finalPatients = await db.select().from(patients);
+    console.log(`Database cleanup complete: ${finalUsers.length} user(s), ${finalDoctors.length} doctor(s), ${finalPatients.length} patient(s)`);
   } catch (error) {
-    console.error("Error seeding doctors:", error);
+    console.error("Error during database cleanup:", error);
   }
-}
-
-// Run if executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  seedDoctors()
-    .then(() => process.exit(0))
-    .catch((err) => {
-      console.error(err);
-      process.exit(1);
-    });
 }
