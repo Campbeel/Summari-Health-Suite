@@ -32,17 +32,17 @@ Preferred communication style: Simple, everyday language.
 - **Migrations**: Managed via `drizzle-kit push` command
 
 ### Authentication & Authorization
-- **Provider**: Custom JWT-based authentication system (replaced Replit Auth on 2026-02-09)
-- **Auth Module**: `server/auth.ts` - contains register/login endpoints and isAuthenticated JWT middleware
+- **Provider**: Custom JWT-based authentication system
+- **Auth Module**: `server/auth.ts` - contains register/login endpoints, RUT validation, and isAuthenticated JWT middleware
+- **RUT as Primary Identifier**: Each user is uniquely identified by their Chilean RUT (modulo-11 validated on both frontend and backend)
 - **Password Hashing**: bcryptjs with salt rounds 10
-- **JWT Token**: Signed with SESSION_SECRET, expires in 7 days
+- **JWT Token**: Signed with SESSION_SECRET (required), expires in 7 days
 - **Frontend Storage**: JWT token stored in localStorage, sent as `Authorization: Bearer <token>` header
 - **Protected Routes**: `isAuthenticated` middleware verifies JWT and sets `req.userId`
-- **User Registration**: POST `/api/auth/register` (email, password, firstName, lastName)
-- **User Login**: POST `/api/auth/login` (email, password) → returns JWT token + user data
+- **User Registration**: POST `/api/auth/register` (rut, email, whatsapp, password, firstName, lastName) - also auto-creates patient profile
+- **User Login**: POST `/api/auth/login` (identifier [RUT or email], password) → returns JWT token + user data
 - **User Sync**: Auto-creates patient profiles on first authenticated request to /api/auth/user
-- **Patient Registration**: Mandatory fields (RUT, email, WhatsApp) required before accessing patient features. Registration check via `/api/patients/registration-status`. Doctors bypass this requirement. Registration page at `/registro`.
-- **Frontend Auth Pages**: `/login` (sign in), `/crear-cuenta` (sign up), `/registro` (patient mandatory fields)
+- **Frontend Auth Pages**: `/login` (sign in with RUT or email), `/crear-cuenta` (sign up with RUT, email, WhatsApp, name, password)
 
 ### Real-time Features
 - **Video Calling**: WebRTC peer-to-peer video/audio calls with WebSocket signaling server on `/ws` path
@@ -67,11 +67,11 @@ Preferred communication style: Simple, everyday language.
 
 ### Database
 - **PostgreSQL**: Primary database, connection via `DATABASE_URL` environment variable
-- **Required Tables**: users (with passwordHash), plus application tables
+- **Required Tables**: users (with rut unique, passwordHash, whatsapp), patients, doctors, plus application tables
 
 ### Environment Variables Required
 - `DATABASE_URL`: PostgreSQL connection string
-- `SESSION_SECRET`: JWT signing secret key
+- `SESSION_SECRET`: JWT signing secret key (required at startup)
 - `FLOW_KEY`: Flow payment gateway API key
 - `FLOW_SECRET`: Flow payment gateway secret key
 - `AI_INTEGRATIONS_OPENAI_API_KEY`: OpenAI API key from Replit integrations
@@ -87,6 +87,6 @@ Preferred communication style: Simple, everyday language.
 - `react-day-picker`, `date-fns`: Date handling for appointment scheduling
 
 ## Recent Changes
-- **2026-02-09**: Replaced Replit Auth (OIDC/Passport) with custom JWT-based authentication. Added login page (/login), register page (/crear-cuenta). Removed passport, openid-client, express-session dependencies from auth flow. Users now register with email/password and receive JWT tokens.
-- **2026-02-09**: Added mandatory patient registration (RUT, email, WhatsApp) before platform access.
+- **2026-02-09**: Integrated RUT, WhatsApp, and email into main registration form. RUT is now the unique identifier for all users. Login accepts RUT or email. Removed separate /registro page. Server-side modulo-11 RUT validation added.
+- **2026-02-09**: Replaced Replit Auth (OIDC/Passport) with custom JWT-based authentication. Added login page (/login), register page (/crear-cuenta).
 - **2026-02-09**: Integrated Flow payment gateway with HMAC-SHA256 webhook verification.

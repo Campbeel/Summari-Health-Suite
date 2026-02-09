@@ -45,10 +45,31 @@ function generateToken(userId: string, email: string): string {
   return jwt.sign({ userId, email } as JwtPayload, JWT_SECRET, { expiresIn: JWT_EXPIRY });
 }
 
+function validateRut(rut: string): boolean {
+  const cleaned = rut.replace(/\./g, "").replace(/-/g, "");
+  if (cleaned.length < 2) return false;
+  const body = cleaned.slice(0, -1);
+  const checkDigit = cleaned.slice(-1).toUpperCase();
+  if (!/^\d+$/.test(body)) return false;
+  let sum = 0;
+  let multiplier = 2;
+  for (let i = body.length - 1; i >= 0; i--) {
+    sum += parseInt(body[i]) * multiplier;
+    multiplier = multiplier === 7 ? 2 : multiplier + 1;
+  }
+  const remainder = 11 - (sum % 11);
+  let expected: string;
+  if (remainder === 11) expected = "0";
+  else if (remainder === 10) expected = "K";
+  else expected = remainder.toString();
+  return checkDigit === expected;
+}
+
 const registerSchema = z.object({
   rut: z.string()
     .min(1, "El RUT es requerido")
-    .regex(/^(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])$/, "Formato de RUT inválido (ej: 12.345.678-9)"),
+    .regex(/^(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])$/, "Formato de RUT inválido (ej: 12.345.678-9)")
+    .refine((val) => validateRut(val), "El RUT ingresado no es válido"),
   email: z.string().email("Correo electrónico inválido"),
   whatsapp: z.string()
     .min(1, "El número de WhatsApp es requerido")
