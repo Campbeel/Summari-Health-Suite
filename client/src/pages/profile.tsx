@@ -29,7 +29,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { User, Save, AlertCircle, Plus, X } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const profileSchema = z.object({
   rut: z.string().optional(),
@@ -56,28 +56,46 @@ const GENDERS = [
 export default function ProfilePage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [newAllergy, setNewAllergy] = useState("");
 
   const { data: profile, isLoading } = useQuery<any>({
     queryKey: ["/api/patients/profile"],
   });
 
-  const [allergies, setAllergies] = useState<string[]>(profile?.allergies || []);
+  const [allergies, setAllergies] = useState<string[]>([]);
+  const [newAllergy, setNewAllergy] = useState("");
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
-      rut: profile?.rut || "",
-      email: profile?.email || "",
-      whatsapp: profile?.whatsapp || "",
-      dateOfBirth: profile?.dateOfBirth || "",
-      gender: profile?.gender || "",
-      bloodType: profile?.bloodType || "",
-      medicalHistory: profile?.medicalHistory || "",
-      emergencyContact: profile?.emergencyContact || "",
-      emergencyPhone: profile?.emergencyPhone || "",
+      rut: "",
+      email: "",
+      whatsapp: "",
+      dateOfBirth: "",
+      gender: "",
+      bloodType: "",
+      medicalHistory: "",
+      emergencyContact: "",
+      emergencyPhone: "",
     },
   });
+
+  // Effect to update form values when profile data is loaded
+  useEffect(() => {
+    if (profile) {
+      form.reset({
+        rut: profile.rut || "",
+        email: profile.email || "",
+        whatsapp: profile.whatsapp || "",
+        dateOfBirth: profile.dateOfBirth || "",
+        gender: profile.gender || "",
+        bloodType: profile.bloodType || "",
+        medicalHistory: profile.medicalHistory || "",
+        emergencyContact: profile.emergencyContact || "",
+        emergencyPhone: profile.emergencyPhone || "",
+      });
+      setAllergies(profile.allergies || []);
+    }
+  }, [profile, form.reset]);
 
   const updateMutation = useMutation({
     mutationFn: async (data: ProfileFormValues & { allergies: string[] }) => {
