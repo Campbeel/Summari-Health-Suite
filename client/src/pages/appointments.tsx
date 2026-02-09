@@ -136,7 +136,7 @@ function AppointmentCard({ appointment }: { appointment: AppointmentWithDetails 
                 </Button>
               )}
               <Button variant="ghost" asChild>
-                <Link href={`/appointments/${appointment.id}`}>
+                <Link href={`/consultation/${appointment.id}`}>
                   Ver detalles
                 </Link>
               </Button>
