@@ -97,7 +97,7 @@ export default function DoctorDashboard() {
             </Link>
           </Button>
           <Button variant="outline" asChild data-testid="button-view-records">
-            <Link href="/doctor/patients">
+            <Link href="/records">
               <FileText className="h-4 w-4 mr-2" />
               Ver Expedientes
             </Link>
