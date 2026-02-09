@@ -257,47 +257,16 @@ export default function BookAppointmentPage() {
             <div className="space-y-6">
               <div>
                 <Label className="mb-3 block">Tipo de consulta</Label>
-                <RadioGroup
-                  value={consultationType}
-                  onValueChange={(v) => setConsultationType(v as "video" | "audio")}
-                  className="grid grid-cols-2 gap-4"
-                  data-testid="radio-group-consultation-type"
+                <div
+                  className="flex items-center gap-3 p-4 border rounded-lg bg-primary/5 ring-1 ring-primary"
+                  data-testid="label-consultation-video"
                 >
+                  <Video className="h-5 w-5" />
                   <div>
-                    <RadioGroupItem value="video" id="video" className="sr-only" data-testid="radio-consultation-video" />
-                    <Label
-                      htmlFor="video"
-                      className={`
-                        flex items-center gap-3 p-4 border rounded-lg cursor-pointer transition-all
-                        ${consultationType === "video" ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover-elevate"}
-                      `}
-                      data-testid="label-consultation-video"
-                    >
-                      <Video className="h-5 w-5" />
-                      <div>
-                        <p className="font-medium">Videollamada</p>
-                        <p className="text-sm text-muted-foreground">Consulta con video en vivo</p>
-                      </div>
-                    </Label>
+                    <p className="font-medium">Videollamada</p>
+                    <p className="text-sm text-muted-foreground">Consulta con video en vivo</p>
                   </div>
-                  <div>
-                    <RadioGroupItem value="audio" id="audio" className="sr-only" data-testid="radio-consultation-audio" />
-                    <Label
-                      htmlFor="audio"
-                      className={`
-                        flex items-center gap-3 p-4 border rounded-lg cursor-pointer transition-all
-                        ${consultationType === "audio" ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover-elevate"}
-                      `}
-                      data-testid="label-consultation-audio"
-                    >
-                      <Phone className="h-5 w-5" />
-                      <div>
-                        <p className="font-medium">Llamada de voz</p>
-                        <p className="text-sm text-muted-foreground">Solo audio</p>
-                      </div>
-                    </Label>
-                  </div>
-                </RadioGroup>
+                </div>
               </div>
 
               <div>
@@ -349,14 +318,10 @@ export default function BookAppointmentPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    {consultationType === "video" ? (
-                      <Video className="h-5 w-5 text-muted-foreground" />
-                    ) : (
-                      <Phone className="h-5 w-5 text-muted-foreground" />
-                    )}
+                    <Video className="h-5 w-5 text-muted-foreground" />
                     <div>
                       <p className="text-sm text-muted-foreground">Tipo</p>
-                      <p className="font-medium" data-testid="text-confirmation-type">{consultationType === "video" ? "Videollamada" : "Llamada de voz"}</p>
+                      <p className="font-medium" data-testid="text-confirmation-type">Videollamada</p>
                     </div>
                   </div>
                   </div>
