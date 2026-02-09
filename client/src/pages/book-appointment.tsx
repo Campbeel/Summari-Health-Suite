@@ -89,7 +89,7 @@ export default function BookAppointmentPage() {
   const canProceed = () => {
     switch (currentStep) {
       case 0: return !!selectedDoctor;
-      case 1: return !!selectedDate && !!selectedTime;
+      case 1: return !!selectedDate && !!selectedTime && isSlotAvailable(selectedTime);
       case 2: return true;
       case 3: return true;
       default: return false;
@@ -110,6 +110,18 @@ export default function BookAppointmentPage() {
     } else {
       navigate("/appointments");
     }
+  };
+
+  const isSlotAvailable = (time: string) => {
+    if (!selectedDate) return false;
+    const now = new Date();
+    const isToday = format(selectedDate, "yyyy-MM-dd") === format(now, "yyyy-MM-dd");
+    if (!isToday) return true;
+    
+    const [hours, minutes] = time.split(":").map(Number);
+    const slotTime = new Date(now);
+    slotTime.setHours(hours, minutes, 0, 0);
+    return slotTime > now;
   };
 
   return (
@@ -240,6 +252,7 @@ export default function BookAppointmentPage() {
                       key={time}
                       type="button"
                       variant={selectedTime === time ? "default" : "outline"}
+                      disabled={!isSlotAvailable(time)}
                       onClick={() => setSelectedTime(time)}
                       className="h-10"
                       data-testid={`time-slot-${time}`}
