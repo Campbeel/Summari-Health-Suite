@@ -126,7 +126,11 @@ export function useWebRTC({ roomId, userId, appointmentId, onRemoteStream, onCon
         setIsConnected(false);
         setIsConnecting(false);
         if (state === 'failed') {
-          setError('La conexión de video falló. Por favor, intenta de nuevo.');
+          console.log('[WebRTC] Peer connection failed, attempting to restart...');
+          // Trigger ice restart if possible or just re-initiate call
+          if (remoteParticipantRef.current) {
+            initiateCall(remoteParticipantRef.current);
+          }
         }
       }
     };
@@ -341,7 +345,14 @@ export function useWebRTC({ roomId, userId, appointmentId, onRemoteStream, onCon
     };
 
     ws.onclose = () => {
+      console.log('[WebRTC] WebSocket closed, attempting to reconnect...');
       setIsConnected(false);
+      // Attempt to reconnect after 3 seconds
+      setTimeout(() => {
+        if (roomId && userId && appointmentId) {
+          connect();
+        }
+      }, 3000);
     };
   }, [roomId, userId, startMedia, sendMessage, initiateCall, handleOffer, handleAnswer, handleIceCandidate]);
 
