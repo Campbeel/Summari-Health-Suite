@@ -19,7 +19,12 @@ export default function PaymentResult() {
     queryKey: ["/api/flow/status", commerceOrder],
     queryFn: async () => {
       if (!commerceOrder) return null;
-      const response = await fetch(`/api/flow/status/${commerceOrder}`);
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+      const response = await fetch(`/api/flow/status/${commerceOrder}`, { headers });
       if (!response.ok) throw new Error("Failed to fetch payment status");
       return response.json();
     },

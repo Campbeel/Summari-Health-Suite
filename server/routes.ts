@@ -376,7 +376,6 @@ export async function registerRoutes(
         patient = await storage.createPatient({ userId });
       }
       
-      // Validate request body (patientId comes from authenticated user, not request)
       const bookingSchema = insertAppointmentSchema.omit({ patientId: true });
       const validationResult = bookingSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -391,11 +390,50 @@ export async function registerRoutes(
       const appointment = await storage.createAppointment({
         patientId: patient.id,
         ...appointmentData,
-        status: "confirmed",
-        paymentStatus: "paid",
+        status: "scheduled",
+        paymentStatus: "pending",
       });
-      
-      res.json(appointment);
+
+      const doctor = await storage.getDoctor(appointment.doctorId);
+      if (!doctor) {
+        return res.status(404).json({ error: "Médico no encontrado" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user?.email) {
+        return res.status(400).json({ error: "Se requiere un email para procesar el pago" });
+      }
+
+      const subject = `Consulta médica - ${doctor.specialty}`;
+      const amount = doctor.consultationFee;
+
+      try {
+        const { token, url, commerceOrderID } = await createPayment(
+          user.email,
+          amount,
+          appointment.id,
+          subject
+        );
+
+        await storage.updateAppointment(appointment.id, {
+          flowToken: token,
+          flowCommerceOrderId: commerceOrderID,
+          paymentStatus: "pending",
+        });
+
+        res.json({
+          ...appointment,
+          redirectUrl: `${url}?token=${token}`,
+          flowToken: token,
+          flowCommerceOrderId: commerceOrderID,
+        });
+      } catch (paymentError) {
+        console.error("Error creating Flow payment:", paymentError);
+        res.json({
+          ...appointment,
+          paymentError: "No se pudo iniciar el pago. Puedes intentar pagar desde tus citas.",
+        });
+      }
     } catch (error) {
       console.error("Error creating appointment:", error);
       res.status(500).json({ error: "Failed to create appointment" });

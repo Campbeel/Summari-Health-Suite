@@ -51,6 +51,7 @@ type AppointmentWithDoctor = {
   doctorName: string;
   doctorSpecialty: string | null;
   doctorImage: string;
+  consultationFee: number;
 };
 
 type AppointmentWithDoctorFull = {
@@ -408,6 +409,7 @@ export class DatabaseStorage implements IStorage {
         doctorName: sql<string>`COALESCE(u.first_name || ' ' || u.last_name, u.email)`.as('doctorName'),
         doctorSpecialty: doctors.specialty,
         doctorImage: sql<string>`u.profile_image_url`.as('doctorImage'),
+        consultationFee: sql<number>`COALESCE(${doctors.consultationFee}, 25000)`.as('consultationFee'),
       })
       .from(appointments)
       .leftJoin(doctors, eq(appointments.doctorId, doctors.id))
@@ -434,6 +436,7 @@ export class DatabaseStorage implements IStorage {
         doctorName: sql<string>`COALESCE(u.first_name || ' ' || u.last_name, u.email)`.as('doctorName'),
         doctorSpecialty: doctors.specialty,
         doctorImage: sql<string>`u.profile_image_url`.as('doctorImage'),
+        consultationFee: sql<number>`COALESCE(${doctors.consultationFee}, 25000)`.as('consultationFee'),
       })
       .from(appointments)
       .leftJoin(doctors, eq(appointments.doctorId, doctors.id))

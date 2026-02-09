@@ -24,6 +24,7 @@ interface AppointmentWithDetails {
   doctorName: string;
   doctorSpecialty: string;
   doctorImage?: string;
+  consultationFee?: number;
 }
 
 function getStatusBadge(status: string) {
@@ -83,6 +84,16 @@ function AppointmentCard({ appointment }: { appointment: AppointmentWithDetails 
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 {getStatusBadge(appointment.status)}
+                {appointment.paymentStatus === "pending" && (
+                  <Badge variant="outline" className="text-yellow-600 border-yellow-400 dark:text-yellow-400 dark:border-yellow-600">
+                    Pago pendiente
+                  </Badge>
+                )}
+                {appointment.paymentStatus === "rejected" && (
+                  <Badge variant="destructive">
+                    Pago rechazado
+                  </Badge>
+                )}
               </div>
             </div>
 

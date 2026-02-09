@@ -20,7 +20,9 @@ import {
   Video, 
   Phone,
   Check,
-  Stethoscope
+  Stethoscope,
+  CreditCard,
+  Shield
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -36,7 +38,7 @@ interface Doctor {
   userImage?: string;
 }
 
-const STEPS = ["Especialista", "Fecha y Hora", "Detalles", "Confirmación"];
+const STEPS = ["Especialista", "Fecha y Hora", "Detalles", "Confirmar y Pagar"];
 
 const TIME_SLOTS = [
   "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
@@ -69,13 +71,24 @@ export default function BookAppointmentPage() {
       });
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
-      toast({
-        title: "Consulta agendada",
-        description: "Tu cita ha sido confirmada exitosamente",
-      });
-      navigate("/appointments");
+      if (data.redirectUrl) {
+        toast({
+          title: "Redirigiendo al pago",
+          description: "Serás redirigido a Flow para completar el pago de tu consulta.",
+        });
+        window.location.href = data.redirectUrl;
+      } else if (data.paymentError) {
+        toast({
+          title: "Cita creada",
+          description: data.paymentError,
+          variant: "destructive",
+        });
+        navigate("/appointments");
+      } else {
+        navigate("/appointments");
+      }
     },
     onError: () => {
       toast({
@@ -164,7 +177,7 @@ export default function BookAppointmentPage() {
             {currentStep === 0 && "Selecciona el médico con quien deseas agendar tu consulta"}
             {currentStep === 1 && "Elige la fecha y hora para tu consulta"}
             {currentStep === 2 && "Agrega detalles adicionales sobre tu consulta"}
-            {currentStep === 3 && "Revisa y confirma los detalles de tu cita"}
+            {currentStep === 3 && "Revisa los detalles y procede al pago"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -210,7 +223,7 @@ export default function BookAppointmentPage() {
                       )}
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-lg">${doctor.consultationFee.toLocaleString()}</p>
+                      <p className="font-semibold text-lg">${doctor.consultationFee.toLocaleString()} CLP</p>
                       <p className="text-sm text-muted-foreground">por consulta</p>
                     </div>
                     {selectedDoctor?.id === doctor.id && (
@@ -347,8 +360,24 @@ export default function BookAppointmentPage() {
                 )}
               </div>
 
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="h-5 w-5 text-primary" />
+                    <span className="font-medium">Total a pagar</span>
+                  </div>
+                  <span className="text-2xl font-bold" data-testid="text-payment-total">
+                    ${selectedDoctor.consultationFee.toLocaleString()} CLP
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Shield className="h-4 w-4" />
+                  <span>Pago seguro procesado por Flow</span>
+                </div>
+              </div>
+
               <p className="text-sm text-muted-foreground text-center">
-                Al confirmar, tu cita quedará agendada automáticamente
+                Al continuar, serás redirigido a Flow para completar el pago. Tu cita se confirmará una vez procesado el pago.
               </p>
             </div>
           )}
@@ -367,7 +396,12 @@ export default function BookAppointmentPage() {
           data-testid="button-next-step"
         >
           {currentStep === STEPS.length - 1 ? (
-            bookMutation.isPending ? "Procesando..." : "Confirmar Cita"
+            bookMutation.isPending ? "Procesando..." : (
+              <>
+                <CreditCard className="h-4 w-4 mr-2" />
+                Pagar y Agendar
+              </>
+            )
           ) : (
             <>
               Siguiente

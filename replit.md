@@ -91,3 +91,4 @@ Preferred communication style: Simple, everyday language.
 - **2026-02-09**: Replaced Replit Auth (OIDC/Passport) with custom JWT-based authentication. Added login page (/login), register page (/crear-cuenta).
 - **2026-02-09**: Integrated Flow payment gateway with HMAC-SHA256 webhook verification.
 - **2026-02-09**: Added password recovery system via email (Resend integration). Users can request a reset link by RUT or email, receive it via email, and set a new password. Token expires in 1 hour.
+- **2026-02-09**: Integrated Flow payment into appointment booking flow. Appointments are created as "scheduled"/"pending" and automatically initiate a Flow payment. User is redirected to Flow to pay. Appointment is confirmed only after successful payment via webhook. Payment status badges shown in appointment list.
