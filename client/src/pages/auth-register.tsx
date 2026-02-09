@@ -9,18 +9,45 @@ import { useToast } from "@/hooks/use-toast";
 import { loginWithToken } from "@/hooks/use-auth";
 import { Stethoscope, Eye, EyeOff } from "lucide-react";
 
+function validateRut(rut: string): boolean {
+  const cleaned = rut.replace(/\./g, "").replace(/-/g, "");
+  if (cleaned.length < 2) return false;
+
+  const body = cleaned.slice(0, -1);
+  const checkDigit = cleaned.slice(-1).toUpperCase();
+
+  if (!/^\d+$/.test(body)) return false;
+
+  let sum = 0;
+  let multiplier = 2;
+  for (let i = body.length - 1; i >= 0; i--) {
+    sum += parseInt(body[i]) * multiplier;
+    multiplier = multiplier === 7 ? 2 : multiplier + 1;
+  }
+
+  const remainder = 11 - (sum % 11);
+  let expected: string;
+  if (remainder === 11) expected = "0";
+  else if (remainder === 10) expected = "K";
+  else expected = remainder.toString();
+
+  return checkDigit === expected;
+}
+
 export default function AuthRegisterPage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
+  const [rut, setRut] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
+  const [whatsapp, setWhatsapp] = useState("+56");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
   const registerMutation = useMutation({
-    mutationFn: async (data: { email: string; password: string; firstName: string; lastName: string }) => {
+    mutationFn: async (data: { rut: string; email: string; whatsapp: string; password: string; firstName: string; lastName: string }) => {
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -44,6 +71,19 @@ export default function AuthRegisterPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!/^(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])$/.test(rut)) {
+      toast({ title: "Error", description: "Formato de RUT inválido (ej: 12.345.678-9)", variant: "destructive" });
+      return;
+    }
+    if (!validateRut(rut)) {
+      toast({ title: "Error", description: "El RUT ingresado no es válido", variant: "destructive" });
+      return;
+    }
+    if (!/^\+\d{8,15}$/.test(whatsapp)) {
+      toast({ title: "Error", description: "Formato de WhatsApp inválido (ej: +56912345678)", variant: "destructive" });
+      return;
+    }
     if (password !== confirmPassword) {
       toast({ title: "Error", description: "Las contraseñas no coinciden", variant: "destructive" });
       return;
@@ -52,7 +92,7 @@ export default function AuthRegisterPage() {
       toast({ title: "Error", description: "La contraseña debe tener al menos 6 caracteres", variant: "destructive" });
       return;
     }
-    registerMutation.mutate({ email, password, firstName, lastName });
+    registerMutation.mutate({ rut, email, whatsapp, password, firstName, lastName });
   };
 
   return (
@@ -75,6 +115,17 @@ export default function AuthRegisterPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="rut">RUT</Label>
+                <Input
+                  id="rut"
+                  placeholder="12.345.678-9"
+                  value={rut}
+                  onChange={(e) => setRut(e.target.value)}
+                  required
+                  data-testid="input-register-rut"
+                />
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label htmlFor="firstName">Nombre</Label>
@@ -109,6 +160,17 @@ export default function AuthRegisterPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   data-testid="input-register-email"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="whatsapp">WhatsApp</Label>
+                <Input
+                  id="whatsapp"
+                  placeholder="+56912345678"
+                  value={whatsapp}
+                  onChange={(e) => setWhatsapp(e.target.value)}
+                  required
+                  data-testid="input-register-whatsapp"
                 />
               </div>
               <div className="space-y-2">

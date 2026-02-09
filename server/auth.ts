@@ -3,11 +3,11 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { db } from "./db";
-import { users } from "@shared/models/auth";
+import { users, patients } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
-const JWT_SECRET = process.env.SESSION_SECRET;
-if (!JWT_SECRET) {
+const JWT_SECRET: string = process.env.SESSION_SECRET!;
+if (!process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET environment variable is required");
 }
 const JWT_EXPIRY = "7d";
@@ -46,14 +46,20 @@ function generateToken(userId: string, email: string): string {
 }
 
 const registerSchema = z.object({
+  rut: z.string()
+    .min(1, "El RUT es requerido")
+    .regex(/^(\d{1,2}\.?\d{3}\.?\d{3}-[\dkK])$/, "Formato de RUT inválido (ej: 12.345.678-9)"),
   email: z.string().email("Correo electrónico inválido"),
+  whatsapp: z.string()
+    .min(1, "El número de WhatsApp es requerido")
+    .regex(/^\+\d{8,15}$/, "Formato inválido (ej: +56912345678)"),
   password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
   firstName: z.string().min(1, "El nombre es requerido"),
   lastName: z.string().min(1, "El apellido es requerido"),
 });
 
 const loginSchema = z.object({
-  email: z.string().email("Correo electrónico inválido"),
+  identifier: z.string().min(1, "El RUT o correo electrónico es requerido"),
   password: z.string().min(1, "La contraseña es requerida"),
 });
 
@@ -68,10 +74,17 @@ export function registerAuthRoutes(app: Express) {
         });
       }
 
-      const { email, password, firstName, lastName } = validation.data;
+      const { rut, email, whatsapp, password, firstName, lastName } = validation.data;
 
-      const [existing] = await db.select().from(users).where(eq(users.email, email));
-      if (existing) {
+      const cleanedRut = rut.replace(/\./g, "");
+
+      const [existingByRut] = await db.select().from(users).where(eq(users.rut, cleanedRut));
+      if (existingByRut) {
+        return res.status(409).json({ error: "Ya existe una cuenta con este RUT" });
+      }
+
+      const [existingByEmail] = await db.select().from(users).where(eq(users.email, email));
+      if (existingByEmail) {
         return res.status(409).json({ error: "Ya existe una cuenta con este correo electrónico" });
       }
 
@@ -79,11 +92,20 @@ export function registerAuthRoutes(app: Express) {
 
       const [newUser] = await db.insert(users).values({
         email,
+        rut: cleanedRut,
+        whatsapp,
         passwordHash,
         firstName,
         lastName,
         username: email,
       }).returning();
+
+      await db.insert(patients).values({
+        userId: newUser.id,
+        rut: cleanedRut,
+        email,
+        whatsapp,
+      });
 
       const token = generateToken(newUser.id, newUser.email!);
 
@@ -92,6 +114,7 @@ export function registerAuthRoutes(app: Express) {
         user: {
           id: newUser.id,
           email: newUser.email,
+          rut: newUser.rut,
           firstName: newUser.firstName,
           lastName: newUser.lastName,
           profileImageUrl: newUser.profileImageUrl,
@@ -114,9 +137,18 @@ export function registerAuthRoutes(app: Express) {
         });
       }
 
-      const { email, password } = validation.data;
+      const { identifier, password } = validation.data;
 
-      const [user] = await db.select().from(users).where(eq(users.email, email));
+      let user;
+      if (identifier.includes("@")) {
+        const [found] = await db.select().from(users).where(eq(users.email, identifier));
+        user = found;
+      } else {
+        const cleanedRut = identifier.replace(/\./g, "");
+        const [found] = await db.select().from(users).where(eq(users.rut, cleanedRut));
+        user = found;
+      }
+
       if (!user || !user.passwordHash) {
         return res.status(401).json({ error: "Credenciales inválidas" });
       }
@@ -133,6 +165,7 @@ export function registerAuthRoutes(app: Express) {
         user: {
           id: user.id,
           email: user.email,
+          rut: user.rut,
           firstName: user.firstName,
           lastName: user.lastName,
           profileImageUrl: user.profileImageUrl,
