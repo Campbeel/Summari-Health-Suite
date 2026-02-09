@@ -1,10 +1,12 @@
 import type { Express, Request, Response, NextFunction, RequestHandler } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { z } from "zod";
 import { db } from "./db";
-import { users, patients } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { users, patients, passwordResetTokens } from "@shared/schema";
+import { eq, and, gt, isNull } from "drizzle-orm";
+import { sendPasswordResetEmail } from "./email";
 
 const JWT_SECRET: string = process.env.SESSION_SECRET!;
 if (!process.env.SESSION_SECRET) {
@@ -196,6 +198,132 @@ export function registerAuthRoutes(app: Express) {
     } catch (error) {
       console.error("Error en login:", error);
       res.status(500).json({ error: "Error al iniciar sesión" });
+    }
+  });
+
+  const forgotPasswordSchema = z.object({
+    identifier: z.string().min(1, "El RUT o correo electrónico es requerido"),
+  });
+
+  app.post("/api/auth/forgot-password", async (req: Request, res: Response) => {
+    try {
+      const validation = forgotPasswordSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ error: "Datos inválidos" });
+      }
+
+      const { identifier } = validation.data;
+
+      let user;
+      if (identifier.includes("@")) {
+        const [found] = await db.select().from(users).where(eq(users.email, identifier));
+        user = found;
+      } else {
+        const cleanedRut = identifier.replace(/\./g, "");
+        const [found] = await db.select().from(users).where(eq(users.rut, cleanedRut));
+        user = found;
+      }
+
+      if (!user || !user.email) {
+        return res.json({ message: "Si existe una cuenta con esos datos, recibirás un correo con instrucciones." });
+      }
+
+      const token = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+      await db.insert(passwordResetTokens).values({
+        userId: user.id,
+        token,
+        expiresAt,
+      });
+
+      try {
+        await sendPasswordResetEmail(user.email, token, user.firstName || "Usuario");
+      } catch (emailError) {
+        console.error("Error sending reset email:", emailError);
+      }
+
+      res.json({ message: "Si existe una cuenta con esos datos, recibirás un correo con instrucciones." });
+    } catch (error) {
+      console.error("Error en forgot-password:", error);
+      res.status(500).json({ error: "Error al procesar la solicitud" });
+    }
+  });
+
+  const resetPasswordSchema = z.object({
+    token: z.string().min(1, "Token requerido"),
+    password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
+  });
+
+  app.post("/api/auth/reset-password", async (req: Request, res: Response) => {
+    try {
+      const validation = resetPasswordSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({
+          error: "Datos inválidos",
+          errors: validation.error.flatten().fieldErrors,
+        });
+      }
+
+      const { token, password } = validation.data;
+
+      const [resetToken] = await db
+        .select()
+        .from(passwordResetTokens)
+        .where(
+          and(
+            eq(passwordResetTokens.token, token),
+            gt(passwordResetTokens.expiresAt, new Date()),
+            isNull(passwordResetTokens.usedAt)
+          )
+        );
+
+      if (!resetToken) {
+        return res.status(400).json({ error: "El enlace ha expirado o ya fue utilizado. Solicita uno nuevo." });
+      }
+
+      const passwordHash = await bcrypt.hash(password, 10);
+
+      await db
+        .update(users)
+        .set({ passwordHash, updatedAt: new Date() })
+        .where(eq(users.id, resetToken.userId));
+
+      await db
+        .update(passwordResetTokens)
+        .set({ usedAt: new Date() })
+        .where(eq(passwordResetTokens.id, resetToken.id));
+
+      res.json({ message: "Tu contraseña ha sido restablecida correctamente." });
+    } catch (error) {
+      console.error("Error en reset-password:", error);
+      res.status(500).json({ error: "Error al restablecer la contraseña" });
+    }
+  });
+
+  app.get("/api/auth/verify-reset-token/:token", async (req: Request, res: Response) => {
+    try {
+      const { token } = req.params;
+
+      const [resetToken] = await db
+        .select()
+        .from(passwordResetTokens)
+        .where(
+          and(
+            eq(passwordResetTokens.token, token),
+            gt(passwordResetTokens.expiresAt, new Date()),
+            isNull(passwordResetTokens.usedAt)
+          )
+        );
+
+      if (!resetToken) {
+        return res.status(400).json({ valid: false, error: "El enlace ha expirado o ya fue utilizado." });
+      }
+
+      res.json({ valid: true });
+    } catch (error) {
+      console.error("Error verifying reset token:", error);
+      res.status(500).json({ valid: false, error: "Error al verificar el enlace" });
     }
   });
 }

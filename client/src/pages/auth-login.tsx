@@ -108,6 +108,15 @@ export default function AuthLoginPage() {
               >
                 {loginMutation.isPending ? "Ingresando..." : "Iniciar Sesión"}
               </Button>
+              <div className="text-right">
+                <Link
+                  href="/recuperar-contrasena"
+                  className="text-sm text-muted-foreground hover:underline"
+                  data-testid="link-forgot-password"
+                >
+                  ¿Olvidaste tu contraseña?
+                </Link>
+              </div>
             </form>
             <div className="mt-4 text-center text-sm">
               <span className="text-muted-foreground">¿No tienes cuenta? </span>

@@ -29,6 +29,8 @@ import DoctorDashboard from "@/pages/doctor/dashboard";
 import DoctorAppointmentsPage from "@/pages/doctor/appointments";
 import DoctorProfilePage from "@/pages/doctor/profile";
 import AdminUsersPage from "@/pages/admin/users";
+import ForgotPasswordPage from "@/pages/forgot-password";
+import ResetPasswordPage from "@/pages/reset-password";
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -142,6 +144,12 @@ function Router() {
       </Route>
       <Route path="/crear-cuenta">
         {isAuthenticated ? <ProtectedRoute component={Dashboard} /> : <AuthRegisterPage />}
+      </Route>
+      <Route path="/recuperar-contrasena">
+        {isAuthenticated ? <ProtectedRoute component={Dashboard} /> : <ForgotPasswordPage />}
+      </Route>
+      <Route path="/restablecer-contrasena">
+        {isAuthenticated ? <ProtectedRoute component={Dashboard} /> : <ResetPasswordPage />}
       </Route>
       <Route path="/appointments">
         <ProtectedRoute component={AppointmentsPage} />
