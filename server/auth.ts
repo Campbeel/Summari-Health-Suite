@@ -205,6 +205,8 @@ export function registerAuthRoutes(app: Express) {
     identifier: z.string().min(1, "El RUT o correo electrónico es requerido"),
   });
 
+  const forgotPasswordCooldowns = new Map<string, number>();
+
   app.post("/api/auth/forgot-password", async (req: Request, res: Response) => {
     try {
       const validation = forgotPasswordSchema.safeParse(req.body);
@@ -213,6 +215,14 @@ export function registerAuthRoutes(app: Express) {
       }
 
       const { identifier } = validation.data;
+      const genericMessage = "Si existe una cuenta con esos datos, recibirás un correo con instrucciones.";
+
+      const cooldownKey = identifier.toLowerCase();
+      const lastRequest = forgotPasswordCooldowns.get(cooldownKey);
+      if (lastRequest && Date.now() - lastRequest < 60000) {
+        return res.json({ message: genericMessage });
+      }
+      forgotPasswordCooldowns.set(cooldownKey, Date.now());
 
       let user;
       if (identifier.includes("@")) {
@@ -225,25 +235,36 @@ export function registerAuthRoutes(app: Express) {
       }
 
       if (!user || !user.email) {
-        return res.json({ message: "Si existe una cuenta con esos datos, recibirás un correo con instrucciones." });
+        return res.json({ message: genericMessage });
       }
 
-      const token = crypto.randomBytes(32).toString("hex");
+      await db
+        .update(passwordResetTokens)
+        .set({ usedAt: new Date() })
+        .where(
+          and(
+            eq(passwordResetTokens.userId, user.id),
+            isNull(passwordResetTokens.usedAt)
+          )
+        );
+
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex");
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
       await db.insert(passwordResetTokens).values({
         userId: user.id,
-        token,
+        token: hashedToken,
         expiresAt,
       });
 
       try {
-        await sendPasswordResetEmail(user.email, token, user.firstName || "Usuario");
+        await sendPasswordResetEmail(user.email, rawToken, user.firstName || "Usuario");
       } catch (emailError) {
         console.error("Error sending reset email:", emailError);
       }
 
-      res.json({ message: "Si existe una cuenta con esos datos, recibirás un correo con instrucciones." });
+      res.json({ message: genericMessage });
     } catch (error) {
       console.error("Error en forgot-password:", error);
       res.status(500).json({ error: "Error al procesar la solicitud" });
@@ -266,13 +287,14 @@ export function registerAuthRoutes(app: Express) {
       }
 
       const { token, password } = validation.data;
+      const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
       const [resetToken] = await db
         .select()
         .from(passwordResetTokens)
         .where(
           and(
-            eq(passwordResetTokens.token, token),
+            eq(passwordResetTokens.token, hashedToken),
             gt(passwordResetTokens.expiresAt, new Date()),
             isNull(passwordResetTokens.usedAt)
           )
@@ -304,13 +326,14 @@ export function registerAuthRoutes(app: Express) {
   app.get("/api/auth/verify-reset-token/:token", async (req: Request, res: Response) => {
     try {
       const { token } = req.params;
+      const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
       const [resetToken] = await db
         .select()
         .from(passwordResetTokens)
         .where(
           and(
-            eq(passwordResetTokens.token, token),
+            eq(passwordResetTokens.token, hashedToken),
             gt(passwordResetTokens.expiresAt, new Date()),
             isNull(passwordResetTokens.usedAt)
           )

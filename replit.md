@@ -90,3 +90,4 @@ Preferred communication style: Simple, everyday language.
 - **2026-02-09**: Integrated RUT, WhatsApp, and email into main registration form. RUT is now the unique identifier for all users. Login accepts RUT or email. Removed separate /registro page. Server-side modulo-11 RUT validation added.
 - **2026-02-09**: Replaced Replit Auth (OIDC/Passport) with custom JWT-based authentication. Added login page (/login), register page (/crear-cuenta).
 - **2026-02-09**: Integrated Flow payment gateway with HMAC-SHA256 webhook verification.
+- **2026-02-09**: Added password recovery system via email (Resend integration). Users can request a reset link by RUT or email, receive it via email, and set a new password. Token expires in 1 hour.
