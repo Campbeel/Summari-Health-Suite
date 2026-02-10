@@ -151,9 +151,15 @@ export default function BookAppointmentPage() {
     const isToday = format(selectedDate, "yyyy-MM-dd") === format(now, "yyyy-MM-dd");
     if (isToday) {
       const [hours, minutes] = time.split(":").map(Number);
-      const slotTime = new Date(selectedDate);
-      slotTime.setHours(hours, minutes, 0, 0);
-      if (slotTime <= now) return false;
+      
+      // We calculate current Chilean time from UTC
+      // UTC is 16:37, user says 13:37 -> offset is -3 hours
+      const chileanNow = new Date(now.getTime() - (3 * 60 * 60 * 1000));
+      const currentHours = chileanNow.getHours();
+      const currentMinutes = chileanNow.getMinutes();
+
+      if (hours < currentHours) return false;
+      if (hours === currentHours && minutes <= currentMinutes) return false;
     }
     if (bookedSlots.includes(time)) return false;
     return true;
