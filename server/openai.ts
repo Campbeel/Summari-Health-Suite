@@ -119,3 +119,91 @@ export async function summarizeConsultation(transcript: string): Promise<{
     return null;
   }
 }
+
+export interface ConsultationAISuggestions {
+  clinicalSummary: {
+    chiefComplaint?: string;
+    symptoms?: string[];
+    diagnosis?: string;
+    notes?: string;
+  } | null;
+  prescription: {
+    medications: Array<{
+      name: string;
+      dosage: string;
+      frequency: string;
+      duration: string;
+      instructions?: string;
+    }>;
+    instructions?: string;
+  } | null;
+  medicalInstructions: Array<{
+    category: string;
+    title: string;
+    description: string;
+    priority: string;
+  }>;
+}
+
+export async function generateFullConsultationSuggestions(transcript: string): Promise<ConsultationAISuggestions> {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `Eres un asistente médico experto que analiza transcripciones de consultas médicas y extrae toda la información clínica relevante.
+
+Analiza la transcripción y extrae TRES secciones:
+
+1. **clinicalSummary**: Resumen clínico de la consulta
+   - chiefComplaint: motivo principal de la visita (string)
+   - symptoms: array de síntomas mencionados (string[])
+   - diagnosis: diagnóstico si se menciona (string)
+   - notes: notas clínicas adicionales importantes (string)
+
+2. **prescription**: Receta médica (null si no se mencionan medicamentos)
+   - medications: array de objetos con name, dosage, frequency, duration, instructions (opcional)
+   - instructions: instrucciones generales para el paciente sobre los medicamentos
+
+3. **medicalInstructions**: Array de indicaciones médicas para el paciente
+   Cada indicación tiene:
+   - category: una de "diet" (alimentación), "exercise" (ejercicio), "lifestyle" (estilo de vida), "follow-up" (seguimiento), "tests" (exámenes)
+   - title: título corto de la indicación
+   - description: descripción detallada
+   - priority: "low", "normal", "high" o "urgent"
+
+Si no hay información suficiente para alguna sección, devuelve null para clinicalSummary o prescription, y un array vacío para medicalInstructions.
+
+Devuelve un objeto JSON con las tres secciones. Responde siempre en español.`
+        },
+        {
+          role: "user",
+          content: `Analiza esta transcripción de consulta médica y extrae toda la información clínica:\n\n${transcript}`
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      return { clinicalSummary: null, prescription: null, medicalInstructions: [] };
+    }
+
+    const parsed = JSON.parse(content);
+
+    return {
+      clinicalSummary: parsed.clinicalSummary || null,
+      prescription: parsed.prescription && parsed.prescription.medications?.length > 0
+        ? parsed.prescription
+        : null,
+      medicalInstructions: Array.isArray(parsed.medicalInstructions)
+        ? parsed.medicalInstructions
+        : [],
+    };
+  } catch (error) {
+    console.error("Error generating full consultation suggestions:", error);
+    return { clinicalSummary: null, prescription: null, medicalInstructions: [] };
+  }
+}

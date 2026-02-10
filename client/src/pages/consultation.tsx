@@ -187,13 +187,13 @@ export default function ConsultationPage() {
       });
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
       toast({
         title: "Consulta finalizada",
-        description: "El registro clínico ha sido guardado",
+        description: "Revisa y valida la información clínica generada",
       });
-      navigate("/appointments");
+      navigate(`/doctor/consultation/${id}/validate`);
     },
     onError: () => {
       toast({

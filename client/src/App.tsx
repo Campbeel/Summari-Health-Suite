@@ -28,6 +28,7 @@ import ProfilePage from "@/pages/profile";
 import DoctorDashboard from "@/pages/doctor/dashboard";
 import DoctorAppointmentsPage from "@/pages/doctor/appointments";
 import DoctorProfilePage from "@/pages/doctor/profile";
+import ConsultationValidationPage from "@/pages/doctor/consultation-validation";
 import AdminUsersPage from "@/pages/admin/users";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
@@ -186,6 +187,9 @@ function Router() {
       </Route>
       <Route path="/doctor/profile">
         <DoctorProtectedRoute component={DoctorProfilePage} />
+      </Route>
+      <Route path="/doctor/consultation/:id/validate">
+        <DoctorProtectedRoute component={ConsultationValidationPage} />
       </Route>
       <Route path="/admin/users">
         <ProtectedRoute component={AdminUsersPage} />

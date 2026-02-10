@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link } from "wouter";
-import { Calendar, Clock, Video, Phone, Play, X, Check, Users } from "lucide-react";
+import { Calendar, Clock, Video, Phone, Play, X, Check, Users, FileCheck } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -29,6 +29,7 @@ function getStatusBadge(status: string) {
     scheduled: { label: "Programada", variant: "outline" },
     confirmed: { label: "Confirmada", variant: "default" },
     in_progress: { label: "En curso", variant: "default" },
+    pending_validation: { label: "Por validar", variant: "outline" },
     completed: { label: "Completada", variant: "secondary" },
     cancelled: { label: "Cancelada", variant: "destructive" },
   };
@@ -43,6 +44,7 @@ function AppointmentCard({ appointment, onStatusChange }: {
   const canConfirm = appointment.status === "scheduled";
   const canStart = appointment.status === "confirmed";
   const canCancel = appointment.status === "scheduled" || appointment.status === "confirmed";
+  const canValidate = appointment.status === "pending_validation";
 
   return (
     <Card className="hover-elevate" data-testid={`appointment-${appointment.id}`}>
@@ -99,6 +101,14 @@ function AppointmentCard({ appointment, onStatusChange }: {
             )}
 
             <div className="flex flex-wrap gap-2 pt-2">
+              {canValidate && (
+                <Button asChild data-testid={`button-validate-${appointment.id}`}>
+                  <Link href={`/doctor/consultation/${appointment.id}/validate`}>
+                    <FileCheck className="h-4 w-4 mr-2" />
+                    Validar Consulta
+                  </Link>
+                </Button>
+              )}
               {canStart && (
                 <Button asChild data-testid={`button-start-${appointment.id}`}>
                   <Link href={`/consultation/${appointment.id}`}>
@@ -178,6 +188,7 @@ export default function DoctorAppointmentsPage() {
   const allAppointments = filterAppointments();
   const scheduledAppointments = filterAppointments("scheduled");
   const confirmedAppointments = filterAppointments("confirmed");
+  const pendingValidationAppointments = filterAppointments("pending_validation");
   const completedAppointments = filterAppointments("completed");
   const cancelledAppointments = filterAppointments("cancelled");
 
@@ -243,6 +254,9 @@ export default function DoctorAppointmentsPage() {
           <TabsTrigger value="confirmed" data-testid="tab-confirmed">
             Confirmadas ({confirmedAppointments.length})
           </TabsTrigger>
+          <TabsTrigger value="pending_validation" data-testid="tab-pending-validation">
+            Por validar ({pendingValidationAppointments.length})
+          </TabsTrigger>
           <TabsTrigger value="completed" data-testid="tab-completed">
             Completadas ({completedAppointments.length})
           </TabsTrigger>
@@ -261,6 +275,10 @@ export default function DoctorAppointmentsPage() {
 
         <TabsContent value="confirmed" className="space-y-4">
           {renderAppointmentList(confirmedAppointments)}
+        </TabsContent>
+
+        <TabsContent value="pending_validation" className="space-y-4">
+          {renderAppointmentList(pendingValidationAppointments)}
         </TabsContent>
 
         <TabsContent value="completed" className="space-y-4">

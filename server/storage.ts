@@ -187,6 +187,7 @@ export interface IStorage {
 
   // Clinical Records
   getClinicalRecord(id: number): Promise<ClinicalRecordWithDoctor | undefined>;
+  getClinicalRecordByAppointmentId(appointmentId: number): Promise<ClinicalRecord | undefined>;
   getClinicalRecordsByPatient(patientId: number): Promise<ClinicalRecordWithPrescriptionFlag[]>;
   getRecentRecordsByPatient(patientId: number, limit?: number): Promise<ClinicalRecordSummary[]>;
   createClinicalRecord(record: InsertClinicalRecord): Promise<ClinicalRecord>;
@@ -198,9 +199,14 @@ export interface IStorage {
   getPrescriptionsByPatient(patientId: number): Promise<PrescriptionWithDoctor[]>;
   createPrescription(prescription: InsertPrescription): Promise<Prescription>;
 
+  // Prescriptions (update)
+  updatePrescription(id: number, data: Partial<InsertPrescription>): Promise<Prescription>;
+
   // Medical Instructions
   getMedicalInstruction(id: number): Promise<MedicalInstruction | undefined>;
   getInstructionsByPatient(patientId: number): Promise<MedicalInstruction[]>;
+  getInstructionsByRecordId(clinicalRecordId: number): Promise<MedicalInstruction[]>;
+  deleteInstructionsByRecordId(clinicalRecordId: number): Promise<void>;
   createMedicalInstruction(instruction: InsertMedicalInstruction): Promise<MedicalInstruction>;
 }
 
@@ -617,6 +623,14 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
+  async getClinicalRecordByAppointmentId(appointmentId: number): Promise<ClinicalRecord | undefined> {
+    const [record] = await db
+      .select()
+      .from(clinicalRecords)
+      .where(eq(clinicalRecords.appointmentId, appointmentId));
+    return record;
+  }
+
   async createClinicalRecord(record: InsertClinicalRecord): Promise<ClinicalRecord> {
     const [created] = await db.insert(clinicalRecords).values(record).returning();
     return created;
@@ -707,6 +721,30 @@ export class DatabaseStorage implements IStorage {
       .from(medicalInstructions)
       .where(eq(medicalInstructions.patientId, patientId))
       .orderBy(desc(medicalInstructions.createdAt));
+    return result;
+  }
+
+  async updatePrescription(id: number, data: Partial<InsertPrescription>): Promise<Prescription> {
+    const [updated] = await db
+      .update(prescriptions)
+      .set(data)
+      .where(eq(prescriptions.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteInstructionsByRecordId(clinicalRecordId: number): Promise<void> {
+    await db
+      .delete(medicalInstructions)
+      .where(eq(medicalInstructions.clinicalRecordId, clinicalRecordId));
+  }
+
+  async getInstructionsByRecordId(clinicalRecordId: number): Promise<MedicalInstruction[]> {
+    const result = await db
+      .select()
+      .from(medicalInstructions)
+      .where(eq(medicalInstructions.clinicalRecordId, clinicalRecordId))
+      .orderBy(medicalInstructions.createdAt);
     return result;
   }
 

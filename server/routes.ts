@@ -5,7 +5,7 @@ import { z } from "zod";
 import { storage } from "./storage";
 import { isAuthenticated, registerAuthRoutes } from "./auth";
 import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText, verifyFlowSignature } from "./flow";
-import { transcribeAudio, generatePrescriptionFromTranscript } from "./openai";
+import { transcribeAudio, generatePrescriptionFromTranscript, generateFullConsultationSuggestions } from "./openai";
 import {
   insertPatientSchema,
   insertAppointmentSchema,
@@ -872,10 +872,8 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Consultation not found" });
       }
       
-      // Update appointment status
-      await storage.updateAppointment(appointmentId, { status: "completed" });
+      await storage.updateAppointment(appointmentId, { status: "pending_validation" });
       
-      // Create clinical record
       const record = await storage.createClinicalRecord({
         patientId: appointment.patientId,
         doctorId: appointment.doctorId,
@@ -887,30 +885,226 @@ export async function registerRoutes(
         transcription,
       });
       
-      // Generate prescription from transcription if available
+      let aiSuggestions = null;
       if (transcription) {
         try {
-          const prescriptionData = await generatePrescriptionFromTranscript(transcription);
-          if (prescriptionData && prescriptionData.medications?.length > 0) {
-            await storage.createPrescription({
-              clinicalRecordId: record.id,
-              patientId: appointment.patientId,
-              doctorId: appointment.doctorId,
-              medications: prescriptionData.medications,
-              instructions: prescriptionData.instructions,
-              validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-              status: "active",
-            });
-          }
+          aiSuggestions = await generateFullConsultationSuggestions(transcription);
         } catch (e) {
-          console.error("Error generating prescription:", e);
+          console.error("Error generating AI suggestions:", e);
         }
       }
       
-      res.json({ success: true, recordId: record.id });
+      res.json({ success: true, recordId: record.id, appointmentId, aiSuggestions });
     } catch (error) {
       console.error("Error ending consultation:", error);
       res.status(500).json({ error: "Failed to end consultation" });
+    }
+  });
+
+  app.get("/api/consultations/:id/validation", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const userId = req.userId;
+
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment) {
+        return res.status(404).json({ error: "Consulta no encontrada" });
+      }
+
+      const doctor = await storage.getDoctorByUserId(userId);
+      if (!doctor || doctor.id !== appointment.doctorId) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+
+      const clinicalRecord = await storage.getClinicalRecordByAppointmentId(appointmentId);
+      if (!clinicalRecord) {
+        return res.status(404).json({ error: "Registro clínico no encontrado" });
+      }
+
+      const existingPrescription = await storage.getPrescriptionByRecordId(clinicalRecord.id);
+      const existingInstructions = await storage.getInstructionsByRecordId(clinicalRecord.id);
+
+      const patient = await storage.getPatient(appointment.patientId);
+      const patientUser = patient ? await storage.getUser(patient.userId) : null;
+
+      res.json({
+        appointment: {
+          id: appointment.id,
+          scheduledDate: appointment.scheduledDate,
+          scheduledTime: appointment.scheduledTime,
+          status: appointment.status,
+          consultationType: appointment.consultationType,
+          notes: appointment.notes,
+        },
+        patient: {
+          id: patient?.id,
+          name: patientUser ? `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() || patientUser.email : 'Paciente',
+          dateOfBirth: patient?.dateOfBirth,
+          gender: patient?.gender,
+          bloodType: patient?.bloodType,
+          allergies: patient?.allergies,
+        },
+        clinicalRecord: {
+          id: clinicalRecord.id,
+          chiefComplaint: clinicalRecord.chiefComplaint,
+          symptoms: clinicalRecord.symptoms,
+          diagnosis: clinicalRecord.diagnosis,
+          notes: clinicalRecord.notes,
+          transcription: clinicalRecord.transcription,
+        },
+        prescription: existingPrescription || null,
+        medicalInstructions: existingInstructions || [],
+      });
+    } catch (error) {
+      console.error("Error fetching validation data:", error);
+      res.status(500).json({ error: "Error al obtener datos de validación" });
+    }
+  });
+
+  app.post("/api/consultations/:id/validate", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const userId = req.userId;
+      const { clinicalRecord: clinicalData, prescription: prescriptionData, medicalInstructions: instructionsData } = req.body;
+
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment) {
+        return res.status(404).json({ error: "Consulta no encontrada" });
+      }
+
+      if (appointment.status !== "pending_validation") {
+        return res.status(400).json({ error: "Esta consulta no está pendiente de validación" });
+      }
+
+      const doctor = await storage.getDoctorByUserId(userId);
+      if (!doctor || doctor.id !== appointment.doctorId) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+
+      const existingRecord = await storage.getClinicalRecordByAppointmentId(appointmentId);
+      if (!existingRecord) {
+        return res.status(404).json({ error: "Registro clínico no encontrado" });
+      }
+
+      const clinicalSchema = z.object({
+        chiefComplaint: z.string().optional().nullable(),
+        symptoms: z.array(z.string()).optional(),
+        diagnosis: z.string().optional().nullable(),
+        notes: z.string().optional().nullable(),
+      });
+
+      const medicationSchema = z.object({
+        name: z.string().min(1, "Nombre del medicamento requerido"),
+        dosage: z.string().min(1, "Dosis requerida"),
+        frequency: z.string().min(1, "Frecuencia requerida"),
+        duration: z.string().min(1, "Duración requerida"),
+        instructions: z.string().optional(),
+      });
+
+      const prescriptionSchema = z.object({
+        medications: z.array(medicationSchema).min(1),
+        instructions: z.string().optional().nullable(),
+      }).nullable().optional();
+
+      const instructionSchema = z.object({
+        category: z.enum(["diet", "exercise", "lifestyle", "follow-up", "tests"]),
+        title: z.string().min(1, "Título requerido"),
+        description: z.string().min(1, "Descripción requerida"),
+        priority: z.enum(["low", "normal", "high", "urgent"]).default("normal"),
+        dueDate: z.string().optional().nullable(),
+      });
+
+      if (clinicalData) {
+        const parsed = clinicalSchema.safeParse(clinicalData);
+        if (!parsed.success) {
+          return res.status(400).json({ error: "Datos clínicos inválidos", errors: parsed.error.flatten() });
+        }
+        await storage.updateClinicalRecord(existingRecord.id, {
+          chiefComplaint: parsed.data.chiefComplaint || null,
+          symptoms: parsed.data.symptoms || [],
+          diagnosis: parsed.data.diagnosis || null,
+          notes: parsed.data.notes || null,
+        });
+      }
+
+      if (prescriptionData && prescriptionData.medications?.length > 0) {
+        const parsed = prescriptionSchema.safeParse(prescriptionData);
+        if (!parsed.success) {
+          return res.status(400).json({ error: "Datos de receta inválidos", errors: parsed.error.flatten() });
+        }
+        const existingPrescription = await storage.getPrescriptionByRecordId(existingRecord.id);
+        if (existingPrescription) {
+          await storage.updatePrescription(existingPrescription.id, {
+            medications: parsed.data!.medications,
+            instructions: parsed.data!.instructions || null,
+          });
+        } else {
+          await storage.createPrescription({
+            clinicalRecordId: existingRecord.id,
+            patientId: appointment.patientId,
+            doctorId: appointment.doctorId,
+            medications: parsed.data!.medications,
+            instructions: parsed.data!.instructions || null,
+            validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            status: "active",
+          });
+        }
+      }
+
+      await storage.deleteInstructionsByRecordId(existingRecord.id);
+      if (instructionsData && instructionsData.length > 0) {
+        const parsedInstructions = z.array(instructionSchema).safeParse(instructionsData);
+        if (!parsedInstructions.success) {
+          return res.status(400).json({ error: "Indicaciones médicas inválidas", errors: parsedInstructions.error.flatten() });
+        }
+        for (const instruction of parsedInstructions.data) {
+          await storage.createMedicalInstruction({
+            clinicalRecordId: existingRecord.id,
+            patientId: appointment.patientId,
+            doctorId: appointment.doctorId,
+            category: instruction.category,
+            title: instruction.title,
+            description: instruction.description,
+            priority: instruction.priority,
+            dueDate: instruction.dueDate || null,
+          });
+        }
+      }
+
+      await storage.updateAppointment(appointmentId, { status: "completed" });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error validating consultation:", error);
+      res.status(500).json({ error: "Error al validar la consulta" });
+    }
+  });
+
+  app.post("/api/consultations/:id/generate-suggestions", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const userId = req.userId;
+
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment) {
+        return res.status(404).json({ error: "Consulta no encontrada" });
+      }
+
+      const doctor = await storage.getDoctorByUserId(userId);
+      if (!doctor || doctor.id !== appointment.doctorId) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+
+      const clinicalRecord = await storage.getClinicalRecordByAppointmentId(appointmentId);
+      if (!clinicalRecord || !clinicalRecord.transcription) {
+        return res.status(400).json({ error: "No hay transcripción disponible para generar sugerencias" });
+      }
+
+      const suggestions = await generateFullConsultationSuggestions(clinicalRecord.transcription);
+      res.json(suggestions);
+    } catch (error) {
+      console.error("Error generating suggestions:", error);
+      res.status(500).json({ error: "Error al generar sugerencias" });
     }
   });
 
