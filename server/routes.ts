@@ -575,7 +575,10 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Error creating Flow payment:", error);
-      res.status(500).json({ error: "Error al crear la sesión de pago" });
+      res.status(500).json({ 
+        error: "Error al crear la sesión de pago",
+        details: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 

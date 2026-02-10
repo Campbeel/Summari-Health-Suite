@@ -86,7 +86,10 @@ export async function withSignature(
 
   const body = Object.entries(params)
     .sort(([a], [b]) => a.localeCompare(b))
-    .reduce((res, [key, value]) => res + `${key}${value}`, '');
+    .reduce((res, [key, value]) => {
+      const val = typeof value === 'object' ? JSON.stringify(value) : value;
+      return res + `${key}${val}`;
+    }, '');
 
   const signature = await subtleCrypto.sign(
     algorithm.name,
