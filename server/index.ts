@@ -19,8 +19,12 @@ export function log(message: string, source = "express") {
 }
 
 (async () => {
-  log("Running database cleanup and setup...", "seed");
-  await cleanAndSetupDatabase();
+  log("Initializing database...", "seed");
+  // Only cleanup/seed in development, not in production
+  if (process.env.NODE_ENV !== "production") {
+    log("Running development database cleanup and setup...", "seed");
+    await cleanAndSetupDatabase();
+  }
 
   app.use(
     express.json({
