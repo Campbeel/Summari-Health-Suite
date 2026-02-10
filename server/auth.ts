@@ -39,6 +39,7 @@ export const isAuthenticated: RequestHandler = (req: Request, res: Response, nex
     req.userId = decoded.userId;
     next();
   } catch (error) {
+    console.error("[Auth] Token verification failed:", error instanceof Error ? error.message : "Unknown error");
     return res.status(401).json({ message: "Unauthorized" });
   }
 };
