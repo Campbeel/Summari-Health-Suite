@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { useWebRTC } from "@/hooks/use-webrtc";
+import { useWebRTC, WaitingPatient } from "@/hooks/use-webrtc";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { 
   Mic, 
@@ -27,7 +27,10 @@ import {
   AlertCircle,
   Send,
   Loader2,
-  Phone
+  Phone,
+  UserCheck,
+  UserX,
+  ShieldCheck
 } from "lucide-react";
 
 interface ConsultationData {
@@ -44,6 +47,7 @@ interface ConsultationData {
     specialty: string;
     userName: string;
     userImage?: string;
+    userId: string;
   };
   patient: {
     id: number;
@@ -89,6 +93,7 @@ export default function ConsultationPage() {
 
   const roomId = `consultation-${id}`;
   const userId = user?.id || '';
+  const isDoctor = consultation ? consultation.doctor.userId === userId : false;
 
   const {
     localStream,
@@ -98,14 +103,20 @@ export default function ConsultationPage() {
     error: webrtcError,
     isMuted,
     isVideoEnabled,
+    isWaiting,
+    isDenied,
+    waitingPatients,
     connect,
     disconnect,
     toggleMute,
-    toggleVideo
+    toggleVideo,
+    admitPatient,
+    denyPatient
   } = useWebRTC({
     roomId,
     userId,
     appointmentId: id,
+    isDoctor,
     onError: (error) => {
       toast({
         title: "Error de videollamada",
@@ -126,24 +137,27 @@ export default function ConsultationPage() {
           variant: "destructive",
         });
       }
+    },
+    onWaitingPatient: (patientId, patientName) => {
+      toast({
+        title: "Paciente en sala de espera",
+        description: `${patientName} está esperando para ingresar a la consulta`,
+      });
     }
   });
 
-  // Attach local stream to video element
   useEffect(() => {
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
     }
   }, [localStream]);
 
-  // Attach remote stream to video element
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
       remoteVideoRef.current.srcObject = remoteStream;
     }
   }, [remoteStream]);
 
-  // Show WebRTC errors
   useEffect(() => {
     if (webrtcError) {
       toast({
@@ -165,7 +179,9 @@ export default function ConsultationPage() {
     }
     disconnect();
     setHasJoinedCall(false);
-    endConsultationMutation.mutate();
+    if (isDoctor) {
+      endConsultationMutation.mutate();
+    }
   };
 
   useEffect(() => {
@@ -317,6 +333,23 @@ export default function ConsultationPage() {
     }
   }, [isRecording, startRecording, stopRecording]);
 
+  const handleAdmitPatient = (patientId: string) => {
+    admitPatient(patientId);
+    toast({
+      title: "Paciente admitido",
+      description: "El paciente ha sido autorizado para ingresar a la consulta",
+    });
+  };
+
+  const handleDenyPatient = (patientId: string) => {
+    denyPatient(patientId);
+    toast({
+      title: "Ingreso denegado",
+      description: "Se ha denegado el ingreso del paciente",
+      variant: "destructive",
+    });
+  };
+
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -331,7 +364,7 @@ export default function ConsultationPage() {
         <div className="text-center">
           <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
           <h2 className="text-xl font-semibold mb-2">Consulta no encontrada</h2>
-          <Button onClick={() => navigate("/appointments")}>Volver a consultas</Button>
+          <Button onClick={() => navigate("/appointments")} data-testid="button-back-appointments">Volver a consultas</Button>
         </div>
       </div>
     );
@@ -345,26 +378,62 @@ export default function ConsultationPage() {
       <div className="flex-1 flex flex-col min-h-0">
         {/* Video Container */}
         <div className="flex-1 bg-muted rounded-xl relative overflow-hidden min-h-[300px]">
-          {/* Remote Video (Main) or Waiting State */}
-          {!hasJoinedCall ? (
+          {/* Denied State for Patient */}
+          {isDenied ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center max-w-md px-6">
+                <div className="w-20 h-20 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-6">
+                  <UserX className="h-10 w-10 text-destructive" />
+                </div>
+                <h3 className="text-xl font-semibold mb-2" data-testid="text-denied-title">Ingreso no autorizado</h3>
+                <p className="text-muted-foreground mb-6" data-testid="text-denied-message">
+                  El médico no ha autorizado tu ingreso a esta consulta. Si crees que es un error, contacta a tu médico.
+                </p>
+                <Button variant="outline" onClick={() => navigate("/appointments")} data-testid="button-back-from-denied">
+                  Volver a mis consultas
+                </Button>
+              </div>
+            </div>
+          ) : isWaiting ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center max-w-md px-6">
+                <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-6">
+                  <ShieldCheck className="h-10 w-10 text-primary" />
+                </div>
+                <h3 className="text-xl font-semibold mb-2" data-testid="text-waiting-room-title">Sala de espera</h3>
+                <p className="text-muted-foreground mb-6" data-testid="text-waiting-room-message">
+                  Estás en la sala de espera. El Dr. {doctor.userName} debe autorizar tu ingreso a la consulta.
+                </p>
+                <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm">Esperando autorización...</span>
+                </div>
+              </div>
+            </div>
+          ) : !hasJoinedCall ? (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
                 <Avatar className="h-32 w-32 mx-auto mb-4">
-                  <AvatarImage src={doctor.userImage} />
+                  <AvatarImage src={isDoctor ? patient.userImage : doctor.userImage} />
                   <AvatarFallback className="bg-primary/10 text-primary text-4xl">
-                    {doctor.userName?.[0] || "DR"}
+                    {isDoctor ? (patient.userName?.[0] || "P") : (doctor.userName?.[0] || "DR")}
                   </AvatarFallback>
                 </Avatar>
-                <h3 className="text-xl font-semibold">{doctor.userName}</h3>
-                <p className="text-muted-foreground mb-4">{doctor.specialty}</p>
+                <h3 className="text-xl font-semibold">{isDoctor ? patient.userName : doctor.userName}</h3>
+                <p className="text-muted-foreground mb-4">{isDoctor ? "Paciente" : doctor.specialty}</p>
                 <Button 
                   size="lg" 
                   onClick={handleJoinCall}
                   data-testid="button-join-call"
                 >
                   <Phone className="h-5 w-5 mr-2" />
-                  Unirse a la videollamada
+                  {isDoctor ? "Iniciar consulta" : "Unirse a la consulta"}
                 </Button>
+                {!isDoctor && (
+                  <p className="text-xs text-muted-foreground mt-3">
+                    Deberás esperar a que el médico autorice tu ingreso
+                  </p>
+                )}
               </div>
             </div>
           ) : remoteStream ? (
@@ -379,13 +448,13 @@ export default function ConsultationPage() {
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
                 <Avatar className="h-32 w-32 mx-auto mb-4">
-                  <AvatarImage src={doctor.userImage} />
+                  <AvatarImage src={isDoctor ? patient.userImage : doctor.userImage} />
                   <AvatarFallback className="bg-primary/10 text-primary text-4xl">
-                    {doctor.userName?.[0] || "DR"}
+                    {isDoctor ? (patient.userName?.[0] || "P") : (doctor.userName?.[0] || "DR")}
                   </AvatarFallback>
                 </Avatar>
-                <h3 className="text-xl font-semibold">{doctor.userName}</h3>
-                <p className="text-muted-foreground">{doctor.specialty}</p>
+                <h3 className="text-xl font-semibold">{isDoctor ? patient.userName : doctor.userName}</h3>
+                <p className="text-muted-foreground">{isDoctor ? "Paciente" : doctor.specialty}</p>
                 {isConnecting && (
                   <div className="flex items-center justify-center gap-2 mt-4 text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -424,7 +493,7 @@ export default function ConsultationPage() {
           )}
 
           {/* Connection Status */}
-          {hasJoinedCall && (
+          {hasJoinedCall && !isWaiting && (
             <div className="absolute top-4 left-4 flex items-center gap-2">
               {isConnected ? (
                 <Badge variant="default" className="bg-green-500" data-testid="badge-connected">
@@ -452,6 +521,44 @@ export default function ConsultationPage() {
               {appointment.scheduledTime.slice(0, 5)}
             </Badge>
           </div>
+
+          {/* Waiting Patients Banner (for Doctor) */}
+          {isDoctor && waitingPatients.length > 0 && (
+            <div className="absolute bottom-16 left-4 right-4 z-10" data-testid="waiting-patients-banner">
+              <Card className="bg-background/95 backdrop-blur-sm border-primary/30">
+                <CardContent className="p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <User className="h-4 w-4 text-primary" />
+                    <span>Pacientes en sala de espera ({waitingPatients.length})</span>
+                  </div>
+                  {waitingPatients.map((wp) => (
+                    <div key={wp.id} className="flex items-center justify-between gap-2 bg-muted/50 rounded-md p-2" data-testid={`waiting-patient-${wp.id}`}>
+                      <span className="text-sm font-medium truncate">{wp.name}</span>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <Button
+                          size="sm"
+                          variant="default"
+                          onClick={() => handleAdmitPatient(wp.id)}
+                          data-testid={`button-admit-${wp.id}`}
+                        >
+                          <UserCheck className="h-4 w-4 mr-1" />
+                          Admitir
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDenyPatient(wp.id)}
+                          data-testid={`button-deny-${wp.id}`}
+                        >
+                          <UserX className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </div>
 
         {/* Controls */}
@@ -461,7 +568,7 @@ export default function ConsultationPage() {
             size="icon"
             className="h-12 w-12 rounded-full"
             onClick={toggleMute}
-            disabled={!hasJoinedCall}
+            disabled={!hasJoinedCall || isWaiting}
             data-testid="button-mute"
           >
             {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
@@ -471,25 +578,28 @@ export default function ConsultationPage() {
             size="icon"
             className="h-12 w-12 rounded-full"
             onClick={toggleVideo}
-            disabled={!hasJoinedCall}
+            disabled={!hasJoinedCall || isWaiting}
             data-testid="button-video"
           >
             {isVideoEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
           </Button>
-          <Button
-            variant={isRecording ? "default" : "outline"}
-            size="icon"
-            className="h-12 w-12 rounded-full"
-            onClick={handleToggleRecording}
-            data-testid="button-record"
-          >
-            <Activity className={`h-5 w-5 ${isRecording ? "animate-pulse" : ""}`} />
-          </Button>
+          {isDoctor && (
+            <Button
+              variant={isRecording ? "default" : "outline"}
+              size="icon"
+              className="h-12 w-12 rounded-full"
+              onClick={handleToggleRecording}
+              data-testid="button-record"
+            >
+              <Activity className={`h-5 w-5 ${isRecording ? "animate-pulse" : ""}`} />
+            </Button>
+          )}
           <Button
             variant="destructive"
             size="icon"
             className="h-12 w-12 rounded-full"
             onClick={handleEndCall}
+            disabled={!hasJoinedCall || isWaiting}
             data-testid="button-end-call"
           >
             <PhoneOff className="h-5 w-5" />
@@ -530,7 +640,7 @@ export default function ConsultationPage() {
                     <div>
                       <h3 className="font-semibold" data-testid="text-patient-name">{patient.userName}</h3>
                       <p className="text-sm text-muted-foreground" data-testid="text-patient-details">
-                        {patient.gender || "No especificado"} • {patient.bloodType || "Tipo de sangre no especificado"}
+                        {patient.gender || "No especificado"} {patient.bloodType ? `\u2022 ${patient.bloodType}` : ""}
                       </p>
                     </div>
                   </div>

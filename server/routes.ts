@@ -16,8 +16,15 @@ import {
 } from "@shared/schema";
 
 // WebRTC signaling room management
+interface WaitingEntry {
+  ws: WebSocket;
+  userId: string;
+  patientName: string;
+}
 interface SignalingRoom {
   participants: Map<string, WebSocket>;
+  waitingPatients: Map<string, WaitingEntry>;
+  doctorUserId?: string;
 }
 const signalingRooms = new Map<string, SignalingRoom>();
 
@@ -821,13 +828,12 @@ export async function registerRoutes(
       }
       
       const doctor = await storage.getDoctor(appointment.doctorId);
-      const userId = req.userId;
-      const patient = await storage.getPatientByUserId(userId);
-      const user = await storage.getUser(userId);
+      const doctorUser = doctor ? await storage.getUser(doctor.userId) : null;
+      const appointmentPatient = await storage.getPatient(appointment.patientId);
+      const patientUser = appointmentPatient ? await storage.getUser(appointmentPatient.userId) : null;
       
       // Get clinical record if exists
-      const records = await storage.getClinicalRecordsByPatient(patient?.id || 0);
-      const clinicalRecord = records.find((r: any) => r.appointmentId === appointmentId);
+      const clinicalRecord = await storage.getClinicalRecordByAppointmentId(appointmentId);
       
       res.json({
         appointment: {
@@ -841,18 +847,19 @@ export async function registerRoutes(
         doctor: {
           id: doctor?.id,
           specialty: doctor?.specialty,
-          userName: appointment.doctorName,
-          userImage: appointment.doctorImage,
+          userName: appointment.doctorName || (doctorUser ? `${doctorUser.firstName || ''} ${doctorUser.lastName || ''}`.trim() : ''),
+          userImage: appointment.doctorImage || doctorUser?.profileImageUrl,
+          userId: doctor?.userId || '',
         },
         patient: {
-          id: patient?.id,
-          dateOfBirth: patient?.dateOfBirth,
-          gender: patient?.gender,
-          bloodType: patient?.bloodType,
-          allergies: patient?.allergies,
-          medicalHistory: patient?.medicalHistory,
-          userName: user?.firstName ? `${user.firstName} ${user.lastName}` : user?.email,
-          userImage: user?.profileImageUrl,
+          id: appointmentPatient?.id,
+          dateOfBirth: appointmentPatient?.dateOfBirth,
+          gender: appointmentPatient?.gender,
+          bloodType: appointmentPatient?.bloodType,
+          allergies: appointmentPatient?.allergies,
+          medicalHistory: appointmentPatient?.medicalHistory,
+          userName: patientUser?.firstName ? `${patientUser.firstName} ${patientUser.lastName}` : patientUser?.email,
+          userImage: patientUser?.profileImageUrl,
         },
         clinicalRecord,
       });
@@ -1290,6 +1297,7 @@ export async function registerRoutes(
             }
 
             // Validate appointment access
+            let userIsDoctor = false;
             try {
               const appointment = await storage.getAppointment(parseInt(appointmentId));
               if (!appointment) {
@@ -1302,9 +1310,9 @@ export async function registerRoutes(
               const doctor = await storage.getDoctorByUserId(userId);
               
               const isPatient = patient && appointment.patientId === patient.id;
-              const isDoctor = doctor && appointment.doctorId === doctor.id;
+              userIsDoctor = !!(doctor && appointment.doctorId === doctor.id);
               
-              if (!isPatient && !isDoctor) {
+              if (!isPatient && !userIsDoctor) {
                 ws.send(JSON.stringify({ type: 'error', message: 'Not authorized to join this consultation' }));
                 log(`Unauthorized join attempt: user ${userId} for appointment ${appointmentId}`);
                 return;
@@ -1323,7 +1331,7 @@ export async function registerRoutes(
             participantId = newParticipantId;
 
             if (!signalingRooms.has(roomId)) {
-              signalingRooms.set(roomId, { participants: new Map() });
+              signalingRooms.set(roomId, { participants: new Map(), waitingPatients: new Map() });
             }
 
             const room = signalingRooms.get(roomId)!;
@@ -1333,28 +1341,64 @@ export async function registerRoutes(
               ws.send(JSON.stringify({ type: 'error', message: 'Room is full' }));
               return;
             }
-            
-            room.participants.set(newParticipantId, ws);
 
-            log(`User ${participantId} joined room ${roomId}. Total: ${room.participants.size}`);
+            // If user is a doctor, join directly and mark as room's doctor
+            if (userIsDoctor) {
+              room.doctorUserId = newParticipantId;
+              room.participants.set(newParticipantId, ws);
+              log(`Doctor ${participantId} joined room ${roomId}. Total: ${room.participants.size}`);
 
-            // Notify other participants that someone joined
-            room.participants.forEach((client, odient) => {
-              if (odient !== participantId && client.readyState === WebSocket.OPEN) {
-                client.send(JSON.stringify({
-                  type: 'user-joined',
-                  odientId: participantId
+              // Notify other participants that someone joined
+              room.participants.forEach((client, odient) => {
+                if (odient !== participantId && client.readyState === WebSocket.OPEN) {
+                  client.send(JSON.stringify({
+                    type: 'user-joined',
+                    odientId: participantId
+                  }));
+                }
+              });
+
+              // Notify the joiner about existing participants
+              const existingParticipants = Array.from(room.participants.keys()).filter(id => id !== participantId);
+              ws.send(JSON.stringify({
+                type: 'room-joined',
+                roomId,
+                participants: existingParticipants
+              }));
+
+              // Notify doctor of any patients already waiting
+              room.waitingPatients.forEach((entry, waitingId) => {
+                ws.send(JSON.stringify({
+                  type: 'patient-waiting',
+                  patientId: waitingId,
+                  patientName: entry.patientName
                 }));
-              }
-            });
+              });
+            } else {
+              // Patient: put them in the waiting room
+              const patientUser = await storage.getUser(userId);
+              const patientName = patientUser
+                ? `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() || 'Paciente'
+                : 'Paciente';
 
-            // Notify the joiner about existing participants
-            const existingParticipants = Array.from(room.participants.keys()).filter(id => id !== participantId);
-            ws.send(JSON.stringify({
-              type: 'room-joined',
-              roomId,
-              participants: existingParticipants
-            }));
+              room.waitingPatients.set(newParticipantId, { ws, userId, patientName });
+              log(`Patient ${participantId} placed in waiting room for ${roomId}`);
+
+              // Tell the patient they are waiting
+              ws.send(JSON.stringify({ type: 'waiting-room' }));
+
+              // Notify the doctor (if present) that a patient is waiting
+              if (room.doctorUserId && room.participants.has(room.doctorUserId)) {
+                const doctorWs = room.participants.get(room.doctorUserId);
+                if (doctorWs && doctorWs.readyState === WebSocket.OPEN) {
+                  doctorWs.send(JSON.stringify({
+                    type: 'patient-waiting',
+                    patientId: newParticipantId,
+                    patientName
+                  }));
+                }
+              }
+            }
             break;
           }
 
@@ -1376,11 +1420,90 @@ export async function registerRoutes(
             break;
           }
 
+          case 'admit-patient': {
+            const { patientId: admitId, roomId: admitRoom } = message;
+            const targetRoom = signalingRooms.get(admitRoom || currentRoom || '');
+            if (!targetRoom) break;
+
+            // Only the doctor can admit patients
+            if (authenticatedUserId !== targetRoom.doctorUserId) {
+              ws.send(JSON.stringify({ type: 'error', message: 'Only the doctor can admit patients' }));
+              break;
+            }
+
+            const waitingEntry = targetRoom.waitingPatients.get(admitId);
+            if (!waitingEntry) break;
+
+            targetRoom.waitingPatients.delete(admitId);
+            targetRoom.participants.set(admitId, waitingEntry.ws);
+            log(`Patient ${admitId} admitted to room ${admitRoom || currentRoom}`);
+
+            // Notify the patient they've been admitted
+            if (waitingEntry.ws.readyState === WebSocket.OPEN) {
+              waitingEntry.ws.send(JSON.stringify({ type: 'patient-admitted' }));
+
+              // Send room-joined with existing participants to the patient
+              const existingPeers = Array.from(targetRoom.participants.keys()).filter(id => id !== admitId);
+              waitingEntry.ws.send(JSON.stringify({
+                type: 'room-joined',
+                roomId: admitRoom || currentRoom,
+                participants: existingPeers
+              }));
+            }
+
+            // Notify existing participants about the new user
+            targetRoom.participants.forEach((client, pid) => {
+              if (pid !== admitId && client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({
+                  type: 'user-joined',
+                  odientId: admitId
+                }));
+              }
+            });
+            break;
+          }
+
+          case 'deny-patient': {
+            const { patientId: denyId, roomId: denyRoom } = message;
+            const denyTargetRoom = signalingRooms.get(denyRoom || currentRoom || '');
+            if (!denyTargetRoom) break;
+
+            // Only the doctor can deny patients
+            if (authenticatedUserId !== denyTargetRoom.doctorUserId) {
+              ws.send(JSON.stringify({ type: 'error', message: 'Only the doctor can deny patients' }));
+              break;
+            }
+
+            const deniedEntry = denyTargetRoom.waitingPatients.get(denyId);
+            if (!deniedEntry) break;
+
+            denyTargetRoom.waitingPatients.delete(denyId);
+            log(`Patient ${denyId} denied entry to room ${denyRoom || currentRoom}`);
+
+            if (deniedEntry.ws.readyState === WebSocket.OPEN) {
+              deniedEntry.ws.send(JSON.stringify({ type: 'patient-denied' }));
+            }
+            break;
+          }
+
           case 'leave': {
             if (currentRoom && participantId) {
               const room = signalingRooms.get(currentRoom);
               if (room) {
                 room.participants.delete(participantId);
+                room.waitingPatients.delete(participantId);
+
+                // Notify doctor if a waiting patient left
+                if (room.doctorUserId && room.participants.has(room.doctorUserId)) {
+                  const doctorWs = room.participants.get(room.doctorUserId);
+                  if (doctorWs && doctorWs.readyState === WebSocket.OPEN) {
+                    doctorWs.send(JSON.stringify({
+                      type: 'patient-left-waiting',
+                      patientId: participantId
+                    }));
+                  }
+                }
+
                 room.participants.forEach((client) => {
                   if (client.readyState === WebSocket.OPEN) {
                     client.send(JSON.stringify({
@@ -1389,7 +1512,7 @@ export async function registerRoutes(
                     }));
                   }
                 });
-                if (room.participants.size === 0) {
+                if (room.participants.size === 0 && room.waitingPatients.size === 0) {
                   signalingRooms.delete(currentRoom);
                 }
               }
@@ -1406,9 +1529,35 @@ export async function registerRoutes(
       if (currentRoom && participantId) {
         const room = signalingRooms.get(currentRoom);
         if (room) {
+          const wasDoctorDisconnect = room.doctorUserId === participantId;
+
           room.participants.delete(participantId);
+          room.waitingPatients.delete(participantId);
           log(`User ${participantId} left room ${currentRoom}. Remaining: ${room.participants.size}`);
           
+          if (wasDoctorDisconnect) {
+            // Doctor disconnected: notify all waiting patients
+            room.waitingPatients.forEach((entry, wId) => {
+              if (entry.ws.readyState === WebSocket.OPEN) {
+                entry.ws.send(JSON.stringify({
+                  type: 'doctor-disconnected'
+                }));
+              }
+            });
+            room.doctorUserId = undefined;
+          } else {
+            // Patient disconnected: notify doctor
+            if (room.doctorUserId && room.participants.has(room.doctorUserId)) {
+              const doctorWs = room.participants.get(room.doctorUserId);
+              if (doctorWs && doctorWs.readyState === WebSocket.OPEN) {
+                doctorWs.send(JSON.stringify({
+                  type: 'patient-left-waiting',
+                  patientId: participantId
+                }));
+              }
+            }
+          }
+
           room.participants.forEach((client) => {
             if (client.readyState === WebSocket.OPEN) {
               client.send(JSON.stringify({
@@ -1418,7 +1567,7 @@ export async function registerRoutes(
             }
           });
 
-          if (room.participants.size === 0) {
+          if (room.participants.size === 0 && room.waitingPatients.size === 0) {
             signalingRooms.delete(currentRoom);
           }
         }
