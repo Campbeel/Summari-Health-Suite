@@ -59,7 +59,7 @@ export async function sendPasswordResetEmail(
   const resetUrl = `${baseUrl}/restablecer-contrasena?token=${resetToken}`;
 
   const { data, error } = await client.emails.send({
-    from: fromEmail || 'Summari <noreply@resend.dev>',
+    from: fromEmail || 'Summari <onboarding@resend.dev>',
     to: toEmail,
     subject: 'Recuperar tu contraseña - Summari',
     html: `
