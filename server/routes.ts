@@ -382,6 +382,20 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/appointments/booked-slots", isAuthenticated, async (req: any, res) => {
+    try {
+      const { doctorId, date } = req.query;
+      if (!doctorId || !date) {
+        return res.status(400).json({ error: "Se requiere doctorId y date" });
+      }
+      const slots = await storage.getBookedSlots(Number(doctorId), date as string);
+      res.json(slots);
+    } catch (error) {
+      console.error("Error fetching booked slots:", error);
+      res.status(500).json({ error: "Error al obtener horarios ocupados" });
+    }
+  });
+
   app.get("/api/appointments/:id", isAuthenticated, async (req: any, res) => {
     try {
       const appointment = await storage.getAppointment(parseInt(req.params.id));
@@ -423,6 +437,15 @@ export async function registerRoutes(
       const doctor = await storage.getDoctor(appointmentData.doctorId);
       if (!doctor) {
         return res.status(404).json({ error: "Médico no encontrado" });
+      }
+
+      const hasConflict = await storage.hasConflictingAppointment(
+        appointmentData.doctorId,
+        appointmentData.scheduledDate,
+        appointmentData.scheduledTime
+      );
+      if (hasConflict) {
+        return res.status(409).json({ error: "Este horario ya está reservado para este médico. Por favor selecciona otro horario." });
       }
       
       const appointment = await storage.createAppointment({

@@ -134,16 +134,29 @@ export default function BookAppointmentPage() {
     }
   };
 
+  const formattedDate = selectedDate ? format(selectedDate, "yyyy-MM-dd") : null;
+
+  const { data: bookedSlots = [] } = useQuery<string[]>({
+    queryKey: ["/api/appointments/booked-slots", selectedDoctor?.id, formattedDate],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/appointments/booked-slots?doctorId=${selectedDoctor!.id}&date=${formattedDate}`);
+      return res.json();
+    },
+    enabled: !!selectedDoctor && !!formattedDate,
+  });
+
   const isSlotAvailable = (time: string) => {
     if (!selectedDate) return false;
     const now = new Date();
     const isToday = format(selectedDate, "yyyy-MM-dd") === format(now, "yyyy-MM-dd");
-    if (!isToday) return true;
-    
-    const [hours, minutes] = time.split(":").map(Number);
-    const slotTime = new Date(now);
-    slotTime.setHours(hours, minutes, 0, 0);
-    return slotTime > now;
+    if (isToday) {
+      const [hours, minutes] = time.split(":").map(Number);
+      const slotTime = new Date(now);
+      slotTime.setHours(hours, minutes, 0, 0);
+      if (slotTime <= now) return false;
+    }
+    if (bookedSlots.includes(time)) return false;
+    return true;
   };
 
   return (
@@ -259,7 +272,7 @@ export default function BookAppointmentPage() {
                 <Calendar
                   mode="single"
                   selected={selectedDate}
-                  onSelect={setSelectedDate}
+                  onSelect={(date) => { setSelectedDate(date); setSelectedTime(""); }}
                   disabled={(date) => date < new Date() || date.getDay() === 0}
                   className="rounded-md border"
                   locale={es}

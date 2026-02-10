@@ -22,7 +22,7 @@ import {
   type MedicalInstruction,
   type InsertMedicalInstruction
 } from "@shared/schema";
-import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
+import { eq, and, gte, lte, desc, sql, notInArray } from "drizzle-orm";
 
 // Custom type definitions for joined queries
 type DoctorWithUserInfo = {
@@ -534,6 +534,36 @@ export class DatabaseStorage implements IStorage {
       )
       .orderBy(appointments.scheduledDate, appointments.scheduledTime);
     return result;
+  }
+
+  async getBookedSlots(doctorId: number, scheduledDate: string): Promise<string[]> {
+    const results = await db
+      .select({ time: appointments.scheduledTime })
+      .from(appointments)
+      .where(
+        and(
+          eq(appointments.doctorId, doctorId),
+          eq(appointments.scheduledDate, scheduledDate),
+          notInArray(appointments.status, ['cancelled'])
+        )
+      );
+    return results.map(r => r.time);
+  }
+
+  async hasConflictingAppointment(doctorId: number, scheduledDate: string, scheduledTime: string): Promise<boolean> {
+    const conflicts = await db
+      .select({ id: appointments.id })
+      .from(appointments)
+      .where(
+        and(
+          eq(appointments.doctorId, doctorId),
+          eq(appointments.scheduledDate, scheduledDate),
+          eq(appointments.scheduledTime, scheduledTime),
+          notInArray(appointments.status, ['cancelled'])
+        )
+      )
+      .limit(1);
+    return conflicts.length > 0;
   }
 
   async createAppointment(appointment: InsertAppointment): Promise<Appointment> {
