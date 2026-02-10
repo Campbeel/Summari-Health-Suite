@@ -151,7 +151,7 @@ export default function BookAppointmentPage() {
     const isToday = format(selectedDate, "yyyy-MM-dd") === format(now, "yyyy-MM-dd");
     if (isToday) {
       const [hours, minutes] = time.split(":").map(Number);
-      const slotTime = new Date(now);
+      const slotTime = new Date(selectedDate);
       slotTime.setHours(hours, minutes, 0, 0);
       if (slotTime <= now) return false;
     }
