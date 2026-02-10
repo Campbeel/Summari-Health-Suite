@@ -152,14 +152,16 @@ export default function BookAppointmentPage() {
     if (isToday) {
       const [hours, minutes] = time.split(":").map(Number);
       
-      // We calculate current Chilean time from UTC
-      // UTC is 16:37, user says 13:37 -> offset is -3 hours
+      // Calculate current Chilean time from UTC
+      // UTC is the system time, Chile is currently UTC-3
       const chileanNow = new Date(now.getTime() - (3 * 60 * 60 * 1000));
       const currentHours = chileanNow.getHours();
       const currentMinutes = chileanNow.getMinutes();
 
+      // Allow booking if the slot is at least 15 minutes in the future from "now"
+      // to avoid booking a slot that is literally starting right now
       if (hours < currentHours) return false;
-      if (hours === currentHours && minutes <= currentMinutes) return false;
+      if (hours === currentHours && minutes <= currentMinutes + 15) return false;
     }
     if (bookedSlots.includes(time)) return false;
     return true;
