@@ -28,6 +28,7 @@ export function log(message: string, source = "express") {
 
   app.use(
     express.json({
+      limit: "50mb",
       verify: (req, _res, buf) => {
         (req as any).rawBody = buf;
       },

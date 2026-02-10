@@ -80,6 +80,7 @@ export default function ConsultationPage() {
   const [notes, setNotes] = useState("");
   const [hasJoinedCall, setHasJoinedCall] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const isTranscribingRef = useRef(false);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -221,29 +222,36 @@ export default function ConsultationPage() {
   });
 
   const transcribeAudio = useCallback(async (audioBlob: Blob) => {
+    if (audioBlob.size < 1000) {
+      console.log("[Transcription] Audio blob too small, skipping:", audioBlob.size);
+      return;
+    }
     try {
       setIsTranscribing(true);
-      const reader = new FileReader();
-      reader.readAsDataURL(audioBlob);
-      reader.onloadend = async () => {
-        const base64Audio = (reader.result as string).split(',')[1];
-        try {
-          const response = await apiRequest("POST", "/api/transcribe", {
-            audioData: base64Audio,
-          });
-          const data = await response.json();
-          if (data.transcript) {
-            setTranscription(prev => prev + (prev ? " " : "") + data.transcript);
-          }
-        } catch (error) {
-          console.error("Transcription error:", error);
-        } finally {
-          setIsTranscribing(false);
-        }
-      };
+      isTranscribingRef.current = true;
+      const base64Audio = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const result = reader.result as string;
+          const base64 = result.split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(audioBlob);
+      });
+
+      const response = await apiRequest("POST", "/api/transcribe", {
+        audioData: base64Audio,
+      });
+      const data = await response.json();
+      if (data.transcript && data.transcript.trim()) {
+        setTranscription(prev => prev + (prev ? " " : "") + data.transcript.trim());
+      }
     } catch (error) {
-      console.error("Error preparing audio for transcription:", error);
+      console.error("Transcription error:", error);
+    } finally {
       setIsTranscribing(false);
+      isTranscribingRef.current = false;
     }
   }, []);
 
@@ -282,16 +290,16 @@ export default function ConsultationPage() {
         }
       };
 
-      mediaRecorder.start(5000);
+      mediaRecorder.start(3000);
       setIsRecording(true);
 
       transcriptionIntervalRef.current = setInterval(() => {
-        if (audioChunksRef.current.length > 0) {
+        if (audioChunksRef.current.length > 0 && !isTranscribingRef.current) {
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
           audioChunksRef.current = [];
           transcribeAudio(audioBlob);
         }
-      }, 10000);
+      }, 15000);
 
       toast({
         title: "Transcripción iniciada",
