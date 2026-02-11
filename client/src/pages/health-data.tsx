@@ -252,20 +252,13 @@ export default function HealthData() {
             return (
               <Card key={s.metricType} data-testid={`card-metric-${s.metricType}`}>
                 <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">{info.label}</CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    {info.label} ({info.unit})
+                  </CardTitle>
                   <Icon className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="flex items-baseline gap-2">
-                    <span className={`text-2xl font-bold ${outOfRange ? "text-destructive" : ""}`} data-testid={`text-value-${s.metricType}`}>
-                      {s.latestValue}
-                    </span>
-                    <span className="text-sm text-muted-foreground">{info.unit}</span>
-                    {outOfRange && (
-                      <Badge variant="destructive" className="text-xs">Fuera de rango</Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <span>Prom: {s.avg.toFixed(1)}</span>
                     <span>Min: {s.min}</span>
                     <span>Max: {s.max}</span>
