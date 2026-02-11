@@ -398,6 +398,7 @@ export default function HealthData() {
         <TabsList data-testid="tabs-health-view">
           <TabsTrigger value="chart" data-testid="tab-chart">Gráfico</TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">Historial</TabsTrigger>
+          <TabsTrigger value="sync" data-testid="tab-sync">Sincronizar Dispositivos</TabsTrigger>
         </TabsList>
 
         <TabsContent value="chart" className="space-y-4">
@@ -466,6 +467,102 @@ export default function HealthData() {
             onDelete={(id) => deleteMutation.mutate(id)}
             deleteLoading={deleteMutation.isPending}
           />
+        </TabsContent>
+
+        <TabsContent value="sync" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Conectar Dispositivos Wearables</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card className="p-4 border-dashed">
+                  <div className="flex items-start gap-4">
+                    <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+                      <Footprints className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold mb-1">Google Fit</h3>
+                      <p className="text-xs text-muted-foreground mb-3">Sincroniza tus pasos, actividad y peso desde tu cuenta de Google.</p>
+                      <Badge variant="outline" className="mb-3">Próximamente</Badge>
+                      <Button variant="secondary" size="sm" className="w-full" disabled>Conectar</Button>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card className="p-4 border-dashed">
+                  <div className="flex items-start gap-4">
+                    <div className="p-2 bg-pink-100 dark:bg-pink-900 rounded-lg">
+                      <Heart className="h-6 w-6 text-pink-600 dark:text-pink-400" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold mb-1">Apple Health</h3>
+                      <p className="text-xs text-muted-foreground mb-3">Debido a restricciones de Apple, la sincronización directa requiere nuestra App móvil.</p>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="w-full"
+                        onClick={() => {
+                          toast({
+                            title: "Instrucciones Apple Health",
+                            description: "Para importar datos de Apple Health, ve a la app Salud > Perfil > Exportar todos los datos de salud. Luego sube el archivo CSV aquí.",
+                          });
+                        }}
+                      >
+                        Ver cómo importar
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card className="p-4 border-dashed">
+                  <div className="flex items-start gap-4">
+                    <div className="p-2 bg-orange-100 dark:bg-orange-900 rounded-lg">
+                      <Activity className="h-6 w-6 text-orange-600 dark:text-orange-400" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold mb-1">Garmin / Fitbit</h3>
+                      <p className="text-xs text-muted-foreground mb-3">Integración directa con servicios de terceros en desarrollo.</p>
+                      <Badge variant="outline" className="mb-3">En desarrollo</Badge>
+                      <Button variant="secondary" size="sm" className="w-full" disabled>Conectar</Button>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card className="p-4 bg-muted/30">
+                  <div className="flex items-start gap-4">
+                    <div className="p-2 bg-primary/10 rounded-lg">
+                      <Upload className="h-6 w-6 text-primary" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold mb-1">Carga Manual / CSV</h3>
+                      <p className="text-xs text-muted-foreground mb-3">La forma más rápida de integrar tus datos hoy mismo.</p>
+                      <Button 
+                        variant="default" 
+                        size="sm" 
+                        className="w-full"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        Subir CSV ahora
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+
+              <div className="bg-muted/50 p-4 rounded-lg border">
+                <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                  <Activity className="h-4 w-4" />
+                  ¿Por qué integrar mis wearables?
+                </h4>
+                <ul className="text-xs space-y-2 text-muted-foreground list-disc pl-4">
+                  <li>Permite a tu médico ver tendencias reales entre consultas.</li>
+                  <li>Detección temprana de anomalías en frecuencia cardíaca o sueño.</li>
+                  <li>Análisis automático mediante nuestra IA para sugerencias preventivas.</li>
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
