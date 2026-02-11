@@ -1,41 +1,41 @@
-import { randomUUID } from 'crypto';
+import { randomUUID } from "crypto";
 
 export async function verifyFlowSignature(
   params: Record<string, any>,
-  receivedSignature: string
+  receivedSignature: string,
 ): Promise<boolean> {
   const subtleCrypto = crypto.subtle;
   const enc = new TextEncoder();
-  const algorithm = { name: 'HMAC', hash: 'SHA-256' };
+  const algorithm = { name: "HMAC", hash: "SHA-256" };
 
   const secretKey = process.env.FLOW_SECRET;
   if (!secretKey) {
-    throw new Error('FLOW_SECRET environment variable is not set');
+    throw new Error("FLOW_SECRET environment variable is not set");
   }
 
   const key = await subtleCrypto.importKey(
-    'raw',
+    "raw",
     enc.encode(secretKey),
     algorithm,
     false,
-    ['sign', 'verify']
+    ["sign", "verify"],
   );
 
   // Sort params alphabetically and create signature body (excluding 's')
   const body = Object.entries(params)
-    .filter(([key]) => key !== 's')
+    .filter(([key]) => key !== "s")
     .sort(([a], [b]) => a.localeCompare(b))
-    .reduce((res, [key, value]) => res + `${key}${value}`, '');
+    .reduce((res, [key, value]) => res + `${key}${value}`, "");
 
   const signature = await subtleCrypto.sign(
     algorithm.name,
     key,
-    enc.encode(body)
+    enc.encode(body),
   );
 
   const expectedSignature = Array.from(new Uint8Array(signature), (b) =>
-    b.toString(16).padStart(2, '0')
-  ).join('');
+    b.toString(16).padStart(2, "0"),
+  ).join("");
 
   return expectedSignature === receivedSignature;
 }
@@ -65,70 +65,76 @@ interface CreatePaymentResponse {
 type Signed<T> = T & { s: string };
 
 export async function withSignature(
-  params: Record<string, any>
+  params: Record<string, any>,
 ): Promise<Signed<Record<string, any>>> {
   const subtleCrypto = crypto.subtle;
   const enc = new TextEncoder();
-  const algorithm = { name: 'HMAC', hash: 'SHA-256' };
+  const algorithm = { name: "HMAC", hash: "SHA-256" };
 
   const secretKey = process.env.FLOW_SECRET;
   if (!secretKey) {
     console.error("FLOW_SECRET is missing in withSignature");
-    throw new Error('FLOW_SECRET environment variable is not set');
+    throw new Error("FLOW_SECRET environment variable is not set");
   }
 
   const key = await subtleCrypto.importKey(
-    'raw',
+    "raw",
     enc.encode(secretKey),
     algorithm,
     false,
-    ['sign', 'verify']
+    ["sign", "verify"],
   );
 
   const body = Object.entries(params)
     .sort(([a], [b]) => a.localeCompare(b))
     .reduce((res, [key, value]) => {
-      const val = typeof value === 'object' ? JSON.stringify(value) : value;
+      const val = typeof value === "object" ? JSON.stringify(value) : value;
       return res + `${key}${val}`;
-    }, '');
+    }, "");
 
   const signature = await subtleCrypto.sign(
     algorithm.name,
     key,
-    enc.encode(body)
+    enc.encode(body),
   );
 
   const s = Array.from(new Uint8Array(signature), (b) =>
-    b.toString(16).padStart(2, '0')
-  ).join('');
+    b.toString(16).padStart(2, "0"),
+  ).join("");
 
   return { ...params, s };
 }
 
 function objectToFormUrlEncoded(obj: Record<string, any>): string {
   return Object.entries(obj)
-    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-    .join('&');
+    .map(
+      ([key, value]) =>
+        `${encodeURIComponent(key)}=${encodeURIComponent(value)}`,
+    )
+    .join("&");
 }
 
 export async function createPayment(
   email: string,
   amount: number,
   appointmentId: number,
-  subject: string = 'Pago de consulta médica - Summari'
+  subject: string = "Pago de consulta médica - Summari",
 ): Promise<{ token: string; url: string; commerceOrderID: string }> {
   const flowBaseUrl = process.env.FLOW_BASE_URL;
   const flowKey = process.env.FLOW_KEY;
   const flowSecret = process.env.FLOW_SECRET;
-  const baseUrl = process.env.BASE_URL || `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  const baseUrl =
+    process.env.BASE_URL || `https://${process.env.REPLIT_DEV_DOMAIN}`;
 
   if (!flowBaseUrl || !flowKey || !flowSecret) {
-    console.error('Missing Flow configuration:', { 
-      hasBaseUrl: !!flowBaseUrl, 
-      hasKey: !!flowKey, 
-      hasSecret: !!flowSecret 
+    console.error("Missing Flow configuration:", {
+      hasBaseUrl: !!flowBaseUrl,
+      hasKey: !!flowKey,
+      hasSecret: !!flowSecret,
     });
-    throw new Error('Flow environment variables (FLOW_BASE_URL, FLOW_KEY, FLOW_SECRET) are not set');
+    throw new Error(
+      "Flow environment variables (FLOW_BASE_URL, FLOW_KEY, FLOW_SECRET) are not set",
+    );
   }
 
   const createPaymentUrl = `${flowBaseUrl}/payment/create`;
@@ -138,7 +144,7 @@ export async function createPayment(
     apiKey: flowKey,
     commerceOrder: commerceOrderID,
     subject,
-    currency: 'CLP',
+    currency: "CLP",
     amount,
     email,
     urlConfirmation: `${baseUrl}/api/flow/confirm`,
@@ -149,25 +155,31 @@ export async function createPayment(
   const signedParams = await withSignature(params);
   const postData = objectToFormUrlEncoded(signedParams);
 
+  console.log("Creating Flow payment with params:", {
+    ...params,
+    s: signedParams.s,
+  });
+  console.log("Post data:", postData);
+  console.log("Url:", createPaymentUrl);
   const response = await fetch(createPaymentUrl, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
+      "Content-Type": "application/x-www-form-urlencoded",
     },
     body: postData,
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('Flow API error:', errorText);
+    console.error("Flow API error:", errorText);
     throw new Error(`Flow API error: ${response.status} - ${errorText}`);
   }
 
-  const data = await response.json() as CreatePaymentResponse;
-  return { 
-    token: data.token, 
-    url: data.url, 
-    commerceOrderID 
+  const data = (await response.json()) as CreatePaymentResponse;
+  return {
+    token: data.token,
+    url: data.url,
+    commerceOrderID,
   };
 }
 
@@ -202,7 +214,9 @@ export async function getPaymentStatus(token: string): Promise<{
   const flowKey = process.env.FLOW_KEY;
 
   if (!flowBaseUrl || !flowKey) {
-    throw new Error('Flow environment variables (FLOW_BASE_URL, FLOW_KEY) are not set');
+    throw new Error(
+      "Flow environment variables (FLOW_BASE_URL, FLOW_KEY) are not set",
+    );
   }
 
   const validateUrl = `${flowBaseUrl}/payment/getStatus`;
@@ -219,7 +233,7 @@ export async function getPaymentStatus(token: string): Promise<{
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('Flow API error:', errorText);
+    console.error("Flow API error:", errorText);
     throw new Error(`Flow API error: ${response.status} - ${errorText}`);
   }
 
@@ -233,14 +247,14 @@ export function isPaymentSuccessful(status: number): boolean {
 export function getPaymentStatusText(status: number): string {
   switch (status) {
     case 1:
-      return 'pending';
+      return "pending";
     case 2:
-      return 'paid';
+      return "paid";
     case 3:
-      return 'rejected';
+      return "rejected";
     case 4:
-      return 'cancelled';
+      return "cancelled";
     default:
-      return 'unknown';
+      return "unknown";
   }
 }
