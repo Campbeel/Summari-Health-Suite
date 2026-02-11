@@ -226,6 +226,7 @@ export interface IStorage {
   // Wearable Connections
   getWearableConnection(patientId: number, provider: string): Promise<WearableConnection | undefined>;
   getWearableConnections(patientId: number): Promise<WearableConnection[]>;
+  getAllActiveWearableConnections(provider: string): Promise<WearableConnection[]>;
   createWearableConnection(connection: InsertWearableConnection): Promise<WearableConnection>;
   updateWearableConnection(id: number, data: Partial<InsertWearableConnection>): Promise<WearableConnection>;
   deleteWearableConnection(patientId: number, provider: string): Promise<void>;
@@ -882,6 +883,13 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(wearableConnections)
       .where(eq(wearableConnections.patientId, patientId));
+  }
+
+  async getAllActiveWearableConnections(provider: string): Promise<WearableConnection[]> {
+    return db
+      .select()
+      .from(wearableConnections)
+      .where(and(eq(wearableConnections.provider, provider), eq(wearableConnections.isActive, true)));
   }
 
   async createWearableConnection(connection: InsertWearableConnection): Promise<WearableConnection> {

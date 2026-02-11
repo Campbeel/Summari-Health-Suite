@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { cleanAndSetupDatabase } from "./seed";
+import { startFitbitAutoSync } from "./fitbit-scheduler";
 
 const app = express();
 const httpServer = createServer(app);
@@ -94,6 +95,7 @@ export function log(message: string, source = "express") {
     },
     () => {
       log(`serving on port ${port}`);
+      startFitbitAutoSync();
     },
   );
 })();
