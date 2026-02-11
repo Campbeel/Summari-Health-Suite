@@ -1405,14 +1405,16 @@ export async function registerRoutes(
 
       if (fitbitMetrics.length > 0) {
         for (const m of fitbitMetrics) {
-          // Evitar duplicados exactos (mismo paciente, tipo y fecha)
+          // Evitar duplicados (mismo paciente, tipo y fecha/hora aproximada)
+          // También ignorar valores estáticos que han causado problemas
           const existing = await storage.getWearableMetrics(patient.id, {
             metricType: m.metricType,
-            from: new Date(new Date(m.recordedAt).getTime() - 1000).toISOString(),
-            to: new Date(new Date(m.recordedAt).getTime() + 1000).toISOString(),
+            from: new Date(new Date(m.recordedAt).getTime() - 60000).toISOString(), // Ventana de 1 minuto
+            to: new Date(new Date(m.recordedAt).getTime() + 60000).toISOString(),
           });
           
-          if (existing.length === 0 && m.value !== "1092" && m.value !== "1558") {
+          const staticErrors = ["1092", "1558", "1495", "1817"]; // Valores sospechosos detectados
+          if (existing.length === 0 && !staticErrors.includes(m.value)) {
             await storage.createWearableMetrics([{
               patientId: patient.id,
               metricType: m.metricType,

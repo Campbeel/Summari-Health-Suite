@@ -147,7 +147,9 @@ async function fitbitGet(accessToken: string, path: string) {
     throw new Error(`Fitbit API error ${response.status}: ${errText}`);
   }
 
-  return response.json();
+  const data = await response.json();
+  console.log(`[fitbit-raw] Path: ${path}`, JSON.stringify(data));
+  return data;
 }
 
 interface SyncedMetric {
