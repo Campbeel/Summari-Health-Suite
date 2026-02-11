@@ -73,6 +73,7 @@ export async function withSignature(
 
   const secretKey = process.env.FLOW_SECRET;
   if (!secretKey) {
+    console.error("FLOW_SECRET is missing in withSignature");
     throw new Error('FLOW_SECRET environment variable is not set');
   }
 
@@ -118,10 +119,16 @@ export async function createPayment(
 ): Promise<{ token: string; url: string; commerceOrderID: string }> {
   const flowBaseUrl = process.env.FLOW_BASE_URL;
   const flowKey = process.env.FLOW_KEY;
+  const flowSecret = process.env.FLOW_SECRET;
   const baseUrl = process.env.BASE_URL || `https://${process.env.REPLIT_DEV_DOMAIN}`;
 
-  if (!flowBaseUrl || !flowKey) {
-    throw new Error('Flow environment variables (FLOW_BASE_URL, FLOW_KEY) are not set');
+  if (!flowBaseUrl || !flowKey || !flowSecret) {
+    console.error('Missing Flow configuration:', { 
+      hasBaseUrl: !!flowBaseUrl, 
+      hasKey: !!flowKey, 
+      hasSecret: !!flowSecret 
+    });
+    throw new Error('Flow environment variables (FLOW_BASE_URL, FLOW_KEY, FLOW_SECRET) are not set');
   }
 
   const createPaymentUrl = `${flowBaseUrl}/payment/create`;
