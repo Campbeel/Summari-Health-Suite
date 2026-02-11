@@ -44,5 +44,5 @@ integrations = ["javascript_log_in_with_replit:2.0.0", "javascript_database:1.0.
 [userenv]
 
 [userenv.shared]
-FLOW_BASE_URL = "https://sandbox.flow.cl/api"
+FLOW_BASE_URL = "https://www.flow.cl/api"
 BASE_URL = "https://summari-health-suite.replit.app"
