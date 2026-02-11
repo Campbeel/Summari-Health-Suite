@@ -7,6 +7,7 @@ import {
   clinicalRecords, 
   prescriptions, 
   medicalInstructions,
+  wearableMetrics,
   type User, 
   type UpsertUser,
   type Doctor,
@@ -20,7 +21,9 @@ import {
   type Prescription,
   type InsertPrescription,
   type MedicalInstruction,
-  type InsertMedicalInstruction
+  type InsertMedicalInstruction,
+  type WearableMetric,
+  type InsertWearableMetric
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, sql, notInArray } from "drizzle-orm";
 
@@ -208,6 +211,14 @@ export interface IStorage {
   getInstructionsByRecordId(clinicalRecordId: number): Promise<MedicalInstruction[]>;
   deleteInstructionsByRecordId(clinicalRecordId: number): Promise<void>;
   createMedicalInstruction(instruction: InsertMedicalInstruction): Promise<MedicalInstruction>;
+
+  // Wearable Metrics
+  createWearableMetric(metric: InsertWearableMetric): Promise<WearableMetric>;
+  createWearableMetrics(metrics: InsertWearableMetric[]): Promise<WearableMetric[]>;
+  getWearableMetrics(patientId: number, filters?: { metricType?: string; from?: string; to?: string; source?: string }): Promise<WearableMetric[]>;
+  getWearableMetricsSummary(patientId: number, from?: string, to?: string): Promise<{ metricType: string; avg: number; min: number; max: number; count: number; latestValue: string; unit: string }[]>;
+  getLatestWearableMetrics(patientId: number): Promise<WearableMetric[]>;
+  deleteWearableMetric(id: number, patientId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -781,6 +792,71 @@ export class DatabaseStorage implements IStorage {
   async createMedicalInstruction(instruction: InsertMedicalInstruction): Promise<MedicalInstruction> {
     const [created] = await db.insert(medicalInstructions).values(instruction).returning();
     return created;
+  }
+
+  // Wearable Metrics
+  async createWearableMetric(metric: InsertWearableMetric): Promise<WearableMetric> {
+    const [created] = await db.insert(wearableMetrics).values(metric).returning();
+    return created;
+  }
+
+  async createWearableMetrics(metrics: InsertWearableMetric[]): Promise<WearableMetric[]> {
+    if (metrics.length === 0) return [];
+    const created = await db.insert(wearableMetrics).values(metrics).returning();
+    return created;
+  }
+
+  async getWearableMetrics(patientId: number, filters?: { metricType?: string; from?: string; to?: string; source?: string }): Promise<WearableMetric[]> {
+    const conditions = [eq(wearableMetrics.patientId, patientId)];
+    if (filters?.metricType) conditions.push(eq(wearableMetrics.metricType, filters.metricType));
+    if (filters?.source) conditions.push(eq(wearableMetrics.source, filters.source));
+    if (filters?.from) conditions.push(gte(wearableMetrics.recordedAt, new Date(filters.from)));
+    if (filters?.to) conditions.push(lte(wearableMetrics.recordedAt, new Date(filters.to)));
+
+    return await db
+      .select()
+      .from(wearableMetrics)
+      .where(and(...conditions))
+      .orderBy(desc(wearableMetrics.recordedAt))
+      .limit(2000);
+  }
+
+  async getWearableMetricsSummary(patientId: number, from?: string, to?: string): Promise<{ metricType: string; avg: number; min: number; max: number; count: number; latestValue: string; unit: string }[]> {
+    const conditions = [eq(wearableMetrics.patientId, patientId)];
+    if (from) conditions.push(gte(wearableMetrics.recordedAt, new Date(from)));
+    if (to) conditions.push(lte(wearableMetrics.recordedAt, new Date(to)));
+
+    const result = await db
+      .select({
+        metricType: wearableMetrics.metricType,
+        avg: sql<number>`AVG(${wearableMetrics.value}::numeric)::float`.as('avg'),
+        min: sql<number>`MIN(${wearableMetrics.value}::numeric)::float`.as('min'),
+        max: sql<number>`MAX(${wearableMetrics.value}::numeric)::float`.as('max'),
+        count: sql<number>`COUNT(*)::int`.as('count'),
+        latestValue: sql<string>`(SELECT value FROM wearable_metrics wm2 WHERE wm2.patient_id = ${wearableMetrics.patientId} AND wm2.metric_type = ${wearableMetrics.metricType} ORDER BY wm2.recorded_at DESC LIMIT 1)`.as('latestValue'),
+        unit: sql<string>`(SELECT unit FROM wearable_metrics wm3 WHERE wm3.patient_id = ${wearableMetrics.patientId} AND wm3.metric_type = ${wearableMetrics.metricType} ORDER BY wm3.recorded_at DESC LIMIT 1)`.as('unit'),
+      })
+      .from(wearableMetrics)
+      .where(and(...conditions))
+      .groupBy(wearableMetrics.metricType, wearableMetrics.patientId);
+
+    return result;
+  }
+
+  async getLatestWearableMetrics(patientId: number): Promise<WearableMetric[]> {
+    const result = await db.execute(sql`
+      SELECT DISTINCT ON (metric_type) *
+      FROM wearable_metrics
+      WHERE patient_id = ${patientId}
+      ORDER BY metric_type, recorded_at DESC
+    `);
+    return result.rows as WearableMetric[];
+  }
+
+  async deleteWearableMetric(id: number, patientId: number): Promise<void> {
+    await db
+      .delete(wearableMetrics)
+      .where(and(eq(wearableMetrics.id, id), eq(wearableMetrics.patientId, patientId)));
   }
 }
 

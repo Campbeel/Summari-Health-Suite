@@ -113,6 +113,20 @@ export const medicalInstructions = pgTable("medical_instructions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Wearable Health Metrics table
+export const wearableMetrics = pgTable("wearable_metrics", {
+  id: serial("id").primaryKey(),
+  patientId: integer("patient_id").notNull().references(() => patients.id),
+  metricType: text("metric_type").notNull(), // heart_rate, steps, sleep_duration, sleep_quality, spo2, bp_systolic, bp_diastolic, weight, temperature, calories
+  value: text("value").notNull(),
+  unit: text("unit").notNull(), // bpm, steps, hours, %, mmHg, kg, °C, kcal
+  source: text("source").notNull().default("manual"), // manual, apple_health, google_fit, fitbit, garmin, samsung, whoop, oura, csv_import
+  deviceName: text("device_name"),
+  recordedAt: timestamp("recorded_at").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Relations
 export const doctorsRelations = relations(doctors, ({ many }) => ({
   appointments: many(appointments),
@@ -124,6 +138,14 @@ export const patientsRelations = relations(patients, ({ many }) => ({
   appointments: many(appointments),
   clinicalRecords: many(clinicalRecords),
   prescriptions: many(prescriptions),
+  wearableMetrics: many(wearableMetrics),
+}));
+
+export const wearableMetricsRelations = relations(wearableMetrics, ({ one }) => ({
+  patient: one(patients, {
+    fields: [wearableMetrics.patientId],
+    references: [patients.id],
+  }),
 }));
 
 export const appointmentsRelations = relations(appointments, ({ one }) => ({
@@ -217,6 +239,11 @@ export const insertMedicalInstructionSchema = createInsertSchema(medicalInstruct
   createdAt: true,
 });
 
+export const insertWearableMetricSchema = createInsertSchema(wearableMetrics).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type Doctor = typeof doctors.$inferSelect;
 export type InsertDoctor = z.infer<typeof insertDoctorSchema>;
@@ -230,3 +257,5 @@ export type Prescription = typeof prescriptions.$inferSelect;
 export type InsertPrescription = z.infer<typeof insertPrescriptionSchema>;
 export type MedicalInstruction = typeof medicalInstructions.$inferSelect;
 export type InsertMedicalInstruction = z.infer<typeof insertMedicalInstructionSchema>;
+export type WearableMetric = typeof wearableMetrics.$inferSelect;
+export type InsertWearableMetric = z.infer<typeof insertWearableMetricSchema>;
