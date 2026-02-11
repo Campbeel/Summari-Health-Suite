@@ -1293,6 +1293,217 @@ export async function registerRoutes(
     }
   });
 
+  // Wearable Metrics
+  const VALID_METRIC_TYPES = ["heart_rate", "steps", "sleep_duration", "spo2", "bp_systolic", "bp_diastolic", "weight", "temperature", "calories"];
+  const VALID_SOURCES = ["manual", "apple_health", "google_fit", "fitbit", "garmin", "samsung", "whoop", "oura", "csv_import"];
+
+  app.get("/api/wearable-metrics", isAuthenticated, async (req: any, res) => {
+    try {
+      const patient = await storage.getPatientByUserId(req.userId);
+      if (!patient) return res.status(404).json({ error: "Perfil de paciente no encontrado" });
+
+      const { metricType, from, to, source } = req.query;
+      const metrics = await storage.getWearableMetrics(patient.id, {
+        metricType: metricType as string,
+        from: from as string,
+        to: to as string,
+        source: source as string,
+      });
+      res.json(metrics);
+    } catch (error) {
+      res.status(500).json({ error: "Error al obtener métricas" });
+    }
+  });
+
+  app.get("/api/wearable-metrics/summary", isAuthenticated, async (req: any, res) => {
+    try {
+      const patient = await storage.getPatientByUserId(req.userId);
+      if (!patient) return res.status(404).json({ error: "Perfil de paciente no encontrado" });
+
+      const { from, to } = req.query;
+      const summary = await storage.getWearableMetricsSummary(patient.id, from as string, to as string);
+      res.json(summary);
+    } catch (error) {
+      res.status(500).json({ error: "Error al obtener resumen" });
+    }
+  });
+
+  app.get("/api/wearable-metrics/latest", isAuthenticated, async (req: any, res) => {
+    try {
+      const patient = await storage.getPatientByUserId(req.userId);
+      if (!patient) return res.status(404).json({ error: "Perfil de paciente no encontrado" });
+
+      const latest = await storage.getLatestWearableMetrics(patient.id);
+      res.json(latest);
+    } catch (error) {
+      res.status(500).json({ error: "Error al obtener últimas métricas" });
+    }
+  });
+
+  app.post("/api/wearable-metrics", isAuthenticated, async (req: any, res) => {
+    try {
+      const patient = await storage.getPatientByUserId(req.userId);
+      if (!patient) return res.status(404).json({ error: "Perfil de paciente no encontrado" });
+
+      const { metricType, value, unit, recordedAt, source } = req.body;
+      if (!metricType || value === undefined || !unit) {
+        return res.status(400).json({ error: "Tipo de métrica, valor y unidad son requeridos" });
+      }
+      if (!VALID_METRIC_TYPES.includes(metricType)) {
+        return res.status(400).json({ error: `Tipo de métrica inválido. Válidos: ${VALID_METRIC_TYPES.join(", ")}` });
+      }
+      const numValue = parseFloat(String(value));
+      if (isNaN(numValue)) {
+        return res.status(400).json({ error: "El valor debe ser numérico" });
+      }
+      const src = source || 'manual';
+      if (!VALID_SOURCES.includes(src)) {
+        return res.status(400).json({ error: "Fuente inválida" });
+      }
+
+      const metric = await storage.createWearableMetric({
+        patientId: patient.id,
+        metricType,
+        value: String(numValue),
+        unit,
+        recordedAt: recordedAt ? new Date(recordedAt) : new Date(),
+        source: src,
+      });
+      res.json(metric);
+    } catch (error) {
+      res.status(500).json({ error: "Error al crear métrica" });
+    }
+  });
+
+  app.post("/api/wearable-metrics/batch", isAuthenticated, async (req: any, res) => {
+    try {
+      const patient = await storage.getPatientByUserId(req.userId);
+      if (!patient) return res.status(404).json({ error: "Perfil de paciente no encontrado" });
+
+      const { metrics } = req.body;
+      if (!Array.isArray(metrics) || metrics.length === 0) {
+        return res.status(400).json({ error: "Se requiere un arreglo de métricas" });
+      }
+      if (metrics.length > 500) {
+        return res.status(400).json({ error: "Máximo 500 métricas por lote" });
+      }
+
+      const prepared = [];
+      for (const m of metrics) {
+        if (!m.metricType || !VALID_METRIC_TYPES.includes(m.metricType)) continue;
+        const val = parseFloat(String(m.value));
+        if (isNaN(val)) continue;
+        const src = m.source || 'manual';
+        prepared.push({
+          patientId: patient.id,
+          metricType: m.metricType,
+          value: String(val),
+          unit: m.unit || "",
+          recordedAt: m.recordedAt ? new Date(m.recordedAt) : new Date(),
+          source: VALID_SOURCES.includes(src) ? src : 'manual',
+          notes: m.notes || null,
+          deviceName: m.deviceName || null,
+        });
+      }
+
+      if (prepared.length === 0) {
+        return res.status(400).json({ error: "No se encontraron métricas válidas" });
+      }
+
+      const created = await storage.createWearableMetrics(prepared);
+      res.json({ count: created.length });
+    } catch (error) {
+      res.status(500).json({ error: "Error al importar métricas" });
+    }
+  });
+
+  app.delete("/api/wearable-metrics/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const patient = await storage.getPatientByUserId(req.userId);
+      if (!patient) return res.status(404).json({ error: "Perfil de paciente no encontrado" });
+
+      await storage.deleteWearableMetric(parseInt(req.params.id), patient.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Error al eliminar métrica" });
+    }
+  });
+
+  // Doctor: Get patient wearable metrics for consultation
+  app.get("/api/doctor/patients/:patientId/wearable-metrics", isAuthenticated, async (req: any, res) => {
+    try {
+      const doctor = await storage.getDoctorByUserId(req.userId);
+      if (!doctor) return res.status(403).json({ error: "Solo médicos pueden acceder" });
+
+      const patientId = parseInt(req.params.patientId);
+      const { metricType, from, to } = req.query;
+      const metrics = await storage.getWearableMetrics(patientId, {
+        metricType: metricType as string,
+        from: from as string,
+        to: to as string,
+      });
+      res.json(metrics);
+    } catch (error) {
+      res.status(500).json({ error: "Error al obtener métricas del paciente" });
+    }
+  });
+
+  app.get("/api/doctor/patients/:patientId/wearable-metrics/summary", isAuthenticated, async (req: any, res) => {
+    try {
+      const doctor = await storage.getDoctorByUserId(req.userId);
+      if (!doctor) return res.status(403).json({ error: "Solo médicos pueden acceder" });
+
+      const patientId = parseInt(req.params.patientId);
+      const { from, to } = req.query;
+      const summary = await storage.getWearableMetricsSummary(patientId, from as string, to as string);
+      res.json(summary);
+    } catch (error) {
+      res.status(500).json({ error: "Error al obtener resumen del paciente" });
+    }
+  });
+
+  app.post("/api/doctor/patients/:patientId/wearable-metrics/ai-analysis", isAuthenticated, async (req: any, res) => {
+    try {
+      const doctor = await storage.getDoctorByUserId(req.userId);
+      if (!doctor) return res.status(403).json({ error: "Solo médicos pueden acceder" });
+
+      const patientId = parseInt(req.params.patientId);
+      const summary = await storage.getWearableMetricsSummary(patientId);
+      const latest = await storage.getLatestWearableMetrics(patientId);
+
+      if (summary.length === 0) {
+        return res.json({ analysis: "No hay datos de dispositivos wearable disponibles para este paciente." });
+      }
+
+      const OpenAI = (await import('openai')).default;
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+      const prompt = `Eres un asistente médico. Analiza los siguientes datos de salud de un paciente recopilados de dispositivos wearable y entrada manual. Proporciona un resumen clínico breve en español, destacando:
+1. Valores fuera de rango normal
+2. Tendencias preocupantes
+3. Recomendaciones para el médico
+
+Resumen de métricas:
+${summary.map(s => `- ${s.metricType}: Promedio=${s.avg.toFixed(1)}, Min=${s.min}, Max=${s.max}, Último=${s.latestValue} ${s.unit} (${s.count} registros)`).join('\n')}
+
+Últimas lecturas:
+${latest.map(l => `- ${l.metricType}: ${l.value} ${l.unit} (${new Date(l.recordedAt).toLocaleDateString('es-CL')})`).join('\n')}`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 500,
+      });
+
+      res.json({ analysis: response.choices[0]?.message?.content || "No se pudo generar el análisis." });
+    } catch (error: any) {
+      console.error("AI analysis error:", error);
+      res.status(500).json({ error: "Error al generar análisis de IA" });
+    }
+  });
+
   // WebRTC Signaling Server
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
 

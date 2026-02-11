@@ -33,6 +33,8 @@ import {
   User,
   Mic,
   Save,
+  Activity,
+  Heart,
 } from "lucide-react";
 
 interface Medication {
@@ -732,6 +734,8 @@ export default function ConsultationValidationPage() {
             </CardContent>
           </Card>
 
+          <WearableInsightsCard patientId={validationData.patient.id} />
+
           <Card>
             <CardContent className="pt-4 space-y-2">
               <p className="text-xs text-muted-foreground">
@@ -790,5 +794,123 @@ export default function ConsultationValidationPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+interface MetricSummary {
+  metricType: string;
+  avg: number;
+  min: number;
+  max: number;
+  count: number;
+  latestValue: string;
+  unit: string;
+}
+
+const METRIC_LABELS: Record<string, string> = {
+  heart_rate: "FC",
+  steps: "Pasos",
+  sleep_duration: "Sueño",
+  spo2: "SpO₂",
+  bp_systolic: "PA Sist.",
+  bp_diastolic: "PA Diast.",
+  weight: "Peso",
+  temperature: "Temp.",
+  calories: "Calorías",
+};
+
+function WearableInsightsCard({ patientId }: { patientId: number }) {
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+
+  const { data: summary, isLoading } = useQuery<MetricSummary[]>({
+    queryKey: [`/api/doctor/patients/${patientId}/wearable-metrics/summary`],
+  });
+
+  const aiMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/doctor/patients/${patientId}/wearable-metrics/ai-analysis`);
+      return res.json();
+    },
+    onSuccess: (data: { analysis: string }) => {
+      setAiAnalysis(data.analysis);
+    },
+    onError: () => {
+      setAiAnalysis("Error al generar análisis");
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            Datos Wearable
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-20" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!summary || summary.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            Datos Wearable
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-muted-foreground text-center py-2">Sin datos de dispositivos</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Activity className="h-4 w-4" />
+          Datos Wearable
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="space-y-1.5">
+          {summary.map(s => (
+            <div key={s.metricType} className="flex items-center justify-between text-sm" data-testid={`wearable-summary-${s.metricType}`}>
+              <span className="text-muted-foreground">{METRIC_LABELS[s.metricType] || s.metricType}</span>
+              <span className="font-medium">{s.latestValue} {s.unit}</span>
+            </div>
+          ))}
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => aiMutation.mutate()}
+          disabled={aiMutation.isPending}
+          data-testid="button-ai-wearable-analysis"
+        >
+          {aiMutation.isPending ? (
+            <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+          ) : (
+            <Heart className="h-3 w-3 mr-1.5" />
+          )}
+          Análisis IA
+        </Button>
+
+        {aiAnalysis && (
+          <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded-md whitespace-pre-wrap" data-testid="text-ai-wearable-analysis">
+            {aiAnalysis}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

@@ -34,12 +34,14 @@ import {
   Pill,
   LayoutDashboard,
   User,
-  Shield
+  Shield,
+  Activity,
 } from "lucide-react";
 
 const patientMenuItems = [
   { title: "Inicio", url: "/", icon: Home, testId: "nav-home" },
   { title: "Mis Consultas", url: "/appointments", icon: Calendar, testId: "nav-appointments" },
+  { title: "Datos de Salud", url: "/health-data", icon: Activity, testId: "nav-health-data" },
   { title: "Historial Clínico", url: "/records", icon: FileText, testId: "nav-records" },
   { title: "Recetas", url: "/prescriptions", icon: Pill, testId: "nav-prescriptions" },
 ];
