@@ -199,24 +199,6 @@ export default function HealthData() {
     queryKey: [`/api/wearable-metrics?metricType=${chartMetric}&from=${thirtyDaysAgo}`],
   });
 
-  const addMetricMutation = useMutation({
-    mutationFn: async (data: { metricType: string; value: string; unit: string; recordedAt: string }) => {
-      const res = await apiRequest("POST", "/api/wearable-metrics", data);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/wearable-metrics"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/wearable-metrics/summary"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/wearable-metrics/latest"] });
-      setAddDialogOpen(false);
-      setNewValue("");
-      toast({ title: "Métrica registrada correctamente" });
-    },
-    onError: () => {
-      toast({ title: "Error al registrar métrica", variant: "destructive" });
-    },
-  });
-
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiRequest("DELETE", `/api/wearable-metrics/${id}`);
@@ -228,82 +210,6 @@ export default function HealthData() {
       toast({ title: "Métrica eliminada" });
     },
   });
-
-  const importMutation = useMutation({
-    mutationFn: async (metrics: any[]) => {
-      const res = await apiRequest("POST", "/api/wearable-metrics/batch", { metrics });
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/wearable-metrics"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/wearable-metrics/summary"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/wearable-metrics/latest"] });
-      toast({ title: `${data.count} métricas importadas correctamente` });
-    },
-    onError: () => {
-      toast({ title: "Error al importar datos", variant: "destructive" });
-    },
-  });
-
-  function handleAddMetric() {
-    const info = getMetricInfo(selectedMetricType);
-    addMetricMutation.mutate({
-      metricType: selectedMetricType,
-      value: newValue,
-      unit: info.unit,
-      recordedAt: new Date(newDate).toISOString(),
-    });
-  }
-
-  function handleCSVUpload(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      const lines = text.split("\n").filter(l => l.trim());
-      if (lines.length < 2) {
-        toast({ title: "El archivo CSV debe tener al menos una fila de datos", variant: "destructive" });
-        return;
-      }
-
-      const headers = lines[0].toLowerCase().split(",").map(h => h.trim());
-      const typeIdx = headers.findIndex(h => h.includes("tipo") || h.includes("type") || h.includes("metric"));
-      const valueIdx = headers.findIndex(h => h.includes("valor") || h.includes("value"));
-      const unitIdx = headers.findIndex(h => h.includes("unidad") || h.includes("unit"));
-      const dateIdx = headers.findIndex(h => h.includes("fecha") || h.includes("date") || h.includes("recorded"));
-
-      if (typeIdx === -1 || valueIdx === -1) {
-        toast({ title: "CSV debe tener columnas 'tipo' y 'valor' como mínimo", variant: "destructive" });
-        return;
-      }
-
-      const metrics = [];
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(",").map(c => c.trim());
-        if (cols.length < 2) continue;
-
-        const metricType = cols[typeIdx];
-        const value = cols[valueIdx];
-        const unit = unitIdx >= 0 ? cols[unitIdx] : (getMetricInfo(metricType)?.unit || "");
-        const recordedAt = dateIdx >= 0 && cols[dateIdx] ? new Date(cols[dateIdx]).toISOString() : new Date().toISOString();
-
-        if (metricType && value) {
-          metrics.push({ metricType, value, unit, recordedAt, source: "csv_import" });
-        }
-      }
-
-      if (metrics.length === 0) {
-        toast({ title: "No se encontraron datos válidos en el CSV", variant: "destructive" });
-        return;
-      }
-
-      importMutation.mutate(metrics);
-    };
-    reader.readAsText(file);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }
 
   const chartConfig: ChartConfig = {
     value: {
@@ -325,85 +231,8 @@ export default function HealthData() {
     <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold" data-testid="text-health-title">Datos de Salud</h1>
-          <p className="text-muted-foreground text-sm">Monitorea tus métricas de salud y bienestar</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv"
-            className="hidden"
-            onChange={handleCSVUpload}
-            data-testid="input-csv-upload"
-          />
-          <Button
-            variant="outline"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={importMutation.isPending}
-            data-testid="button-import-csv"
-          >
-            <Upload className="h-4 w-4 mr-2" />
-            Importar CSV
-          </Button>
-          <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-            <DialogTrigger asChild>
-              <Button data-testid="button-add-metric">
-                <Plus className="h-4 w-4 mr-2" />
-                Registrar Métrica
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Registrar nueva métrica</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 pt-2">
-                <div className="space-y-2">
-                  <Label>Tipo de métrica</Label>
-                  <Select value={selectedMetricType} onValueChange={setSelectedMetricType}>
-                    <SelectTrigger data-testid="select-metric-type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {METRIC_TYPES.map(m => (
-                        <SelectItem key={m.value} value={m.value} data-testid={`option-metric-${m.value}`}>
-                          {m.label} ({m.unit})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Valor</Label>
-                  <Input
-                    type="number"
-                    step="any"
-                    placeholder={`Ej: ${selectedMetricType === "heart_rate" ? "72" : selectedMetricType === "weight" ? "70.5" : "98"}`}
-                    value={newValue}
-                    onChange={(e) => setNewValue(e.target.value)}
-                    data-testid="input-metric-value"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Fecha y hora</Label>
-                  <Input
-                    type="datetime-local"
-                    value={newDate}
-                    onChange={(e) => setNewDate(e.target.value)}
-                    data-testid="input-metric-date"
-                  />
-                </div>
-                <Button
-                  className="w-full"
-                  onClick={handleAddMetric}
-                  disabled={!newValue || addMetricMutation.isPending}
-                  data-testid="button-submit-metric"
-                >
-                  {addMetricMutation.isPending ? "Guardando..." : "Guardar"}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <h1 className="text-2xl font-bold" data-testid="text-health-title">Datos de Salud (Fitbit)</h1>
+          <p className="text-muted-foreground text-sm">Monitorea tus métricas sincronizadas directamente desde tu dispositivo Fitbit</p>
         </div>
       </div>
 
@@ -451,20 +280,10 @@ export default function HealthData() {
         <Card>
           <CardContent className="py-12 text-center">
             <Activity className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">Sin datos de salud</h3>
+            <h3 className="text-lg font-medium mb-2">Sin datos de Fitbit</h3>
             <p className="text-muted-foreground text-sm mb-4">
-              Comienza registrando tus métricas de salud o importa datos desde un archivo CSV.
+              Conecta tu cuenta de Fitbit para comenzar a ver tus métricas de salud automáticamente.
             </p>
-            <div className="flex justify-center gap-2">
-              <Button variant="outline" onClick={() => fileInputRef.current?.click()} data-testid="button-empty-import">
-                <FileSpreadsheet className="h-4 w-4 mr-2" />
-                Importar CSV
-              </Button>
-              <Button onClick={() => setAddDialogOpen(true)} data-testid="button-empty-add">
-                <Plus className="h-4 w-4 mr-2" />
-                Registrar
-              </Button>
-            </div>
           </CardContent>
         </Card>
       )}
@@ -624,73 +443,13 @@ export default function HealthData() {
                       <AlertTriangle className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                     </div>
                     <div className="flex-1">
-                      <h3 className="font-semibold mb-1">Google Fit</h3>
-                      <p className="text-xs text-muted-foreground mb-3">Google descontinuó esta API en junio 2025. Usa Fitbit o importación CSV como alternativa.</p>
-                      <Badge variant="outline" className="mb-3">No disponible</Badge>
-                    </div>
-                  </div>
-                </Card>
-
-                <Card className="p-4 border-dashed">
-                  <div className="flex items-start gap-4">
-                    <div className="p-2 bg-pink-100 dark:bg-pink-900 rounded-lg">
-                      <Heart className="h-6 w-6 text-pink-600 dark:text-pink-400" />
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold mb-1">Apple Health</h3>
-                      <p className="text-xs text-muted-foreground mb-3">Exporta tus datos desde la app Salud de iPhone y súbelos como CSV.</p>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="w-full"
-                        onClick={() => {
-                          toast({
-                            title: "Instrucciones Apple Health",
-                            description: "Abre la app Salud en tu iPhone > Perfil > Exportar todos los datos de salud. Luego sube el archivo CSV aquí.",
-                          });
-                        }}
-                        data-testid="button-apple-health-info"
-                      >
-                        Ver cómo importar
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
-
-                <Card className="p-4 border-dashed">
-                  <div className="flex items-start gap-4">
-                    <div className="p-2 bg-orange-100 dark:bg-orange-900 rounded-lg">
-                      <Activity className="h-6 w-6 text-orange-600 dark:text-orange-400" />
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold mb-1">Garmin</h3>
-                      <p className="text-xs text-muted-foreground mb-3">La integración directa requiere un acuerdo de socio. Exporta datos CSV desde Garmin Connect.</p>
-                      <Badge variant="outline" className="mb-3">Solo CSV</Badge>
+                      <h3 className="font-semibold mb-1">Otros Dispositivos</h3>
+                      <p className="text-xs text-muted-foreground mb-3">Actualmente solo soportamos sincronización directa con Fitbit. Próximamente agregaremos más integraciones.</p>
+                      <Badge variant="outline" className="mb-3">Próximamente</Badge>
                     </div>
                   </div>
                 </Card>
               </div>
-
-              <Card className="bg-muted/30">
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-start gap-3">
-                    <Upload className="h-5 w-5 text-primary mt-0.5" />
-                    <div>
-                      <h4 className="text-sm font-semibold">Importación CSV Universal</h4>
-                      <p className="text-xs text-muted-foreground mt-1">Funciona con datos exportados de cualquier dispositivo. Tu archivo debe tener columnas: tipo, valor, fecha, unidad.</p>
-                    </div>
-                  </div>
-                  <Button 
-                    variant="default" 
-                    size="sm"
-                    onClick={() => fileInputRef.current?.click()}
-                    data-testid="button-sync-csv-upload"
-                  >
-                    <Upload className="h-4 w-4 mr-2" />
-                    Subir archivo CSV
-                  </Button>
-                </CardContent>
-              </Card>
 
               <div className="bg-muted/50 p-4 rounded-lg border">
                 <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
