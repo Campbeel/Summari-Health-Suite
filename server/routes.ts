@@ -1413,8 +1413,7 @@ export async function registerRoutes(
             to: new Date(new Date(m.recordedAt).getTime() + 60000).toISOString(),
           });
           
-          const staticErrors = ["1092", "1558", "1495", "1817"]; // Valores sospechosos detectados
-          if (existing.length === 0 && !staticErrors.includes(m.value)) {
+          if (existing.length === 0) {
             await storage.createWearableMetrics([{
               patientId: patient.id,
               metricType: m.metricType,

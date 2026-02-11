@@ -147,9 +147,7 @@ async function fitbitGet(accessToken: string, path: string) {
     throw new Error(`Fitbit API error ${response.status}: ${errText}`);
   }
 
-  const data = await response.json();
-  console.log(`[fitbit-raw] Path: ${path}`, JSON.stringify(data));
-  return data;
+  return response.json();
 }
 
 interface SyncedMetric {
@@ -221,15 +219,17 @@ export async function fetchFitbitData(accessToken: string): Promise<SyncedMetric
   }
 
   try {
-    const weightData = await fitbitGet(accessToken, `/1/user/-/body/weight/date/${thirtyDaysAgo}/${today}.json`);
-    if (weightData["body-weight"]) {
-      for (const entry of weightData["body-weight"]) {
-        if (parseFloat(entry.value) > 0) {
+    const weightLogData = await fitbitGet(accessToken, `/1/user/-/body/log/weight/date/${thirtyDaysAgo}/${today}.json`);
+    if (weightLogData.weight && Array.isArray(weightLogData.weight)) {
+      const seenWeightDates = new Set<string>();
+      for (const entry of weightLogData.weight) {
+        if (entry.weight > 0 && !seenWeightDates.has(entry.date)) {
+          seenWeightDates.add(entry.date);
           metrics.push({
             metricType: "weight",
-            value: entry.value,
+            value: String(entry.weight),
             unit: "kg",
-            recordedAt: new Date(entry.dateTime + "T12:00:00"),
+            recordedAt: new Date(entry.date + "T" + (entry.time || "12:00:00")),
           });
         }
       }
@@ -239,16 +239,24 @@ export async function fetchFitbitData(accessToken: string): Promise<SyncedMetric
   }
 
   try {
-    const caloriesData = await fitbitGet(accessToken, `/1/user/-/activities/calories/date/${thirtyDaysAgo}/${today}.json`);
-    if (caloriesData["activities-calories"]) {
-      for (const entry of caloriesData["activities-calories"]) {
-        if (parseInt(entry.value) > 0) {
-          metrics.push({
-            metricType: "calories",
-            value: entry.value,
-            unit: "kcal",
-            recordedAt: new Date(entry.dateTime + "T23:59:00"),
-          });
+    const activeDates = new Set(
+      metrics
+        .filter(m => m.metricType === "steps" && parseInt(m.value) > 0)
+        .map(m => m.recordedAt.toISOString().split("T")[0])
+    );
+
+    if (activeDates.size > 0) {
+      const caloriesData = await fitbitGet(accessToken, `/1/user/-/activities/calories/date/${thirtyDaysAgo}/${today}.json`);
+      if (caloriesData["activities-calories"]) {
+        for (const entry of caloriesData["activities-calories"]) {
+          if (parseInt(entry.value) > 0 && activeDates.has(entry.dateTime)) {
+            metrics.push({
+              metricType: "calories",
+              value: entry.value,
+              unit: "kcal",
+              recordedAt: new Date(entry.dateTime + "T23:59:00"),
+            });
+          }
         }
       }
     }
