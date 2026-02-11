@@ -23,7 +23,10 @@ import {
   type MedicalInstruction,
   type InsertMedicalInstruction,
   type WearableMetric,
-  type InsertWearableMetric
+  type InsertWearableMetric,
+  wearableConnections,
+  type WearableConnection,
+  type InsertWearableConnection
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, sql, notInArray } from "drizzle-orm";
 
@@ -219,6 +222,13 @@ export interface IStorage {
   getWearableMetricsSummary(patientId: number, from?: string, to?: string): Promise<{ metricType: string; avg: number; min: number; max: number; count: number; latestValue: string; unit: string }[]>;
   getLatestWearableMetrics(patientId: number): Promise<WearableMetric[]>;
   deleteWearableMetric(id: number, patientId: number): Promise<void>;
+
+  // Wearable Connections
+  getWearableConnection(patientId: number, provider: string): Promise<WearableConnection | undefined>;
+  getWearableConnections(patientId: number): Promise<WearableConnection[]>;
+  createWearableConnection(connection: InsertWearableConnection): Promise<WearableConnection>;
+  updateWearableConnection(id: number, data: Partial<InsertWearableConnection>): Promise<WearableConnection>;
+  deleteWearableConnection(patientId: number, provider: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -857,6 +867,44 @@ export class DatabaseStorage implements IStorage {
     await db
       .delete(wearableMetrics)
       .where(and(eq(wearableMetrics.id, id), eq(wearableMetrics.patientId, patientId)));
+  }
+
+  async getWearableConnection(patientId: number, provider: string): Promise<WearableConnection | undefined> {
+    const [conn] = await db
+      .select()
+      .from(wearableConnections)
+      .where(and(eq(wearableConnections.patientId, patientId), eq(wearableConnections.provider, provider)));
+    return conn;
+  }
+
+  async getWearableConnections(patientId: number): Promise<WearableConnection[]> {
+    return db
+      .select()
+      .from(wearableConnections)
+      .where(eq(wearableConnections.patientId, patientId));
+  }
+
+  async createWearableConnection(connection: InsertWearableConnection): Promise<WearableConnection> {
+    const [conn] = await db
+      .insert(wearableConnections)
+      .values(connection)
+      .returning();
+    return conn;
+  }
+
+  async updateWearableConnection(id: number, data: Partial<InsertWearableConnection>): Promise<WearableConnection> {
+    const [conn] = await db
+      .update(wearableConnections)
+      .set(data)
+      .where(eq(wearableConnections.id, id))
+      .returning();
+    return conn;
+  }
+
+  async deleteWearableConnection(patientId: number, provider: string): Promise<void> {
+    await db
+      .delete(wearableConnections)
+      .where(and(eq(wearableConnections.patientId, patientId), eq(wearableConnections.provider, provider)));
   }
 }
 

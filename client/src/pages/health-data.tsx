@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Heart,
   Footprints,
@@ -28,6 +28,12 @@ import {
   Minus,
   Trash2,
   FileSpreadsheet,
+  RefreshCw,
+  Loader2,
+  Check,
+  Unplug,
+  Watch,
+  AlertTriangle,
 } from "lucide-react";
 import {
   ChartContainer,
@@ -101,6 +107,16 @@ interface MetricSummary {
   unit: string;
 }
 
+interface WearableConnectionInfo {
+  id: number;
+  provider: string;
+  providerUserId: string | null;
+  scopes: string | null;
+  lastSyncAt: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
 export default function HealthData() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -110,6 +126,65 @@ export default function HealthData() {
   const [newValue, setNewValue] = useState("");
   const [newDate, setNewDate] = useState(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fitbitStatus = params.get("fitbit");
+    if (fitbitStatus === "connected") {
+      toast({ title: "Fitbit conectado exitosamente", description: "Ahora puedes sincronizar tus datos." });
+      window.history.replaceState({}, "", "/health-data");
+      queryClient.invalidateQueries({ queryKey: ["/api/fitbit/connections"] });
+    } else if (fitbitStatus === "error") {
+      toast({ title: "Error al conectar Fitbit", description: "Intenta nuevamente.", variant: "destructive" });
+      window.history.replaceState({}, "", "/health-data");
+    }
+  }, []);
+
+  const { data: connections } = useQuery<WearableConnectionInfo[]>({
+    queryKey: ["/api/fitbit/connections"],
+  });
+
+  const fitbitConnection = connections?.find(c => c.provider === "fitbit" && c.isActive);
+
+  const connectFitbitMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/fitbit/authorize");
+      return res.json();
+    },
+    onSuccess: (data: { authUrl: string }) => {
+      window.location.href = data.authUrl;
+    },
+    onError: (error: any) => {
+      toast({ title: "Error al conectar Fitbit", description: error.message || "Verifica la configuración.", variant: "destructive" });
+    },
+  });
+
+  const syncFitbitMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/fitbit/sync");
+      return res.json();
+    },
+    onSuccess: (data: { synced: number }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/wearable-metrics"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/wearable-metrics/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/wearable-metrics/latest"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/fitbit/connections"] });
+      toast({ title: `${data.synced} métricas sincronizadas desde Fitbit` });
+    },
+    onError: () => {
+      toast({ title: "Error al sincronizar Fitbit", variant: "destructive" });
+    },
+  });
+
+  const disconnectFitbitMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", "/api/fitbit/disconnect");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/fitbit/connections"] });
+      toast({ title: "Fitbit desconectado" });
+    },
+  });
 
   const { data: summary, isLoading: summaryLoading } = useQuery<MetricSummary[]>({
     queryKey: ["/api/wearable-metrics/summary"],
@@ -476,16 +551,82 @@ export default function HealthData() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Card className={`p-4 ${fitbitConnection ? "" : "border-dashed"}`}>
+                  <div className="flex items-start gap-4">
+                    <div className="p-2 bg-teal-100 dark:bg-teal-900 rounded-lg">
+                      <Watch className="h-6 w-6 text-teal-600 dark:text-teal-400" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-semibold">Fitbit</h3>
+                        {fitbitConnection && (
+                          <Badge variant="default" className="text-xs" data-testid="badge-fitbit-connected">
+                            <Check className="h-3 w-3 mr-1" /> Conectado
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mb-3">
+                        {fitbitConnection
+                          ? `Última sincronización: ${fitbitConnection.lastSyncAt ? format(new Date(fitbitConnection.lastSyncAt), "dd MMM yyyy HH:mm", { locale: es }) : "Nunca"}`
+                          : "Sincroniza pasos, frecuencia cardíaca, sueño, peso, SpO2 y más."}
+                      </p>
+                      {fitbitConnection ? (
+                        <div className="flex gap-2">
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => syncFitbitMutation.mutate()}
+                            disabled={syncFitbitMutation.isPending}
+                            data-testid="button-sync-fitbit"
+                          >
+                            {syncFitbitMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-4 w-4 mr-1" />
+                            )}
+                            Sincronizar
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => disconnectFitbitMutation.mutate()}
+                            disabled={disconnectFitbitMutation.isPending}
+                            data-testid="button-disconnect-fitbit"
+                          >
+                            <Unplug className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => connectFitbitMutation.mutate()}
+                          disabled={connectFitbitMutation.isPending}
+                          data-testid="button-connect-fitbit"
+                        >
+                          {connectFitbitMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                          ) : (
+                            <Watch className="h-4 w-4 mr-1" />
+                          )}
+                          Conectar Fitbit
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+
                 <Card className="p-4 border-dashed">
                   <div className="flex items-start gap-4">
                     <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
-                      <Footprints className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                      <AlertTriangle className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                     </div>
                     <div className="flex-1">
                       <h3 className="font-semibold mb-1">Google Fit</h3>
-                      <p className="text-xs text-muted-foreground mb-3">Sincroniza tus pasos, actividad y peso desde tu cuenta de Google.</p>
-                      <Badge variant="outline" className="mb-3">Próximamente</Badge>
-                      <Button variant="secondary" size="sm" className="w-full" disabled>Conectar</Button>
+                      <p className="text-xs text-muted-foreground mb-3">Google descontinuó esta API en junio 2025. Usa Fitbit o importación CSV como alternativa.</p>
+                      <Badge variant="outline" className="mb-3">No disponible</Badge>
                     </div>
                   </div>
                 </Card>
@@ -497,7 +638,7 @@ export default function HealthData() {
                     </div>
                     <div className="flex-1">
                       <h3 className="font-semibold mb-1">Apple Health</h3>
-                      <p className="text-xs text-muted-foreground mb-3">Debido a restricciones de Apple, la sincronización directa requiere nuestra App móvil.</p>
+                      <p className="text-xs text-muted-foreground mb-3">Exporta tus datos desde la app Salud de iPhone y súbelos como CSV.</p>
                       <Button 
                         variant="outline" 
                         size="sm" 
@@ -505,9 +646,10 @@ export default function HealthData() {
                         onClick={() => {
                           toast({
                             title: "Instrucciones Apple Health",
-                            description: "Para importar datos de Apple Health, ve a la app Salud > Perfil > Exportar todos los datos de salud. Luego sube el archivo CSV aquí.",
+                            description: "Abre la app Salud en tu iPhone > Perfil > Exportar todos los datos de salud. Luego sube el archivo CSV aquí.",
                           });
                         }}
+                        data-testid="button-apple-health-info"
                       >
                         Ver cómo importar
                       </Button>
@@ -521,34 +663,34 @@ export default function HealthData() {
                       <Activity className="h-6 w-6 text-orange-600 dark:text-orange-400" />
                     </div>
                     <div className="flex-1">
-                      <h3 className="font-semibold mb-1">Garmin / Fitbit</h3>
-                      <p className="text-xs text-muted-foreground mb-3">Integración directa con servicios de terceros en desarrollo.</p>
-                      <Badge variant="outline" className="mb-3">En desarrollo</Badge>
-                      <Button variant="secondary" size="sm" className="w-full" disabled>Conectar</Button>
-                    </div>
-                  </div>
-                </Card>
-
-                <Card className="p-4 bg-muted/30">
-                  <div className="flex items-start gap-4">
-                    <div className="p-2 bg-primary/10 rounded-lg">
-                      <Upload className="h-6 w-6 text-primary" />
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold mb-1">Carga Manual / CSV</h3>
-                      <p className="text-xs text-muted-foreground mb-3">La forma más rápida de integrar tus datos hoy mismo.</p>
-                      <Button 
-                        variant="default" 
-                        size="sm" 
-                        className="w-full"
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        Subir CSV ahora
-                      </Button>
+                      <h3 className="font-semibold mb-1">Garmin</h3>
+                      <p className="text-xs text-muted-foreground mb-3">La integración directa requiere un acuerdo de socio. Exporta datos CSV desde Garmin Connect.</p>
+                      <Badge variant="outline" className="mb-3">Solo CSV</Badge>
                     </div>
                   </div>
                 </Card>
               </div>
+
+              <Card className="bg-muted/30">
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <Upload className="h-5 w-5 text-primary mt-0.5" />
+                    <div>
+                      <h4 className="text-sm font-semibold">Importación CSV Universal</h4>
+                      <p className="text-xs text-muted-foreground mt-1">Funciona con datos exportados de cualquier dispositivo. Tu archivo debe tener columnas: tipo, valor, fecha, unidad.</p>
+                    </div>
+                  </div>
+                  <Button 
+                    variant="default" 
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    data-testid="button-sync-csv-upload"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Subir archivo CSV
+                  </Button>
+                </CardContent>
+              </Card>
 
               <div className="bg-muted/50 p-4 rounded-lg border">
                 <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">

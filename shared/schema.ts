@@ -127,6 +127,21 @@ export const wearableMetrics = pgTable("wearable_metrics", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Wearable Connections (OAuth tokens for Fitbit, etc.)
+export const wearableConnections = pgTable("wearable_connections", {
+  id: serial("id").primaryKey(),
+  patientId: integer("patient_id").notNull().references(() => patients.id),
+  provider: text("provider").notNull(), // fitbit, garmin, etc.
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  providerUserId: text("provider_user_id"),
+  scopes: text("scopes"),
+  lastSyncAt: timestamp("last_sync_at"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Relations
 export const doctorsRelations = relations(doctors, ({ many }) => ({
   appointments: many(appointments),
@@ -139,6 +154,14 @@ export const patientsRelations = relations(patients, ({ many }) => ({
   clinicalRecords: many(clinicalRecords),
   prescriptions: many(prescriptions),
   wearableMetrics: many(wearableMetrics),
+  wearableConnections: many(wearableConnections),
+}));
+
+export const wearableConnectionsRelations = relations(wearableConnections, ({ one }) => ({
+  patient: one(patients, {
+    fields: [wearableConnections.patientId],
+    references: [patients.id],
+  }),
 }));
 
 export const wearableMetricsRelations = relations(wearableMetrics, ({ one }) => ({
@@ -244,6 +267,11 @@ export const insertWearableMetricSchema = createInsertSchema(wearableMetrics).om
   createdAt: true,
 });
 
+export const insertWearableConnectionSchema = createInsertSchema(wearableConnections).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type Doctor = typeof doctors.$inferSelect;
 export type InsertDoctor = z.infer<typeof insertDoctorSchema>;
@@ -259,3 +287,5 @@ export type MedicalInstruction = typeof medicalInstructions.$inferSelect;
 export type InsertMedicalInstruction = z.infer<typeof insertMedicalInstructionSchema>;
 export type WearableMetric = typeof wearableMetrics.$inferSelect;
 export type InsertWearableMetric = z.infer<typeof insertWearableMetricSchema>;
+export type WearableConnection = typeof wearableConnections.$inferSelect;
+export type InsertWearableConnection = z.infer<typeof insertWearableConnectionSchema>;

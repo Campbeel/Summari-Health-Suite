@@ -6,6 +6,7 @@ import { storage } from "./storage";
 import { isAuthenticated, registerAuthRoutes } from "./auth";
 import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText, verifyFlowSignature } from "./flow";
 import { transcribeAudio, generatePrescriptionFromTranscript, generateFullConsultationSuggestions } from "./openai";
+import { getFitbitAuthUrl, getAndRemovePendingState, exchangeCodeForTokens, refreshFitbitTokens, fetchFitbitData } from "./fitbit";
 import {
   insertPatientSchema,
   insertAppointmentSchema,
@@ -1290,6 +1291,151 @@ export async function registerRoutes(
       res.json({ isAdmin: !!user?.isAdmin });
     } catch (error) {
       res.status(500).json({ error: "Failed to check admin status" });
+    }
+  });
+
+  // Fitbit OAuth2 Integration
+  app.get("/api/fitbit/connections", isAuthenticated, async (req: any, res) => {
+    try {
+      const patient = await storage.getPatientByUserId(req.userId);
+      if (!patient) return res.status(404).json({ error: "Perfil de paciente no encontrado" });
+      const connections = await storage.getWearableConnections(patient.id);
+      const safe = connections.map(c => ({
+        id: c.id,
+        provider: c.provider,
+        providerUserId: c.providerUserId,
+        scopes: c.scopes,
+        lastSyncAt: c.lastSyncAt,
+        isActive: c.isActive,
+        createdAt: c.createdAt,
+      }));
+      res.json(safe);
+    } catch (error) {
+      res.status(500).json({ error: "Error al obtener conexiones" });
+    }
+  });
+
+  app.post("/api/fitbit/authorize", isAuthenticated, async (req: any, res) => {
+    try {
+      const patient = await storage.getPatientByUserId(req.userId);
+      if (!patient) return res.status(404).json({ error: "Perfil de paciente no encontrado" });
+
+      const existing = await storage.getWearableConnection(patient.id, "fitbit");
+      if (existing && existing.isActive) {
+        return res.status(400).json({ error: "Ya tienes Fitbit conectado. Desconéctalo primero." });
+      }
+
+      const authUrl = getFitbitAuthUrl(patient.id, req.userId);
+      res.json({ authUrl });
+    } catch (error) {
+      console.error("Fitbit authorize error:", error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Error al iniciar autorización Fitbit" });
+    }
+  });
+
+  app.get("/api/fitbit/callback", async (req, res) => {
+    try {
+      const { code, state } = req.query;
+      if (!code || !state) {
+        return res.redirect("/health-data?fitbit=error&reason=missing_params");
+      }
+
+      const pending = getAndRemovePendingState(state as string);
+      if (!pending) {
+        return res.redirect("/health-data?fitbit=error&reason=invalid_state");
+      }
+
+      const tokens = await exchangeCodeForTokens(code as string, pending.codeVerifier);
+
+      const existing = await storage.getWearableConnection(pending.patientId, "fitbit");
+      if (existing) {
+        await storage.updateWearableConnection(existing.id, {
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          tokenExpiresAt: new Date(Date.now() + tokens.expires_in * 1000),
+          providerUserId: tokens.user_id,
+          scopes: tokens.scope,
+          isActive: true,
+        });
+      } else {
+        await storage.createWearableConnection({
+          patientId: pending.patientId,
+          provider: "fitbit",
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          tokenExpiresAt: new Date(Date.now() + tokens.expires_in * 1000),
+          providerUserId: tokens.user_id,
+          scopes: tokens.scope,
+          isActive: true,
+        });
+      }
+
+      res.redirect("/health-data?fitbit=connected");
+    } catch (error) {
+      console.error("Fitbit callback error:", error);
+      res.redirect("/health-data?fitbit=error&reason=token_exchange");
+    }
+  });
+
+  app.post("/api/fitbit/sync", isAuthenticated, async (req: any, res) => {
+    try {
+      const patient = await storage.getPatientByUserId(req.userId);
+      if (!patient) return res.status(404).json({ error: "Perfil de paciente no encontrado" });
+
+      const connection = await storage.getWearableConnection(patient.id, "fitbit");
+      if (!connection || !connection.isActive) {
+        return res.status(400).json({ error: "Fitbit no está conectado" });
+      }
+
+      let accessToken = connection.accessToken;
+      if (connection.tokenExpiresAt && new Date(connection.tokenExpiresAt) <= new Date()) {
+        if (!connection.refreshToken) {
+          return res.status(401).json({ error: "Token expirado. Reconecta Fitbit." });
+        }
+        const newTokens = await refreshFitbitTokens(connection.refreshToken);
+        accessToken = newTokens.access_token;
+        await storage.updateWearableConnection(connection.id, {
+          accessToken: newTokens.access_token,
+          refreshToken: newTokens.refresh_token,
+          tokenExpiresAt: new Date(Date.now() + newTokens.expires_in * 1000),
+        });
+      }
+
+      const fitbitMetrics = await fetchFitbitData(accessToken);
+
+      if (fitbitMetrics.length > 0) {
+        const prepared = fitbitMetrics.map(m => ({
+          patientId: patient.id,
+          metricType: m.metricType,
+          value: m.value,
+          unit: m.unit,
+          recordedAt: m.recordedAt,
+          source: "fitbit" as const,
+          deviceName: "Fitbit",
+        }));
+        await storage.createWearableMetrics(prepared);
+      }
+
+      await storage.updateWearableConnection(connection.id, {
+        lastSyncAt: new Date(),
+      });
+
+      res.json({ synced: fitbitMetrics.length });
+    } catch (error) {
+      console.error("Fitbit sync error:", error);
+      res.status(500).json({ error: "Error al sincronizar datos de Fitbit" });
+    }
+  });
+
+  app.delete("/api/fitbit/disconnect", isAuthenticated, async (req: any, res) => {
+    try {
+      const patient = await storage.getPatientByUserId(req.userId);
+      if (!patient) return res.status(404).json({ error: "Perfil de paciente no encontrado" });
+
+      await storage.deleteWearableConnection(patient.id, "fitbit");
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Error al desconectar Fitbit" });
     }
   });
 
