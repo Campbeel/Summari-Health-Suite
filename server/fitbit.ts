@@ -268,8 +268,11 @@ export async function fetchFitbitData(accessToken: string): Promise<SyncedMetric
         }
       }
     }
-  } catch (e) {
-    console.error("Fitbit SpO2 fetch error:", e);
+  } catch (e: any) {
+    // Solo loguear si no es un error de permisos, para no saturar logs
+    if (!e.message?.includes("403")) {
+      console.error("Fitbit SpO2 fetch error:", e);
+    }
   }
 
   try {
@@ -288,8 +291,10 @@ export async function fetchFitbitData(accessToken: string): Promise<SyncedMetric
         }
       }
     }
-  } catch (e) {
-    console.error("Fitbit temperature fetch error:", e);
+  } catch (e: any) {
+    if (!e.message?.includes("403")) {
+      console.error("Fitbit temperature fetch error:", e);
+    }
   }
 
   return metrics;
