@@ -1412,7 +1412,7 @@ export async function registerRoutes(
             to: new Date(new Date(m.recordedAt).getTime() + 1000).toISOString(),
           });
           
-          if (existing.length === 0 && m.value !== "1092") {
+          if (existing.length === 0 && m.value !== "1092" && m.value !== "1558") {
             await storage.createWearableMetrics([{
               patientId: patient.id,
               metricType: m.metricType,
