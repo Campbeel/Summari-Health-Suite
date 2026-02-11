@@ -431,7 +431,7 @@ export default function HealthData() {
                     <span className={`text-2xl font-bold ${outOfRange ? "text-destructive" : ""}`} data-testid={`text-value-${s.metricType}`}>
                       {s.latestValue}
                     </span>
-                    <span className="text-sm text-muted-foreground">{s.unit}</span>
+                    <span className="text-sm text-muted-foreground">{info.unit}</span>
                     {outOfRange && (
                       <Badge variant="destructive" className="text-xs">Fuera de rango</Badge>
                     )}

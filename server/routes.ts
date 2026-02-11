@@ -1404,16 +1404,26 @@ export async function registerRoutes(
       const fitbitMetrics = await fetchFitbitData(accessToken);
 
       if (fitbitMetrics.length > 0) {
-        const prepared = fitbitMetrics.map(m => ({
-          patientId: patient.id,
-          metricType: m.metricType,
-          value: m.value,
-          unit: m.unit,
-          recordedAt: m.recordedAt,
-          source: "fitbit" as const,
-          deviceName: "Fitbit",
-        }));
-        await storage.createWearableMetrics(prepared);
+        for (const m of fitbitMetrics) {
+          // Evitar duplicados exactos (mismo paciente, tipo y fecha)
+          const existing = await storage.getWearableMetrics(patient.id, {
+            metricType: m.metricType,
+            from: new Date(new Date(m.recordedAt).getTime() - 1000).toISOString(),
+            to: new Date(new Date(m.recordedAt).getTime() + 1000).toISOString(),
+          });
+          
+          if (existing.length === 0) {
+            await storage.createWearableMetrics([{
+              patientId: patient.id,
+              metricType: m.metricType,
+              value: m.value,
+              unit: m.unit,
+              recordedAt: m.recordedAt,
+              source: "fitbit",
+              deviceName: "Fitbit",
+            }]);
+          }
+        }
       }
 
       await storage.updateWearableConnection(connection.id, {
