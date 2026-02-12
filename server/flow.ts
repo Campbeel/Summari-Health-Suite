@@ -126,16 +126,6 @@ export async function createPayment(
   const baseUrl =
     process.env.BASE_URL || `https://${process.env.REPLIT_DEV_DOMAIN}`;
 
-  console.log("Flow config check:", {
-    hasBaseUrl: !!flowBaseUrl,
-    baseUrl: flowBaseUrl,
-    hasKey: !!flowKey,
-    keyLength: flowKey?.length,
-    keyPrefix: flowKey?.substring(0, 6),
-    hasSecret: !!flowSecret,
-    secretLength: flowSecret?.length,
-  });
-
   if (!flowBaseUrl || !flowKey || !flowSecret) {
     console.error("Missing Flow configuration:", {
       hasBaseUrl: !!flowBaseUrl,
@@ -165,12 +155,6 @@ export async function createPayment(
   const signedParams = await withSignature(params);
   const postData = objectToFormUrlEncoded(signedParams);
 
-  console.log("Creating Flow payment with params:", {
-    ...params,
-    s: signedParams.s,
-  });
-  console.log("Post data:", postData);
-  console.log("Url:", createPaymentUrl);
   const response = await fetch(createPaymentUrl, {
     method: "POST",
     headers: {

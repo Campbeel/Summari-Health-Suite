@@ -226,12 +226,9 @@ export default function AppointmentsPage() {
               <CardContent className="py-12 text-center">
                 <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <h3 className="font-medium text-lg mb-2">No tienes consultas programadas</h3>
-                <p className="text-muted-foreground mb-4">
-                  Agenda una consulta con un especialista
+                <p className="text-muted-foreground">
+                  Usa el botón "Nueva Consulta" para agendar con un especialista
                 </p>
-                <Button asChild>
-                  <Link href="/appointments/new">Agendar Consulta</Link>
-                </Button>
               </CardContent>
             </Card>
           )}

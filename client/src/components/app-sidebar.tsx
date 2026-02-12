@@ -133,22 +133,6 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {currentRole === "patient" && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Acciones Rápidas</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <div className="px-2">
-                <Button className="w-full" asChild data-testid="sidebar-new-appointment">
-                  <Link href="/appointments/new">
-                    <Calendar className="h-4 w-4 mr-2" />
-                    Nueva Consulta
-                  </Link>
-                </Button>
-              </div>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-
         {isAdmin && (
           <SidebarGroup>
             <SidebarGroupLabel>Administración</SidebarGroupLabel>

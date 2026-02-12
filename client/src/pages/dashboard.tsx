@@ -16,10 +16,8 @@ import {
   Calendar,
   Clock,
   FileText,
-  CreditCard,
   Plus,
   ChevronRight,
-  Stethoscope,
   Activity,
   AlertCircle,
 } from "lucide-react";
@@ -163,7 +161,7 @@ export default function Dashboard() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card data-testid="stat-card-appointments">
           <CardContent className="p-4 flex items-center gap-4">
             <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -174,7 +172,7 @@ export default function Dashboard() {
                 className="text-2xl font-bold"
                 data-testid="text-appointments-count"
               >
-                {upcomingAppointments?.length || 0}
+                {loadingAppointments ? "..." : upcomingAppointments?.length || 0}
               </p>
               <p className="text-sm text-muted-foreground">Citas próximas</p>
             </div>
@@ -190,7 +188,7 @@ export default function Dashboard() {
                 className="text-2xl font-bold"
                 data-testid="text-records-count"
               >
-                {recentRecords?.length || 0}
+                {loadingRecords ? "..." : recentRecords?.length || 0}
               </p>
               <p className="text-sm text-muted-foreground">
                 Registros clínicos
@@ -198,32 +196,16 @@ export default function Dashboard() {
             </div>
           </CardContent>
         </Card>
-        <Card data-testid="stat-card-specialists">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-lg bg-accent/20 flex items-center justify-center">
-              <Stethoscope className="h-6 w-6 text-accent" />
-            </div>
-            <div>
-              <p
-                className="text-2xl font-bold"
-                data-testid="text-specialists-count"
-              >
-                3
-              </p>
-              <p className="text-sm text-muted-foreground">Especialistas</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card data-testid="stat-card-balance">
+        <Card data-testid="stat-card-health">
           <CardContent className="p-4 flex items-center gap-4">
             <div className="w-12 h-12 rounded-lg bg-green-100 dark:bg-green-950 flex items-center justify-center">
-              <CreditCard className="h-6 w-6 text-green-600 dark:text-green-400" />
+              <Activity className="h-6 w-6 text-green-600 dark:text-green-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold" data-testid="text-balance">
-                $0
-              </p>
-              <p className="text-sm text-muted-foreground">Balance pendiente</p>
+              <Link href="/health-data" className="text-2xl font-bold hover:underline" data-testid="link-health-data">
+                Ver
+              </Link>
+              <p className="text-sm text-muted-foreground">Datos de Salud</p>
             </div>
           </CardContent>
         </Card>
@@ -305,12 +287,9 @@ export default function Dashboard() {
               ) : (
                 <div className="text-center py-8">
                   <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground mb-4">
+                  <p className="text-muted-foreground">
                     No tienes consultas programadas
                   </p>
-                  <Button asChild data-testid="button-schedule-consultation">
-                    <Link href="/appointments/new">Agendar Consulta</Link>
-                  </Button>
                 </div>
               )}
             </CardContent>
