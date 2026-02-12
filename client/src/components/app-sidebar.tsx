@@ -23,12 +23,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { BrandLogo } from "@/components/brand-logo";
 import { 
   Home, 
   Calendar, 
   FileText, 
   Settings, 
-  Stethoscope,
   LogOut,
   ChevronUp,
   Pill,
@@ -72,10 +72,8 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="p-4">
-        <Link href="/" className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
-            <Stethoscope className="h-6 w-6 text-primary-foreground" />
-          </div>
+        <Link href="/" className="flex items-center gap-3" data-testid="link-sidebar-home">
+          <BrandLogo variant="isotipo" className="h-10 w-10" />
           <div>
             <h1 className="font-semibold text-lg">Summari</h1>
             <p className="text-xs text-muted-foreground">Telemedicina</p>

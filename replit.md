@@ -15,7 +15,9 @@ Preferred communication style: Simple, everyday language.
 - **Routing**: Wouter for client-side navigation
 - **State Management**: TanStack React Query for server state and caching
 - **UI Components**: shadcn/ui component library with Radix UI primitives
-- **Styling**: Tailwind CSS with custom medical-themed color palette (light/dark mode support)
+- **Styling**: Tailwind CSS with Summari brand color palette (light/dark mode support)
+- **Brand Assets**: SVG logos in `client/public/` - logotype (COLOR_1=white for dark, COLOR_2=blue for light), isotipo (2=white for dark, 2_1=blue for light). BrandLogo component handles theme switching.
+- **Typography**: Arial (system font) per brand manual
 - **Path Aliases**: `@/` maps to `client/src/`, `@shared/` maps to `shared/`
 
 ### Backend Architecture
@@ -97,3 +99,4 @@ Preferred communication style: Simple, everyday language.
 - **2026-02-11**: Integrated Fitbit OAuth2 with PKCE flow. New `wearable_connections` table stores OAuth tokens per patient/provider. Backend routes: POST `/api/fitbit/authorize` (generates PKCE auth URL with HMAC-signed state), GET `/api/fitbit/callback` (exchanges code, stores tokens), POST `/api/fitbit/sync` (fetches 30 days of steps/heart rate/sleep/SpO2/weight/calories/temperature with auto token refresh), DELETE `/api/fitbit/disconnect`, GET `/api/fitbit/connections` (status). Frontend sync tab shows live connection status, connect/sync/disconnect buttons. Google Fit marked as deprecated (June 2025). Requires FITBIT_CLIENT_ID and FITBIT_CLIENT_SECRET secrets. Callback URL: `{BASE_URL}/api/fitbit/callback`.
 - **2026-02-11**: Fixed Fitbit data accuracy: weight now uses log endpoint (not time-series which repeats last value daily), calories filtered to days with actual step activity only (no BMR-only estimates), per-day deduplication for weight.
 - **2026-02-11**: Added automatic Fitbit sync scheduler (`server/fitbit-scheduler.ts`). Runs every 60 minutes for all active Fitbit connections. Auto-refreshes expired tokens, deactivates invalid connections, deduplicates metrics. Starts 30s after server boot. Builds historical record for doctor analysis during consultations.
+- **2026-02-12**: Applied brand manual theming. Color palette: primary #3473a8 (Azul), secondary #00ced1 (Celeste), text #1c2833 (Oscuro), muted #708090 (Gris). Font switched to Arial. SVG brand logos replace stethoscope icon across all pages (sidebar, login, register, landing, forgot/reset password). Favicon updated to brand isotipo SVG. BrandLogo component (`client/src/components/brand-logo.tsx`) handles dark/light theme switching with system theme detection.

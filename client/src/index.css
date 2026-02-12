@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* LIGHT MODE - Medical Professional Theme */
+/* LIGHT MODE - Summari Brand Theme */
 :root {
   --button-outline: rgba(0,0,0, .10);
   --badge-outline: rgba(0,0,0, .05);
@@ -13,52 +13,52 @@
   --elevate-2: rgba(0,0,0, .08);
 
   --background: 210 20% 98%;
-  --foreground: 210 29% 24%;
+  --foreground: 209 29% 15%;
 
   --border: 210 14% 89%;
 
   --card: 0 0% 100%;
-  --card-foreground: 210 29% 24%;
+  --card-foreground: 209 29% 15%;
   --card-border: 210 14% 89%;
 
-  --sidebar: 210 40% 96%;
-  --sidebar-foreground: 210 29% 24%;
+  --sidebar: 207 40% 96%;
+  --sidebar-foreground: 209 29% 15%;
   --sidebar-border: 210 14% 89%;
-  --sidebar-primary: 210 100% 40%;
+  --sidebar-primary: 207 53% 43%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 153 60% 33%;
+  --sidebar-accent: 181 100% 35%;
   --sidebar-accent-foreground: 0 0% 100%;
-  --sidebar-ring: 210 100% 40%;
+  --sidebar-ring: 207 53% 43%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 210 29% 24%;
+  --popover-foreground: 209 29% 15%;
   --popover-border: 210 14% 89%;
 
-  --primary: 210 100% 40%;
+  --primary: 207 53% 43%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 153 60% 33%;
+  --secondary: 181 100% 35%;
   --secondary-foreground: 0 0% 100%;
 
   --muted: 210 20% 94%;
-  --muted-foreground: 210 14% 45%;
+  --muted-foreground: 210 13% 50%;
 
-  --accent: 197 71% 63%;
-  --accent-foreground: 210 29% 15%;
+  --accent: 181 60% 90%;
+  --accent-foreground: 209 29% 15%;
 
   --destructive: 4 79% 55%;
   --destructive-foreground: 0 0% 100%;
 
   --input: 210 14% 83%;
-  --ring: 210 100% 40%;
+  --ring: 207 53% 43%;
   
-  --chart-1: 210 100% 40%;
-  --chart-2: 153 60% 33%;
-  --chart-3: 197 71% 63%;
+  --chart-1: 207 53% 43%;
+  --chart-2: 181 100% 35%;
+  --chart-3: 207 53% 60%;
   --chart-4: 4 79% 55%;
   --chart-5: 45 93% 47%;
 
-  --font-sans: 'Inter', sans-serif;
+  --font-sans: Arial, Helvetica, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: Menlo, monospace;
   --radius: .5rem;
@@ -105,49 +105,49 @@
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  --background: 210 20% 8%;
+  --background: 209 29% 8%;
   --foreground: 210 20% 95%;
 
-  --border: 210 14% 18%;
+  --border: 209 20% 18%;
 
-  --card: 210 20% 12%;
+  --card: 209 25% 12%;
   --card-foreground: 210 20% 95%;
-  --card-border: 210 14% 18%;
+  --card-border: 209 20% 18%;
 
-  --sidebar: 210 20% 10%;
+  --sidebar: 209 25% 10%;
   --sidebar-foreground: 210 20% 95%;
-  --sidebar-border: 210 14% 18%;
-  --sidebar-primary: 210 100% 50%;
+  --sidebar-border: 209 20% 18%;
+  --sidebar-primary: 207 53% 50%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 153 60% 40%;
+  --sidebar-accent: 181 100% 38%;
   --sidebar-accent-foreground: 0 0% 100%;
-  --sidebar-ring: 210 100% 50%;
+  --sidebar-ring: 207 53% 50%;
 
-  --popover: 210 20% 12%;
+  --popover: 209 25% 12%;
   --popover-foreground: 210 20% 95%;
-  --popover-border: 210 14% 18%;
+  --popover-border: 209 20% 18%;
 
-  --primary: 210 100% 50%;
+  --primary: 207 53% 50%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 153 60% 40%;
+  --secondary: 181 100% 38%;
   --secondary-foreground: 0 0% 100%;
 
-  --muted: 210 20% 18%;
-  --muted-foreground: 210 14% 60%;
+  --muted: 209 20% 18%;
+  --muted-foreground: 210 13% 60%;
 
-  --accent: 197 71% 50%;
+  --accent: 181 60% 20%;
   --accent-foreground: 0 0% 100%;
 
   --destructive: 4 79% 50%;
   --destructive-foreground: 0 0% 100%;
 
-  --input: 210 14% 25%;
-  --ring: 210 100% 50%;
+  --input: 209 20% 25%;
+  --ring: 207 53% 50%;
   
-  --chart-1: 210 100% 50%;
-  --chart-2: 153 60% 40%;
-  --chart-3: 197 71% 50%;
+  --chart-1: 207 53% 50%;
+  --chart-2: 181 100% 38%;
+  --chart-3: 207 53% 65%;
   --chart-4: 4 79% 50%;
   --chart-5: 45 93% 55%;
 

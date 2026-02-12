@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Stethoscope, Eye, EyeOff, CheckCircle, XCircle } from "lucide-react";
+import { Eye, EyeOff, CheckCircle, XCircle } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
 
 export default function ResetPasswordPage() {
   const [, navigate] = useLocation();
@@ -70,10 +71,7 @@ export default function ResetPasswordPage() {
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="w-full max-w-md space-y-6">
           <div className="flex flex-col items-center gap-3">
-            <div className="w-12 h-12 rounded-lg bg-primary flex items-center justify-center">
-              <Stethoscope className="h-7 w-7 text-primary-foreground" />
-            </div>
-            <h1 className="text-2xl font-bold">Summari</h1>
+            <BrandLogo variant="logotype" className="h-10" />
           </div>
           <Card>
             <CardContent className="pt-6 text-center space-y-4">
@@ -105,10 +103,7 @@ export default function ResetPasswordPage() {
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="w-full max-w-md space-y-6">
           <div className="flex flex-col items-center gap-3">
-            <div className="w-12 h-12 rounded-lg bg-primary flex items-center justify-center">
-              <Stethoscope className="h-7 w-7 text-primary-foreground" />
-            </div>
-            <h1 className="text-2xl font-bold">Summari</h1>
+            <BrandLogo variant="logotype" className="h-10" />
           </div>
           <Card>
             <CardContent className="pt-6 text-center space-y-4">
@@ -131,12 +126,9 @@ export default function ResetPasswordPage() {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6">
         <div className="flex flex-col items-center gap-3">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-12 h-12 rounded-lg bg-primary flex items-center justify-center">
-              <Stethoscope className="h-7 w-7 text-primary-foreground" />
-            </div>
+          <Link href="/" data-testid="text-reset-title">
+            <BrandLogo variant="logotype" className="h-10" />
           </Link>
-          <h1 className="text-2xl font-bold" data-testid="text-reset-title">Summari</h1>
           <p className="text-muted-foreground text-sm">Telemedicina</p>
         </div>
 

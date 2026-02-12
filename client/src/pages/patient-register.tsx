@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Stethoscope } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 function validateRut(rut: string): boolean {
@@ -112,11 +112,8 @@ export default function PatientRegisterPage() {
       </div>
       <div className="w-full max-w-md space-y-6">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-12 h-12 rounded-lg bg-primary flex items-center justify-center">
-            <Stethoscope className="h-7 w-7 text-primary-foreground" />
-          </div>
-          <h1 className="text-2xl font-bold" data-testid="text-register-title">Summari</h1>
-          <p className="text-muted-foreground text-center text-sm">Telemedicina</p>
+          <BrandLogo variant="logotype" className="h-10" />
+          <p className="text-muted-foreground text-center text-sm" data-testid="text-register-title">Telemedicina</p>
         </div>
 
         <Card>

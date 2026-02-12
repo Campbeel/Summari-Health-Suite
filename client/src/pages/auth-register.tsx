@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { loginWithToken } from "@/hooks/use-auth";
-import { Stethoscope, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
 
 function validateRut(rut: string): boolean {
   const cleaned = rut.replace(/\./g, "").replace(/-/g, "");
@@ -99,12 +100,9 @@ export default function AuthRegisterPage() {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6">
         <div className="flex flex-col items-center gap-3">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-12 h-12 rounded-lg bg-primary flex items-center justify-center">
-              <Stethoscope className="h-7 w-7 text-primary-foreground" />
-            </div>
+          <Link href="/" data-testid="text-register-title">
+            <BrandLogo variant="logotype" className="h-10" />
           </Link>
-          <h1 className="text-2xl font-bold" data-testid="text-register-title">Summari</h1>
           <p className="text-muted-foreground text-sm">Telemedicina</p>
         </div>
 

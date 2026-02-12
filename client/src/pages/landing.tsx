@@ -8,10 +8,10 @@ import {
   Mic, 
   Shield, 
   Clock,
-  Stethoscope,
   Heart,
   Activity
 } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
 
 export default function LandingPage() {
   return (
@@ -21,10 +21,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 gap-4">
             <div className="flex items-center gap-2">
-              <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
-                <Stethoscope className="h-6 w-6 text-primary-foreground" />
-              </div>
-              <span className="text-xl font-semibold">Summari</span>
+              <BrandLogo variant="logotype" className="h-8" />
             </div>
             <div className="hidden md:flex items-center gap-6">
               <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors" data-testid="link-features">
@@ -274,10 +271,7 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-                <Stethoscope className="h-4 w-4 text-primary-foreground" />
-              </div>
-              <span className="font-semibold">Summari</span>
+              <BrandLogo variant="logotype" className="h-6" />
             </div>
             <p className="text-sm text-muted-foreground">
               © 2024 Summari. Todos los derechos reservados.

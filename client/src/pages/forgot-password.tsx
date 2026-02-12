@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Stethoscope, ArrowLeft, Mail } from "lucide-react";
+import { ArrowLeft, Mail } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
 
 export default function ForgotPasswordPage() {
   const { toast } = useToast();
@@ -43,12 +44,9 @@ export default function ForgotPasswordPage() {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6">
         <div className="flex flex-col items-center gap-3">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-12 h-12 rounded-lg bg-primary flex items-center justify-center">
-              <Stethoscope className="h-7 w-7 text-primary-foreground" />
-            </div>
+          <Link href="/" data-testid="text-forgot-title">
+            <BrandLogo variant="logotype" className="h-10" />
           </Link>
-          <h1 className="text-2xl font-bold" data-testid="text-forgot-title">Summari</h1>
           <p className="text-muted-foreground text-sm">Telemedicina</p>
         </div>
 
