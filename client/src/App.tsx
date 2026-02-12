@@ -36,7 +36,7 @@ import HealthDataPage from "@/pages/health-data";
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const style = {
-    "--sidebar-width": "16rem",
+    "--sidebar-width": "13rem",
     "--sidebar-width-icon": "3rem",
   };
 

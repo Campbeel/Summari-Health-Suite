@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -20,6 +21,7 @@ import {
   ChevronRight,
   Activity,
   AlertCircle,
+  X,
 } from "lucide-react";
 import { format, parseISO, isToday, isTomorrow } from "date-fns";
 import { es } from "date-fns/locale";
@@ -110,9 +112,13 @@ export default function Dashboard() {
     queryKey: ["/api/patients/profile"],
   });
 
+  const [profileWarningDismissed, setProfileWarningDismissed] = useState(false);
+
   const hasActiveAppointment = upcomingAppointments?.some(
     (a) => a.status === "in_progress",
   );
+
+  const showProfileWarning = !profileWarningDismissed && !loadingProfile && patientProfile && !patientProfile.dateOfBirth;
 
   return (
     <div className="space-y-8">
@@ -126,7 +132,7 @@ export default function Dashboard() {
             Gestiona tus consultas y accede a tu historial médico
           </p>
         </div>
-        <Button asChild data-testid="button-new-appointment">
+        <Button asChild data-testid="button-new-appointment" className="dark:bg-secondary dark:text-secondary-foreground">
           <Link href="/appointments/new">
             <Plus className="h-4 w-4 mr-2" />
             Nueva Consulta
@@ -161,7 +167,7 @@ export default function Dashboard() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card data-testid="stat-card-appointments">
           <CardContent className="p-4 flex items-center gap-4">
             <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -193,19 +199,6 @@ export default function Dashboard() {
               <p className="text-sm text-muted-foreground">
                 Registros clínicos
               </p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card data-testid="stat-card-health">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-lg bg-green-100 dark:bg-green-950 flex items-center justify-center">
-              <Activity className="h-6 w-6 text-green-600 dark:text-green-400" />
-            </div>
-            <div>
-              <Link href="/health-data" className="text-2xl font-bold hover:underline" data-testid="link-health-data">
-                Ver
-              </Link>
-              <p className="text-sm text-muted-foreground">Datos de Salud</p>
             </div>
           </CardContent>
         </Card>
@@ -296,36 +289,8 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* Quick Actions & Profile Completion */}
+        {/* Recent Records */}
         <div className="space-y-6">
-          {/* Profile Completion */}
-          {!loadingProfile && patientProfile && !patientProfile.dateOfBirth && (
-            <Card className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
-              <CardContent className="p-4">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5" />
-                  <div>
-                    <p className="font-medium text-amber-800 dark:text-amber-200">
-                      Completa tu perfil
-                    </p>
-                    <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
-                      Agrega tu información médica para una mejor atención
-                    </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-3"
-                      asChild
-                      data-testid="button-complete-profile"
-                    >
-                      <Link href="/profile">Completar Perfil</Link>
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
           {/* Recent Records */}
           <Card>
             <CardHeader className="pb-4">
@@ -390,6 +355,44 @@ export default function Dashboard() {
           </Card>
         </div>
       </div>
+
+      {showProfileWarning && (
+        <Card className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
+                <div>
+                  <p className="font-medium text-amber-800 dark:text-amber-200">
+                    Completa tu perfil
+                  </p>
+                  <p className="text-sm text-amber-700 dark:text-amber-300 mt-0.5">
+                    Agrega tu información médica para una mejor atención
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  asChild
+                  data-testid="button-complete-profile"
+                >
+                  <Link href="/profile">Completar Perfil</Link>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setProfileWarningDismissed(true)}
+                  data-testid="button-dismiss-profile-warning"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
