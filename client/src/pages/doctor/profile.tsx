@@ -110,9 +110,20 @@ const profileSchema = z.object({
   bio: z.string().optional(),
   consultationFee: z.number().min(0, "La tarifa no puede ser negativa"),
   consultationDuration: z.number().min(5, "La duración mínima es de 5 minutos").max(120, "La duración máxima es de 120 minutos"),
+  profileImageUrl: z.string().url("URL de imagen inválida").optional().or(z.literal("")),
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
+
+interface DoctorProfile {
+  id: number;
+  specialty: string;
+  bio?: string;
+  consultationFee: number; // in cents from API
+  consultationDuration: number;
+  userImage?: string;
+  availability?: ApiAvailability;
+}
 
 const defaultAvailability: WeeklyAvailability = {
   monday: { enabled: true, startTime: "09:00", endTime: "17:00" },
