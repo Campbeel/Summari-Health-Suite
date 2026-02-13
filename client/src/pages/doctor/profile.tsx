@@ -18,9 +18,10 @@ import {
   FormMessage,
   FormDescription,
 } from "@/components/ui/form";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Save, DollarSign, Clock } from "lucide-react";
+import { Save, DollarSign, Clock, Camera } from "lucide-react";
 import { useEffect } from "react";
 
 const DAYS_OF_WEEK = [
@@ -156,6 +157,7 @@ export default function DoctorProfilePage() {
         bio: profile.bio || "",
         consultationFee: profile.consultationFee || 0,
         consultationDuration: profile.consultationDuration || 30,
+        profileImageUrl: profile.userImage || "",
       });
     }
   }, [profile, form]);
@@ -259,39 +261,78 @@ export default function DoctorProfilePage() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <div>
-                <FormLabel>Especialidad</FormLabel>
-                <div className="mt-2">
-                  <Badge variant="secondary" className="text-base px-3 py-1" data-testid="text-specialty">
-                    {profile?.specialty || "No especificada"}
-                  </Badge>
-                </div>
-                <FormDescription className="mt-1">
-                  Contacta al administrador para cambiar tu especialidad
-                </FormDescription>
-              </div>
+              <div className="flex flex-col sm:flex-row gap-6 items-start">
+                <FormField
+                  control={form.control}
+                  name="profileImageUrl"
+                  render={({ field }) => (
+                    <FormItem className="flex-shrink-0">
+                      <FormLabel>Foto de Perfil</FormLabel>
+                      <div className="mt-2 flex flex-col items-center gap-4">
+                        <Avatar className="h-24 w-24 border">
+                          <AvatarImage src={field.value} />
+                          <AvatarFallback className="bg-primary/10 text-primary text-2xl">
+                            {profile?.specialty?.[0] || "DR"}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="w-full max-w-[200px]">
+                          <FormControl>
+                            <div className="relative">
+                              <Camera className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                              <Input
+                                placeholder="URL de la imagen"
+                                className="pl-9 text-xs"
+                                data-testid="input-profile-image"
+                                {...field}
+                              />
+                            </div>
+                          </FormControl>
+                          <FormDescription className="text-[10px] mt-1">
+                            Pega la URL de tu foto
+                          </FormDescription>
+                          <FormMessage />
+                        </div>
+                      </div>
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="bio"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Biografía Profesional</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Escribe una breve descripción sobre tu experiencia y formación..."
-                        className="min-h-[120px] resize-none"
-                        data-testid="input-bio"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Máximo 500 caracteres
+                <div className="flex-1 space-y-6 w-full">
+                  <div>
+                    <FormLabel>Especialidad</FormLabel>
+                    <div className="mt-2">
+                      <Badge variant="secondary" className="text-base px-3 py-1" data-testid="text-specialty">
+                        {profile?.specialty || "No especificada"}
+                      </Badge>
+                    </div>
+                    <FormDescription className="mt-1">
+                      Contacta al administrador para cambiar tu especialidad
                     </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                  </div>
+
+                  <FormField
+                    control={form.control}
+                    name="bio"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Biografía Profesional</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Escribe una breve descripción sobre tu experiencia y formación..."
+                            className="min-h-[120px] resize-none"
+                            data-testid="input-bio"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Máximo 500 caracteres
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
 
               <FormField
                 control={form.control}

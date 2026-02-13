@@ -142,7 +142,12 @@ export async function registerRoutes(
         return res.status(403).json({ error: "User is not a doctor" });
       }
       
-      const allowedFields = insertDoctorSchema.pick({ bio: true, consultationFee: true, consultationDuration: true }).partial();
+      const allowedFields = z.object({
+        bio: z.string().optional(),
+        consultationFee: z.number().optional(),
+        consultationDuration: z.number().optional(),
+        profileImageUrl: z.string().optional(),
+      }).partial();
       const validationResult = allowedFields.safeParse(req.body);
       
       if (!validationResult.success) {
@@ -152,7 +157,13 @@ export async function registerRoutes(
         });
       }
       
-      const updated = await storage.updateDoctorProfile(doctor.id, validationResult.data);
+      const { profileImageUrl, ...doctorFields } = validationResult.data;
+
+      if (profileImageUrl !== undefined) {
+        await storage.updateUser(userId, { profileImageUrl });
+      }
+
+      const updated = await storage.updateDoctorProfile(doctor.id, doctorFields);
       res.json(updated);
     } catch (error) {
       console.error("Error updating doctor profile:", error);
