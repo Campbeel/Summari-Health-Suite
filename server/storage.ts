@@ -230,6 +230,11 @@ export interface IStorage {
   createWearableConnection(connection: InsertWearableConnection): Promise<WearableConnection>;
   updateWearableConnection(id: number, data: Partial<InsertWearableConnection>): Promise<WearableConnection>;
   deleteWearableConnection(patientId: number, provider: string): Promise<void>;
+
+  // Exam Orders
+  getExamOrdersByRecordId(clinicalRecordId: number): Promise<ExamOrder[]>;
+  deleteExamOrdersByRecordId(clinicalRecordId: number): Promise<void>;
+  createExamOrder(examOrder: InsertExamOrder): Promise<ExamOrder>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -913,6 +918,20 @@ export class DatabaseStorage implements IStorage {
     await db
       .delete(wearableConnections)
       .where(and(eq(wearableConnections.patientId, patientId), eq(wearableConnections.provider, provider)));
+  }
+
+  // Exam Orders
+  async getExamOrdersByRecordId(clinicalRecordId: number): Promise<ExamOrder[]> {
+    return await db.select().from(examOrders).where(eq(examOrders.clinicalRecordId, clinicalRecordId));
+  }
+
+  async deleteExamOrdersByRecordId(clinicalRecordId: number): Promise<void> {
+    await db.delete(examOrders).where(eq(examOrders.clinicalRecordId, clinicalRecordId));
+  }
+
+  async createExamOrder(examOrder: InsertExamOrder): Promise<ExamOrder> {
+    const [created] = await db.insert(examOrders).values(examOrder).returning();
+    return created;
   }
 }
 

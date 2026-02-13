@@ -999,6 +999,7 @@ export async function registerRoutes(
 
       const existingPrescription = await storage.getPrescriptionByRecordId(clinicalRecord.id);
       const existingInstructions = await storage.getInstructionsByRecordId(clinicalRecord.id);
+      const existingExamOrders = await storage.getExamOrdersByRecordId(clinicalRecord.id);
 
       const patient = await storage.getPatient(appointment.patientId);
       const patientUser = patient ? await storage.getUser(patient.userId) : null;
@@ -1030,6 +1031,7 @@ export async function registerRoutes(
         },
         prescription: existingPrescription || null,
         medicalInstructions: existingInstructions || [],
+        examOrders: existingExamOrders[0] || null,
       });
     } catch (error) {
       console.error("Error fetching validation data:", error);
@@ -1041,7 +1043,12 @@ export async function registerRoutes(
     try {
       const appointmentId = parseInt(req.params.id);
       const userId = req.userId;
-      const { clinicalRecord: clinicalData, prescription: prescriptionData, medicalInstructions: instructionsData } = req.body;
+      const { 
+        clinicalRecord: clinicalData, 
+        prescription: prescriptionData, 
+        medicalInstructions: instructionsData,
+        examOrders: examOrdersData 
+      } = req.body;
 
       const appointment = await storage.getAppointment(appointmentId);
       if (!appointment) {
@@ -1145,6 +1152,31 @@ export async function registerRoutes(
             dueDate: instruction.dueDate || null,
           });
         }
+      }
+
+      await storage.deleteExamOrdersByRecordId(existingRecord.id);
+      if (examOrdersData && examOrdersData.exams?.length > 0) {
+        const examOrderSchema = z.object({
+          exams: z.array(z.object({
+            name: z.string().min(1, "Nombre del examen requerido"),
+            instructions: z.string().optional(),
+          })).min(1),
+          clinicalJustification: z.string().optional().nullable(),
+        });
+
+        const parsedExams = examOrderSchema.safeParse(examOrdersData);
+        if (!parsedExams.success) {
+          return res.status(400).json({ error: "Órdenes de exámenes inválidas", errors: parsedExams.error.flatten() });
+        }
+
+        await storage.createExamOrder({
+          clinicalRecordId: existingRecord.id,
+          patientId: appointment.patientId,
+          doctorId: appointment.doctorId,
+          exams: parsedExams.data.exams,
+          clinicalJustification: parsedExams.data.clinicalJustification || null,
+          status: "pending",
+        });
       }
 
       await storage.updateAppointment(appointmentId, { status: "completed" });

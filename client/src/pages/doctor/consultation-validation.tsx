@@ -53,6 +53,11 @@ interface MedicalInstructionDraft {
   dueDate?: string;
 }
 
+interface Exam {
+  name: string;
+  instructions?: string;
+}
+
 interface ValidationData {
   appointment: {
     id: number;
@@ -74,6 +79,7 @@ interface ValidationData {
     id: number;
     chiefComplaint?: string;
     symptoms?: string[];
+    clinicalDiagnosis?: string; // Corrected field name if needed, or stick to diagnosis
     diagnosis?: string;
     notes?: string;
     transcription?: string;
@@ -83,6 +89,10 @@ interface ValidationData {
     instructions?: string;
   } | null;
   medicalInstructions: MedicalInstructionDraft[];
+  examOrders: {
+    exams: Exam[];
+    clinicalJustification?: string;
+  } | null;
 }
 
 interface AISuggestions {
@@ -97,6 +107,7 @@ interface AISuggestions {
     instructions?: string;
   } | null;
   medicalInstructions: MedicalInstructionDraft[];
+  examOrders?: Exam[];
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -129,6 +140,9 @@ export default function ConsultationValidationPage() {
   const [prescriptionInstructions, setPrescriptionInstructions] = useState("");
 
   const [instructions, setInstructions] = useState<MedicalInstructionDraft[]>([]);
+  
+  const [exams, setExams] = useState<Exam[]>([]);
+  const [clinicalJustification, setClinicalJustification] = useState("");
 
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -156,6 +170,11 @@ export default function ConsultationValidationPage() {
           description: i.description,
           priority: i.priority,
         })));
+      }
+
+      if (validationData.examOrders) {
+        setExams(validationData.examOrders.exams || []);
+        setClinicalJustification(validationData.examOrders.clinicalJustification || "");
       }
 
       setIsInitialized(true);
