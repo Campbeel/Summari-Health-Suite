@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Save, DollarSign } from "lucide-react";
+import { Save, DollarSign, Clock } from "lucide-react";
 import { useEffect } from "react";
 
 const DAYS_OF_WEEK = [
@@ -59,6 +59,7 @@ interface DoctorProfile {
   specialty: string;
   bio?: string;
   consultationFee: number; // in cents from API
+  consultationDuration: number;
   availability?: ApiAvailability;
 }
 
@@ -107,6 +108,7 @@ function transformToApiFormat(uiAvailability: WeeklyAvailability): ApiAvailabili
 const profileSchema = z.object({
   bio: z.string().optional(),
   consultationFee: z.number().min(0, "La tarifa no puede ser negativa"),
+  consultationDuration: z.number().min(5, "La duración mínima es de 5 minutos").max(120, "La duración máxima es de 120 minutos"),
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -153,6 +155,7 @@ export default function DoctorProfilePage() {
       form.reset({
         bio: profile.bio || "",
         consultationFee: profile.consultationFee || 0,
+        consultationDuration: profile.consultationDuration || 30,
       });
     }
   }, [profile, form]);
@@ -313,6 +316,35 @@ export default function DoctorProfilePage() {
                     </FormControl>
                     <FormDescription>
                       Tarifa en CLP para cada consulta
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="consultationDuration"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Duración de Consulta (minutos)</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          type="number"
+                          step="5"
+                          min="5"
+                          max="120"
+                          className="pl-9"
+                          data-testid="input-consultation-duration"
+                          {...field}
+                          onChange={(e) => field.onChange(parseInt(e.target.value))}
+                        />
+                      </div>
+                    </FormControl>
+                    <FormDescription>
+                      Tiempo asignado para cada consulta (entre 5 y 120 minutos)
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

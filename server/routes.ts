@@ -142,7 +142,7 @@ export async function registerRoutes(
         return res.status(403).json({ error: "User is not a doctor" });
       }
       
-      const allowedFields = insertDoctorSchema.pick({ bio: true, consultationFee: true }).partial();
+      const allowedFields = insertDoctorSchema.pick({ bio: true, consultationFee: true, consultationDuration: true }).partial();
       const validationResult = allowedFields.safeParse(req.body);
       
       if (!validationResult.success) {
@@ -439,6 +439,9 @@ export async function registerRoutes(
       if (!doctor) {
         return res.status(404).json({ error: "Médico no encontrado" });
       }
+
+      // Overwrite duration from doctor's preference
+      appointmentData.durationMinutes = doctor.consultationDuration;
 
       const hasConflict = await storage.hasConflictingAppointment(
         appointmentData.doctorId,
@@ -848,20 +851,48 @@ export async function registerRoutes(
   app.get("/api/consultations/:id", isAuthenticated, async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id);
+      const userId = req.userId;
+
       const appointment = await storage.getAppointment(appointmentId);
-      
       if (!appointment) {
         return res.status(404).json({ error: "Consultation not found" });
       }
-      
+
       const doctor = await storage.getDoctor(appointment.doctorId);
       const doctorUser = doctor ? await storage.getUser(doctor.userId) : null;
       const appointmentPatient = await storage.getPatient(appointment.patientId);
       const patientUser = appointmentPatient ? await storage.getUser(appointmentPatient.userId) : null;
-      
+
+      const isDoctor = doctor?.userId === userId;
+      const isPatient = appointmentPatient?.userId === userId;
+
+      if (!isDoctor && !isPatient) {
+        return res.status(403).json({ error: "Not authorized to access this consultation" });
+      }
+
+      // Time check for patients
+      if (isPatient) {
+        const now = new Date();
+        const scheduledStart = new Date(`${appointment.scheduledDate}T${appointment.scheduledTime}`);
+        const scheduledEnd = new Date(scheduledStart.getTime() + appointment.durationMinutes * 60000);
+
+        // Allow entry 10 minutes before and until the end
+        const allowedStart = new Date(scheduledStart.getTime() - 10 * 60000);
+
+        if (now < allowedStart || now > scheduledEnd) {
+          return res.status(403).json({
+            error: "Solo puedes ingresar a la consulta en el horario asignado.",
+            details: {
+              scheduledStart: appointment.scheduledTime,
+              scheduledDate: appointment.scheduledDate
+            }
+          });
+        }
+      }
+
       // Get clinical record if exists
       const clinicalRecord = await storage.getClinicalRecordByAppointmentId(appointmentId);
-      
+
       res.json({
         appointment: {
           id: appointment.id,
