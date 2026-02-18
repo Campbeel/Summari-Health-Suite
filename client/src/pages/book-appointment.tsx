@@ -180,7 +180,7 @@ export default function BookAppointmentPage() {
       const currentHours = chileanNow.getHours();
       const currentMinutes = chileanNow.getMinutes();
       if (hours < currentHours) return false;
-      if (hours === currentHours && minutes <= currentMinutes + 15) return false;
+      if (hours === currentHours && minutes <= currentMinutes) return false;
     }
     if (bookedSlots.includes(time)) return false;
     return true;
