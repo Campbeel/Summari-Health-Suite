@@ -106,59 +106,68 @@ export default function DoctorDashboard() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Card data-testid="stat-card-today">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Calendar className="h-6 w-6 text-primary" />
-            </div>
-            <div>
-              {loadingStats ? (
-                <Skeleton className="h-8 w-12" />
-              ) : (
-                <p className="text-2xl font-bold" data-testid="text-today-count">
-                  {stats?.todayAppointments || 0}
-                </p>
-              )}
-              <p className="text-sm text-muted-foreground">Citas de Hoy</p>
-            </div>
-          </CardContent>
-        </Card>
+        <Link href="/doctor/appointments" className="block">
+          <Card className="cursor-pointer hover-elevate transition-colors" data-testid="stat-card-today">
+            <CardContent className="p-4 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Calendar className="h-6 w-6 text-primary" />
+              </div>
+              <div className="flex-1">
+                {loadingStats ? (
+                  <Skeleton className="h-8 w-12" />
+                ) : (
+                  <p className="text-2xl font-bold" data-testid="text-today-count">
+                    {stats?.todayAppointments || 0}
+                  </p>
+                )}
+                <p className="text-sm text-muted-foreground">Citas de Hoy</p>
+              </div>
+              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card data-testid="stat-card-pending">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-lg bg-amber-100 dark:bg-amber-950 flex items-center justify-center">
-              <Clock className="h-6 w-6 text-amber-600 dark:text-amber-400" />
-            </div>
-            <div>
-              {loadingStats ? (
-                <Skeleton className="h-8 w-12" />
-              ) : (
-                <p className="text-2xl font-bold" data-testid="text-upcoming-count">
-                  {stats?.upcomingAppointments || 0}
-                </p>
-              )}
-              <p className="text-sm text-muted-foreground">Citas Pendientes</p>
-            </div>
-          </CardContent>
-        </Card>
+        <Link href="/doctor/appointments" className="block">
+          <Card className="cursor-pointer hover-elevate transition-colors" data-testid="stat-card-pending">
+            <CardContent className="p-4 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-lg bg-amber-100 dark:bg-amber-950 flex items-center justify-center">
+                <Clock className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div className="flex-1">
+                {loadingStats ? (
+                  <Skeleton className="h-8 w-12" />
+                ) : (
+                  <p className="text-2xl font-bold" data-testid="text-upcoming-count">
+                    {stats?.upcomingAppointments || 0}
+                  </p>
+                )}
+                <p className="text-sm text-muted-foreground">Citas Pendientes</p>
+              </div>
+              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+            </CardContent>
+          </Card>
+        </Link>
 
-        <Card data-testid="stat-card-completed">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-lg bg-green-100 dark:bg-green-950 flex items-center justify-center">
-              <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
-            </div>
-            <div>
-              {loadingStats ? (
-                <Skeleton className="h-8 w-12" />
-              ) : (
-                <p className="text-2xl font-bold" data-testid="text-completed-count">
-                  {stats?.completedConsultations || 0}
-                </p>
-              )}
-              <p className="text-sm text-muted-foreground">Consultas Completadas</p>
-            </div>
-          </CardContent>
-        </Card>
+        <Link href="/doctor/appointments" className="block">
+          <Card className="cursor-pointer hover-elevate transition-colors" data-testid="stat-card-completed">
+            <CardContent className="p-4 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-lg bg-green-100 dark:bg-green-950 flex items-center justify-center">
+                <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
+              </div>
+              <div className="flex-1">
+                {loadingStats ? (
+                  <Skeleton className="h-8 w-12" />
+                ) : (
+                  <p className="text-2xl font-bold" data-testid="text-completed-count">
+                    {stats?.completedConsultations || 0}
+                  </p>
+                )}
+                <p className="text-sm text-muted-foreground">Consultas Completadas</p>
+              </div>
+              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       <Card>
