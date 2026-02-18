@@ -166,18 +166,12 @@ export default function BookAppointmentPage() {
   const isSlotAvailable = (time: string) => {
     if (!selectedDate) return false;
     const now = new Date();
-    const isToday = format(selectedDate, "yyyy-MM-dd") === format(now, "yyyy-MM-dd");
-    if (isToday) {
+    const todayStr = format(now, "yyyy-MM-dd");
+    const selectedStr = format(selectedDate, "yyyy-MM-dd");
+    if (selectedStr === todayStr) {
       const [hours, minutes] = time.split(":").map(Number);
-      
-      // Calculate current Chilean time from UTC
-      // UTC is the system time, Chile is currently UTC-3
-      const chileanNow = new Date(now.getTime() - (3 * 60 * 60 * 1000));
-      const currentHours = chileanNow.getHours();
-      const currentMinutes = chileanNow.getMinutes();
-
-      // Allow booking if the slot is at least 15 minutes in the future from "now"
-      // to avoid booking a slot that is literally starting right now
+      const currentHours = now.getHours();
+      const currentMinutes = now.getMinutes();
       if (hours < currentHours) return false;
       if (hours === currentHours && minutes <= currentMinutes + 15) return false;
     }
@@ -299,7 +293,11 @@ export default function BookAppointmentPage() {
                   mode="single"
                   selected={selectedDate}
                   onSelect={(date) => { setSelectedDate(date); setSelectedTime(""); setStepError(""); }}
-                  disabled={(date) => date < new Date() || date.getDay() === 0}
+                  disabled={(date) => {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    return date < today || date.getDay() === 0;
+                  }}
                   className="rounded-md border"
                   locale={es}
                   data-testid="calendar-booking"
