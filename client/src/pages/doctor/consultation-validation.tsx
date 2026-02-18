@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   FileText,
   Pill,
@@ -144,6 +145,7 @@ export default function ConsultationValidationPage() {
   
   const [exams, setExams] = useState<Exam[]>([]);
   const [clinicalJustification, setClinicalJustification] = useState("");
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -390,7 +392,7 @@ export default function ConsultationValidationPage() {
             </Button>
           )}
           <Button
-            onClick={() => validateMutation.mutate()}
+            onClick={() => setIsConfirmOpen(true)}
             disabled={validateMutation.isPending}
             data-testid="button-validate"
           >
@@ -403,6 +405,19 @@ export default function ConsultationValidationPage() {
           </Button>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={isConfirmOpen}
+        onOpenChange={setIsConfirmOpen}
+        onConfirm={() => {
+          setIsConfirmOpen(false);
+          validateMutation.mutate();
+        }}
+        title="\u00bfEst\u00e1s seguro que quieres terminar la consulta?"
+        description="Esta acci\u00f3n guardar\u00e1 el registro cl\u00ednico, la receta y las indicaciones de forma permanente."
+        confirmText="S\u00ed, terminar"
+        cancelText="No, revisar"
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
@@ -895,7 +910,7 @@ export default function ConsultationValidationPage() {
             )}
             <Button
               className="w-full"
-              onClick={() => validateMutation.mutate()}
+              onClick={() => setIsConfirmOpen(true)}
               disabled={validateMutation.isPending}
               data-testid="button-validate-sidebar"
             >
