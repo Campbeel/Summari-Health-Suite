@@ -26,7 +26,10 @@ import {
   type InsertWearableMetric,
   wearableConnections,
   type WearableConnection,
-  type InsertWearableConnection
+  type InsertWearableConnection,
+  examOrders,
+  type ExamOrder,
+  type InsertExamOrder
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, sql, notInArray } from "drizzle-orm";
 

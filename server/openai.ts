@@ -143,6 +143,10 @@ export interface ConsultationAISuggestions {
     description: string;
     priority: string;
   }>;
+  examOrders?: Array<{
+    name: string;
+    instructions?: string;
+  }>;
 }
 
 export async function generateFullConsultationSuggestions(transcript: string): Promise<ConsultationAISuggestions> {
@@ -154,7 +158,7 @@ export async function generateFullConsultationSuggestions(transcript: string): P
           role: "system",
           content: `Eres un asistente médico experto que analiza transcripciones de consultas médicas y extrae toda la información clínica relevante.
 
-Analiza la transcripción y extrae TRES secciones:
+Analiza la transcripción y extrae CUATRO secciones:
 
 1. **clinicalSummary**: Resumen clínico de la consulta
    - chiefComplaint: motivo principal de la visita (string)
@@ -173,9 +177,14 @@ Analiza la transcripción y extrae TRES secciones:
    - description: descripción detallada
    - priority: "low", "normal", "high" o "urgent"
 
-Si no hay información suficiente para alguna sección, devuelve null para clinicalSummary o prescription, y un array vacío para medicalInstructions.
+4. **examOrders**: Array de exámenes médicos solicitados (array vacío si no se mencionan)
+   Cada examen tiene:
+   - name: nombre del examen (ej: "Hemograma completo", "Perfil lipídico", "TSH")
+   - instructions: instrucciones para el paciente (ej: "Ayuno de 12 horas") (opcional)
 
-Devuelve un objeto JSON con las tres secciones. Responde siempre en español.`
+Si no hay información suficiente para alguna sección, devuelve null para clinicalSummary o prescription, y arrays vacíos para medicalInstructions y examOrders.
+
+Devuelve un objeto JSON con las cuatro secciones. Responde siempre en español.`
         },
         {
           role: "user",
@@ -200,6 +209,9 @@ Devuelve un objeto JSON con las tres secciones. Responde siempre en español.`
         : null,
       medicalInstructions: Array.isArray(parsed.medicalInstructions)
         ? parsed.medicalInstructions
+        : [],
+      examOrders: Array.isArray(parsed.examOrders)
+        ? parsed.examOrders
         : [],
     };
   } catch (error) {

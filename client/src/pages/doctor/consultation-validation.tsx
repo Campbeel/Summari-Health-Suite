@@ -35,6 +35,7 @@ import {
   Save,
   Activity,
   Heart,
+  FlaskConical,
 } from "lucide-react";
 
 interface Medication {
@@ -200,6 +201,9 @@ export default function ConsultationValidationPage() {
       if (data.medicalInstructions?.length > 0) {
         setInstructions(data.medicalInstructions);
       }
+      if (data.examOrders && data.examOrders.length > 0) {
+        setExams(data.examOrders);
+      }
       toast({
         title: "Sugerencias generadas",
         description: "La IA ha analizado la transcripci\u00f3n. Revisa y edita la informaci\u00f3n.",
@@ -228,6 +232,10 @@ export default function ConsultationValidationPage() {
           instructions: prescriptionInstructions,
         } : null,
         medicalInstructions: instructions,
+        examOrders: exams.length > 0 ? {
+          exams,
+          clinicalJustification,
+        } : null,
       });
       return response.json();
     },
@@ -298,6 +306,20 @@ export default function ConsultationValidationPage() {
 
   const removeInstruction = (index: number) => {
     setInstructions(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const addExam = () => {
+    setExams(prev => [...prev, { name: "", instructions: "" }]);
+  };
+
+  const updateExam = (index: number, field: keyof Exam, value: string) => {
+    setExams(prev => prev.map((exam, i) =>
+      i === index ? { ...exam, [field]: value } : exam
+    ));
+  };
+
+  const removeExam = (index: number) => {
+    setExams(prev => prev.filter((_, i) => i !== index));
   };
 
   if (isLoading) {
@@ -385,10 +407,10 @@ export default function ConsultationValidationPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <Tabs defaultValue="clinical" className="w-full">
-            <TabsList className="grid grid-cols-3 w-full">
+            <TabsList className="grid grid-cols-4 w-full">
               <TabsTrigger value="clinical" data-testid="tab-clinical">
                 <FileText className="h-4 w-4 mr-1.5" />
-                Registro Cl\u00ednico
+                Registro
               </TabsTrigger>
               <TabsTrigger value="prescription" data-testid="tab-prescription">
                 <Pill className="h-4 w-4 mr-1.5" />
@@ -397,6 +419,10 @@ export default function ConsultationValidationPage() {
               <TabsTrigger value="instructions" data-testid="tab-instructions">
                 <ClipboardList className="h-4 w-4 mr-1.5" />
                 Indicaciones
+              </TabsTrigger>
+              <TabsTrigger value="exams" data-testid="tab-exams">
+                <FlaskConical className="h-4 w-4 mr-1.5" />
+                Ex\u00e1menes
               </TabsTrigger>
             </TabsList>
 
@@ -502,8 +528,7 @@ export default function ConsultationValidationPage() {
                   ) : (
                     <>
                       {medications.map((med, index) => (
-                        <Card key={index} className="border-dashed">
-                          <CardContent className="pt-4 space-y-3">
+                        <div key={index} className="border border-dashed rounded-md p-4 space-y-3">
                             <div className="flex items-center justify-between gap-2">
                               <h4 className="text-sm font-medium text-muted-foreground">
                                 Medicamento {index + 1}
@@ -569,8 +594,7 @@ export default function ConsultationValidationPage() {
                                 data-testid={`input-med-instructions-${index}`}
                               />
                             </div>
-                          </CardContent>
-                        </Card>
+                        </div>
                       ))}
                       <div>
                         <Label htmlFor="prescriptionInstructions">Instrucciones generales</Label>
@@ -610,8 +634,7 @@ export default function ConsultationValidationPage() {
                     </div>
                   ) : (
                     instructions.map((inst, index) => (
-                      <Card key={index} className="border-dashed">
-                        <CardContent className="pt-4 space-y-3">
+                      <div key={index} className="border border-dashed rounded-md p-4 space-y-3">
                           <div className="flex items-center justify-between gap-2">
                             <h4 className="text-sm font-medium text-muted-foreground">
                               Indicaci\u00f3n {index + 1}
@@ -682,9 +705,83 @@ export default function ConsultationValidationPage() {
                               data-testid={`input-inst-description-${index}`}
                             />
                           </div>
-                        </CardContent>
-                      </Card>
+                      </div>
                     ))
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="exams" className="mt-4">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between gap-4">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <FlaskConical className="h-5 w-5" />
+                    Órdenes de Exámenes
+                  </CardTitle>
+                  <Button variant="outline" size="sm" onClick={addExam} data-testid="button-add-exam">
+                    <Plus className="h-4 w-4 mr-1" />
+                    Agregar
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {exams.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground" data-testid="exams-empty">
+                      <FlaskConical className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">No hay exámenes solicitados</p>
+                      <p className="text-xs mt-1">Agrega exámenes que el paciente debe realizarse</p>
+                    </div>
+                  ) : (
+                    <>
+                      {exams.map((exam, index) => (
+                        <div key={index} className="border border-dashed rounded-md p-4 space-y-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <h4 className="text-sm font-medium text-muted-foreground">
+                              Examen {index + 1}
+                            </h4>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeExam(index)}
+                              data-testid={`button-remove-exam-${index}`}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                          <div>
+                            <Label>Nombre del examen</Label>
+                            <Input
+                              value={exam.name}
+                              onChange={(e) => updateExam(index, "name", e.target.value)}
+                              placeholder="Ej: Hemograma completo, Glicemia, TSH..."
+                              className="mt-1"
+                              data-testid={`input-exam-name-${index}`}
+                            />
+                          </div>
+                          <div>
+                            <Label>Instrucciones para el paciente</Label>
+                            <Input
+                              value={exam.instructions || ""}
+                              onChange={(e) => updateExam(index, "instructions", e.target.value)}
+                              placeholder="Ej: Ayuno de 12 horas"
+                              className="mt-1"
+                              data-testid={`input-exam-instructions-${index}`}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                      <div>
+                        <Label htmlFor="clinicalJustification">Justificación clínica</Label>
+                        <Textarea
+                          id="clinicalJustification"
+                          value={clinicalJustification}
+                          onChange={(e) => setClinicalJustification(e.target.value)}
+                          placeholder="Justificación clínica para los exámenes solicitados..."
+                          className="mt-1.5"
+                          data-testid="input-clinical-justification"
+                        />
+                      </div>
+                    </>
                   )}
                 </CardContent>
               </Card>
