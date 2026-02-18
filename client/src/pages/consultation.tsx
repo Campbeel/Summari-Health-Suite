@@ -81,12 +81,15 @@ export default function ConsultationPage() {
   const [hasJoinedCall, setHasJoinedCall] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const isTranscribingRef = useRef(false);
+  const transcriptionQueueRef = useRef<Blob[]>([]);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const transcriptionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const mixedStreamRef = useRef<MediaStream | null>(null);
 
   const { data: consultation, isLoading } = useQuery<ConsultationData>({
     queryKey: ["/api/consultations", id],
@@ -178,23 +181,13 @@ export default function ConsultationPage() {
     if (isRecording) {
       stopRecording();
     }
+    autoStartedRef.current = false;
     disconnect();
     setHasJoinedCall(false);
     if (isDoctor) {
       endConsultationMutation.mutate();
     }
   };
-
-  useEffect(() => {
-    return () => {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
-      if (transcriptionIntervalRef.current) {
-        clearInterval(transcriptionIntervalRef.current);
-      }
-    };
-  }, []);
 
   const endConsultationMutation = useMutation({
     mutationFn: async () => {
@@ -221,11 +214,18 @@ export default function ConsultationPage() {
     },
   });
 
-  const transcribeAudio = useCallback(async (audioBlob: Blob) => {
+  const processTranscriptionQueue = useCallback(async () => {
+    if (isTranscribingRef.current || transcriptionQueueRef.current.length === 0) return;
+
+    const audioBlob = transcriptionQueueRef.current.shift()!;
     if (audioBlob.size < 1000) {
       console.log("[Transcription] Audio blob too small, skipping:", audioBlob.size);
+      if (transcriptionQueueRef.current.length > 0) {
+        processTranscriptionQueue();
+      }
       return;
     }
+
     try {
       setIsTranscribing(true);
       isTranscribingRef.current = true;
@@ -252,32 +252,70 @@ export default function ConsultationPage() {
     } finally {
       setIsTranscribing(false);
       isTranscribingRef.current = false;
+      if (transcriptionQueueRef.current.length > 0) {
+        processTranscriptionQueue();
+      }
     }
   }, []);
 
-  const startRecording = useCallback(() => {
+  const createMixedAudioStream = useCallback(async (local: MediaStream, remote: MediaStream | null): Promise<MediaStream> => {
+    if (audioContextRef.current) {
+      await audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+
+    try {
+      const audioContext = new AudioContext();
+      audioContextRef.current = audioContext;
+
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+
+      const destination = audioContext.createMediaStreamDestination();
+
+      const localAudioTracks = local.getAudioTracks();
+      if (localAudioTracks.length > 0) {
+        const localSource = audioContext.createMediaStreamSource(new MediaStream(localAudioTracks));
+        localSource.connect(destination);
+      }
+
+      if (remote) {
+        const remoteAudioTracks = remote.getAudioTracks();
+        if (remoteAudioTracks.length > 0) {
+          const remoteSource = audioContext.createMediaStreamSource(new MediaStream(remoteAudioTracks));
+          remoteSource.connect(destination);
+        }
+      }
+
+      mixedStreamRef.current = destination.stream;
+      return destination.stream;
+    } catch (error) {
+      console.error("[Transcription] Error creating mixed stream, falling back to local:", error);
+      if (audioContextRef.current) {
+        await audioContextRef.current.close().catch(() => {});
+        audioContextRef.current = null;
+      }
+      return new MediaStream(local.getAudioTracks());
+    }
+  }, []);
+
+  const startRecording = useCallback(async () => {
     if (!localStream) {
-      toast({
-        title: "Error",
-        description: "Debes unirte a la llamada primero",
-        variant: "destructive",
-      });
+      console.log("[Transcription] No local stream available");
       return;
     }
 
     try {
-      const audioTracks = localStream.getAudioTracks();
-      if (audioTracks.length === 0) {
-        toast({
-          title: "Error",
-          description: "No se encontró micrófono activo",
-          variant: "destructive",
-        });
+      const localAudioTracks = localStream.getAudioTracks();
+      if (localAudioTracks.length === 0) {
+        console.log("[Transcription] No local audio tracks");
         return;
       }
 
-      const audioStream = new MediaStream(audioTracks);
-      const mediaRecorder = new MediaRecorder(audioStream, {
+      const mixedStream = await createMixedAudioStream(localStream, remoteStream);
+
+      const mediaRecorder = new MediaRecorder(mixedStream, {
         mimeType: 'audio/webm;codecs=opus',
       });
       
@@ -290,30 +328,23 @@ export default function ConsultationPage() {
         }
       };
 
-      mediaRecorder.start(3000);
+      mediaRecorder.start(5000);
       setIsRecording(true);
+      console.log("[Transcription] Recording started successfully");
 
       transcriptionIntervalRef.current = setInterval(() => {
-        if (audioChunksRef.current.length > 0 && !isTranscribingRef.current) {
+        if (audioChunksRef.current.length > 0) {
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
           audioChunksRef.current = [];
-          transcribeAudio(audioBlob);
+          transcriptionQueueRef.current.push(audioBlob);
+          processTranscriptionQueue();
         }
-      }, 15000);
+      }, 10000);
 
-      toast({
-        title: "Transcripción iniciada",
-        description: "La consulta está siendo transcrita automáticamente",
-      });
     } catch (error) {
       console.error("Error starting recording:", error);
-      toast({
-        title: "Error",
-        description: "No se pudo iniciar la transcripción",
-        variant: "destructive",
-      });
     }
-  }, [localStream, toast, transcribeAudio]);
+  }, [localStream, remoteStream, createMixedAudioStream, processTranscriptionQueue]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -323,23 +354,78 @@ export default function ConsultationPage() {
       clearInterval(transcriptionIntervalRef.current);
       transcriptionIntervalRef.current = null;
     }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    mixedStreamRef.current = null;
     
     if (audioChunksRef.current.length > 0) {
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
       audioChunksRef.current = [];
-      transcribeAudio(audioBlob);
+      transcriptionQueueRef.current.push(audioBlob);
+      processTranscriptionQueue();
     }
     
     setIsRecording(false);
-  }, [transcribeAudio]);
+  }, [processTranscriptionQueue]);
+
+  const restartRecordingWithRemote = useCallback(() => {
+    if (!isRecording || !remoteStream) return;
+    const remoteAudioTracks = remoteStream.getAudioTracks();
+    if (remoteAudioTracks.length === 0) return;
+
+    console.log("[Transcription] Remote audio available, restarting recorder with mixed audio");
+    stopRecording();
+    setTimeout(() => startRecording(), 500);
+  }, [isRecording, remoteStream, stopRecording, startRecording]);
 
   const handleToggleRecording = useCallback(() => {
     if (isRecording) {
       stopRecording();
+      toast({
+        title: "Transcripción detenida",
+        description: "La grabación ha sido pausada",
+      });
     } else {
       startRecording();
+      toast({
+        title: "Transcripción iniciada",
+        description: "La consulta está siendo transcrita automáticamente",
+      });
     }
-  }, [isRecording, startRecording, stopRecording]);
+  }, [isRecording, startRecording, stopRecording, toast]);
+
+  // Auto-start transcription when doctor joins the call
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (isDoctor && hasJoinedCall && localStream && !isRecording && !autoStartedRef.current) {
+      autoStartedRef.current = true;
+      console.log("[Transcription] Auto-starting transcription for doctor");
+      const timer = setTimeout(() => startRecording(), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [isDoctor, hasJoinedCall, localStream, isRecording, startRecording]);
+
+  // Restart recording when remote audio becomes available to include patient audio
+  useEffect(() => {
+    restartRecordingWithRemote();
+  }, [restartRecordingWithRemote]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      if (transcriptionIntervalRef.current) {
+        clearInterval(transcriptionIntervalRef.current);
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(() => {});
+      }
+    };
+  }, []);
 
   const handleAdmitPatient = (patientId: string) => {
     admitPatient(patientId);
@@ -715,7 +801,7 @@ export default function ConsultationPage() {
 
           <TabsContent value="transcript" className="flex-1 mt-4 min-h-0">
             <Card className="h-full">
-              <CardHeader className="pb-2">
+              <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
                 <CardTitle className="text-base flex items-center gap-2">
                   Transcripción
                   {isRecording && (
@@ -724,21 +810,34 @@ export default function ConsultationPage() {
                       En vivo
                     </Badge>
                   )}
+                  {isTranscribing && (
+                    <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                  )}
                 </CardTitle>
               </CardHeader>
               <ScrollArea className="h-[calc(100%-4rem)]">
                 <CardContent className="p-4">
                   {transcription || clinicalRecord?.transcription ? (
-                    <p className="text-sm whitespace-pre-wrap" data-testid="text-transcription">
-                      {transcription || clinicalRecord?.transcription}
-                    </p>
+                    <div>
+                      <p className="text-sm whitespace-pre-wrap" data-testid="text-transcription">
+                        {transcription || clinicalRecord?.transcription}
+                      </p>
+                      {isRecording && isTranscribing && (
+                        <span className="inline-block mt-1 text-xs text-muted-foreground">
+                          <Loader2 className="h-3 w-3 animate-spin inline mr-1" />
+                          Procesando audio...
+                        </span>
+                      )}
+                    </div>
                   ) : (
                     <div className="text-center py-8 text-muted-foreground" data-testid="transcription-empty-state">
                       <Mic className="h-8 w-8 mx-auto mb-2 opacity-50" />
                       <p className="text-sm">
                         {isRecording 
-                          ? "Escuchando..." 
-                          : "Inicia la transcripción para capturar la consulta"}
+                          ? "Escuchando... la transcripción aparecerá pronto" 
+                          : isDoctor
+                            ? "La transcripción se inicia automáticamente al unirse a la consulta"
+                            : "El médico controla la transcripción de la consulta"}
                       </p>
                     </div>
                   )}
