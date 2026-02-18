@@ -55,6 +55,7 @@ export default function BookAppointmentPage() {
   const [selectedTime, setSelectedTime] = useState<string>("");
   const [consultationType, setConsultationType] = useState<"video" | "audio">("video");
   const [notes, setNotes] = useState("");
+  const [stepError, setStepError] = useState("");
 
   const { data: doctors, isLoading: loadingDoctors } = useQuery<Doctor[]>({
     queryKey: ["/api/doctors"],
@@ -118,7 +119,24 @@ export default function BookAppointmentPage() {
     }
   };
 
+  const getStepError = (): string => {
+    switch (currentStep) {
+      case 0: return !selectedDoctor ? "Selecciona un médico para continuar" : "";
+      case 1:
+        if (!selectedDate) return "Selecciona una fecha para tu consulta";
+        if (!selectedTime) return "Selecciona un horario disponible";
+        if (!isSlotAvailable(selectedTime)) return "El horario seleccionado no está disponible";
+        return "";
+      default: return "";
+    }
+  };
+
   const handleNext = () => {
+    if (!canProceed()) {
+      setStepError(getStepError());
+      return;
+    }
+    setStepError("");
     if (currentStep < STEPS.length - 1) {
       setCurrentStep(currentStep + 1);
     } else {
@@ -230,7 +248,7 @@ export default function BookAppointmentPage() {
                 doctors.map((doctor) => (
                   <div
                     key={doctor.id}
-                    onClick={() => setSelectedDoctor(doctor)}
+                    onClick={() => { setSelectedDoctor(doctor); setStepError(""); }}
                     className={`
                       flex items-center gap-4 p-4 border rounded-lg cursor-pointer transition-all
                       ${selectedDoctor?.id === doctor.id 
@@ -280,7 +298,7 @@ export default function BookAppointmentPage() {
                 <Calendar
                   mode="single"
                   selected={selectedDate}
-                  onSelect={(date) => { setSelectedDate(date); setSelectedTime(""); }}
+                  onSelect={(date) => { setSelectedDate(date); setSelectedTime(""); setStepError(""); }}
                   disabled={(date) => date < new Date() || date.getDay() === 0}
                   className="rounded-md border"
                   locale={es}
@@ -296,7 +314,7 @@ export default function BookAppointmentPage() {
                       type="button"
                       variant={selectedTime === time ? "default" : "outline"}
                       disabled={!isSlotAvailable(time)}
-                      onClick={() => setSelectedTime(time)}
+                      onClick={() => { setSelectedTime(time); setStepError(""); }}
                       className="h-10"
                       data-testid={`time-slot-${time}`}
                     >
@@ -414,6 +432,10 @@ export default function BookAppointmentPage() {
         </CardContent>
       </Card>
 
+      {stepError && (
+        <p className="text-sm text-destructive text-center" data-testid="error-step-validation">{stepError}</p>
+      )}
+
       {/* Navigation Buttons */}
       <div className="flex justify-between">
         <Button variant="outline" onClick={handleBack} data-testid="button-prev-step">
@@ -422,7 +444,7 @@ export default function BookAppointmentPage() {
         </Button>
         <Button 
           onClick={handleNext} 
-          disabled={!canProceed() || bookMutation.isPending}
+          disabled={bookMutation.isPending}
           data-testid="button-next-step"
         >
           {currentStep === STEPS.length - 1 ? (

@@ -16,6 +16,7 @@ export default function AuthLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{ identifier?: string; password?: string }>({});
 
   const loginMutation = useMutation({
     mutationFn: async (data: { identifier: string; password: string }) => {
@@ -42,6 +43,14 @@ export default function AuthLoginPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const errors: { identifier?: string; password?: string } = {};
+    if (!identifier.trim()) errors.identifier = "Ingresa tu RUT o correo electrónico";
+    if (!password) errors.password = "Ingresa tu contraseña";
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+    setFieldErrors({});
     loginMutation.mutate({ identifier, password });
   };
 
@@ -69,10 +78,13 @@ export default function AuthLoginPage() {
                   type="text"
                   placeholder="12.345.678-9 o tu@correo.com"
                   value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  required
+                  onChange={(e) => { setIdentifier(e.target.value); setFieldErrors(prev => ({ ...prev, identifier: undefined })); }}
+                  className={fieldErrors.identifier ? "border-destructive" : ""}
                   data-testid="input-login-identifier"
                 />
+                {fieldErrors.identifier && (
+                  <p className="text-sm text-destructive" data-testid="error-login-identifier">{fieldErrors.identifier}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Contraseña</Label>
@@ -82,8 +94,8 @@ export default function AuthLoginPage() {
                     type={showPassword ? "text" : "password"}
                     placeholder="Tu contraseña"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
+                    onChange={(e) => { setPassword(e.target.value); setFieldErrors(prev => ({ ...prev, password: undefined })); }}
+                    className={fieldErrors.password ? "border-destructive" : ""}
                     data-testid="input-login-password"
                   />
                   <Button
@@ -97,6 +109,9 @@ export default function AuthLoginPage() {
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </Button>
                 </div>
+                {fieldErrors.password && (
+                  <p className="text-sm text-destructive" data-testid="error-login-password">{fieldErrors.password}</p>
+                )}
               </div>
               <Button
                 type="submit"

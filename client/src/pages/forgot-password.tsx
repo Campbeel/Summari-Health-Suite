@@ -13,6 +13,7 @@ export default function ForgotPasswordPage() {
   const { toast } = useToast();
   const [identifier, setIdentifier] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [fieldError, setFieldError] = useState("");
 
   const resetMutation = useMutation({
     mutationFn: async (data: { identifier: string }) => {
@@ -37,6 +38,11 @@ export default function ForgotPasswordPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!identifier.trim()) {
+      setFieldError("Ingresa tu RUT o correo electrónico");
+      return;
+    }
+    setFieldError("");
     resetMutation.mutate({ identifier });
   };
 
@@ -91,10 +97,13 @@ export default function ForgotPasswordPage() {
                     type="text"
                     placeholder="12.345.678-9 o tu@correo.com"
                     value={identifier}
-                    onChange={(e) => setIdentifier(e.target.value)}
-                    required
+                    onChange={(e) => { setIdentifier(e.target.value); setFieldError(""); }}
+                    className={fieldError ? "border-destructive" : ""}
                     data-testid="input-forgot-identifier"
                   />
+                  {fieldError && (
+                    <p className="text-sm text-destructive" data-testid="error-forgot-identifier">{fieldError}</p>
+                  )}
                 </div>
                 <Button
                   type="submit"

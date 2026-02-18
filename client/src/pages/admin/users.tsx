@@ -52,6 +52,7 @@ export default function AdminUsersPage() {
     bio: "",
     consultationFee: 25000,
   });
+  const [formErrors, setFormErrors] = useState<{ specialty?: string; licenseNumber?: string }>({});
 
   const { data: users, isLoading } = useQuery<UserWithDoctorStatus[]>({
     queryKey: ["/api/admin/users"],
@@ -115,12 +116,22 @@ export default function AdminUsersPage() {
 
   const handlePromoteClick = (user: UserWithDoctorStatus) => {
     setSelectedUser(user);
+    setFormErrors({});
     setIsDialogOpen(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUser) return;
+
+    const errors: { specialty?: string; licenseNumber?: string } = {};
+    if (!formData.specialty.trim()) errors.specialty = "La especialidad es obligatoria";
+    if (!formData.licenseNumber.trim()) errors.licenseNumber = "El número de licencia es obligatorio";
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+    setFormErrors({});
 
     promoteMutation.mutate({
       userId: selectedUser.id,
@@ -240,22 +251,28 @@ export default function AdminUsersPage() {
               <Input
                 id="specialty"
                 value={formData.specialty}
-                onChange={(e) => setFormData({ ...formData, specialty: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, specialty: e.target.value }); setFormErrors(prev => ({ ...prev, specialty: undefined })); }}
                 placeholder="Ej: Medicina General, Cardiología"
-                required
+                className={formErrors.specialty ? "border-destructive" : ""}
                 data-testid="input-specialty"
               />
+              {formErrors.specialty && (
+                <p className="text-sm text-destructive" data-testid="error-specialty">{formErrors.specialty}</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="licenseNumber">Número de Licencia *</Label>
               <Input
                 id="licenseNumber"
                 value={formData.licenseNumber}
-                onChange={(e) => setFormData({ ...formData, licenseNumber: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, licenseNumber: e.target.value }); setFormErrors(prev => ({ ...prev, licenseNumber: undefined })); }}
                 placeholder="Ej: MED-2024-001"
-                required
+                className={formErrors.licenseNumber ? "border-destructive" : ""}
                 data-testid="input-license"
               />
+              {formErrors.licenseNumber && (
+                <p className="text-sm text-destructive" data-testid="error-license">{formErrors.licenseNumber}</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="bio">Biografía</Label>

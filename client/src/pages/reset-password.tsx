@@ -18,6 +18,7 @@ export default function ResetPasswordPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [success, setSuccess] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<{ password?: string; confirmPassword?: string }>({});
 
   const params = new URLSearchParams(search);
   const token = params.get("token") || "";
@@ -55,14 +56,22 @@ export default function ResetPasswordPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password !== confirmPassword) {
-      toast({ title: "Error", description: "Las contraseñas no coinciden", variant: "destructive" });
+    const errors: { password?: string; confirmPassword?: string } = {};
+    if (!password) {
+      errors.password = "Ingresa una contraseña";
+    } else if (password.length < 6) {
+      errors.password = "La contraseña debe tener al menos 6 caracteres";
+    }
+    if (!confirmPassword) {
+      errors.confirmPassword = "Confirma tu contraseña";
+    } else if (password !== confirmPassword) {
+      errors.confirmPassword = "Las contraseñas no coinciden";
+    }
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
-    if (password.length < 6) {
-      toast({ title: "Error", description: "La contraseña debe tener al menos 6 caracteres", variant: "destructive" });
-      return;
-    }
+    setFieldErrors({});
     resetMutation.mutate({ token, password });
   };
 
@@ -172,9 +181,8 @@ export default function ResetPasswordPage() {
                       type={showPassword ? "text" : "password"}
                       placeholder="Mínimo 6 caracteres"
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      minLength={6}
+                      onChange={(e) => { setPassword(e.target.value); setFieldErrors(prev => ({ ...prev, password: undefined })); }}
+                      className={fieldErrors.password ? "border-destructive" : ""}
                       data-testid="input-new-password"
                     />
                     <Button
@@ -188,6 +196,9 @@ export default function ResetPasswordPage() {
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
+                  {fieldErrors.password && (
+                    <p className="text-sm text-destructive" data-testid="error-reset-password">{fieldErrors.password}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
@@ -197,9 +208,8 @@ export default function ResetPasswordPage() {
                       type={showConfirm ? "text" : "password"}
                       placeholder="Repite tu contraseña"
                       value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      required
-                      minLength={6}
+                      onChange={(e) => { setConfirmPassword(e.target.value); setFieldErrors(prev => ({ ...prev, confirmPassword: undefined })); }}
+                      className={fieldErrors.confirmPassword ? "border-destructive" : ""}
                       data-testid="input-confirm-password"
                     />
                     <Button
@@ -213,9 +223,9 @@ export default function ResetPasswordPage() {
                       {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
-                  {confirmPassword && password !== confirmPassword && (
+                  {(fieldErrors.confirmPassword || (confirmPassword && password !== confirmPassword)) && (
                     <p className="text-sm text-destructive" data-testid="text-password-mismatch">
-                      Las contraseñas no coinciden
+                      {fieldErrors.confirmPassword || "Las contraseñas no coinciden"}
                     </p>
                   )}
                 </div>
