@@ -164,15 +164,21 @@ export default function BookAppointmentPage() {
     enabled: !!selectedDoctor && !!formattedDate,
   });
 
+  const getChileanNow = () => {
+    const now = new Date();
+    const chileanTime = new Date(now.toLocaleString("en-US", { timeZone: "America/Santiago" }));
+    return chileanTime;
+  };
+
   const isSlotAvailable = (time: string) => {
     if (!selectedDate) return false;
-    const now = new Date();
-    const todayStr = format(now, "yyyy-MM-dd");
+    const chileanNow = getChileanNow();
+    const todayStr = format(chileanNow, "yyyy-MM-dd");
     const selectedStr = format(selectedDate, "yyyy-MM-dd");
     if (selectedStr === todayStr) {
       const [hours, minutes] = time.split(":").map(Number);
-      const currentHours = now.getHours();
-      const currentMinutes = now.getMinutes();
+      const currentHours = chileanNow.getHours();
+      const currentMinutes = chileanNow.getMinutes();
       if (hours < currentHours) return false;
       if (hours === currentHours && minutes <= currentMinutes + 15) return false;
     }
@@ -295,7 +301,7 @@ export default function BookAppointmentPage() {
                   selected={selectedDate}
                   onSelect={(date) => { setSelectedDate(date); setSelectedTime(""); setStepError(""); }}
                   disabled={(date) => {
-                    const today = new Date();
+                    const today = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Santiago" }));
                     today.setHours(0, 0, 0, 0);
                     return date < today || date.getDay() === 0;
                   }}
