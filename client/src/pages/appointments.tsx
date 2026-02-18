@@ -123,7 +123,7 @@ function AppointmentCard({ appointment }: { appointment: AppointmentWithDetails 
             )}
 
             <div className="flex flex-wrap gap-2 pt-2">
-              {isUpcoming && canJoin && (
+              {canJoin && (
                 <Button asChild data-testid={`join-appointment-${appointment.id}`}>
                   <Link href={`/consultation/${appointment.id}`}>
                     <Video className="h-4 w-4 mr-2" />
@@ -131,7 +131,7 @@ function AppointmentCard({ appointment }: { appointment: AppointmentWithDetails 
                   </Link>
                 </Button>
               )}
-              {isUpcoming && appointment.paymentStatus === "pending" && (
+              {appointment.paymentStatus === "pending" && (
                 <Button 
                   variant="outline" 
                   onClick={() => payMutation.mutate()}
