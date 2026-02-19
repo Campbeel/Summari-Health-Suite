@@ -881,26 +881,6 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Not authorized to access this consultation" });
       }
 
-      // Time check for patients
-      if (isPatient) {
-        const now = new Date();
-        const scheduledStart = new Date(`${appointment.scheduledDate}T${appointment.scheduledTime}`);
-        const scheduledEnd = new Date(scheduledStart.getTime() + appointment.durationMinutes * 60000);
-
-        // Allow entry 10 minutes before and until the end
-        const allowedStart = new Date(scheduledStart.getTime() - 10 * 60000);
-
-        if (now < allowedStart || now > scheduledEnd) {
-          return res.status(403).json({
-            error: "Solo puedes ingresar a la consulta en el horario asignado.",
-            details: {
-              scheduledStart: appointment.scheduledTime,
-              scheduledDate: appointment.scheduledDate
-            }
-          });
-        }
-      }
-
       // Get clinical record if exists
       const clinicalRecord = await storage.getClinicalRecordByAppointmentId(appointmentId);
 
