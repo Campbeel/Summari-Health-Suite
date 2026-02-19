@@ -5,7 +5,7 @@ import { z } from "zod";
 import { storage } from "./storage";
 import { isAuthenticated, registerAuthRoutes } from "./auth";
 import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText, verifyFlowSignature } from "./flow";
-import { transcribeAudio, generatePrescriptionFromTranscript, generateFullConsultationSuggestions } from "./openai";
+import { transcribeAudio, transcribeAudioChunked, generatePrescriptionFromTranscript, generateFullConsultationSuggestions } from "./openai";
 import { getFitbitAuthUrl, getAndRemovePendingState, exchangeCodeForTokens, refreshFitbitTokens, fetchFitbitData } from "./fitbit";
 import {
   insertPatientSchema,
@@ -921,7 +921,7 @@ export async function registerRoutes(
   app.post("/api/consultations/:id/end", isAuthenticated, async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id);
-      const { transcription, notes, diagnosis, symptoms } = req.body;
+      const { audioData, notes, diagnosis, symptoms } = req.body;
       
       const appointment = await storage.getAppointment(appointmentId);
       if (!appointment) {
@@ -929,6 +929,17 @@ export async function registerRoutes(
       }
       
       await storage.updateAppointment(appointmentId, { status: "pending_validation" });
+      
+      let transcription = "";
+      if (audioData) {
+        try {
+          console.log(`[Transcription] Starting server-side transcription for appointment ${appointmentId}...`);
+          transcription = await transcribeAudioChunked(audioData);
+          console.log(`[Transcription] Completed. Length: ${transcription.length} chars`);
+        } catch (e) {
+          console.error("Error transcribing audio server-side:", e);
+        }
+      }
       
       const record = await storage.createClinicalRecord({
         patientId: appointment.patientId,
@@ -938,7 +949,7 @@ export async function registerRoutes(
         symptoms: symptoms || [],
         diagnosis,
         notes,
-        transcription,
+        transcription: transcription || null,
       });
       
       let aiSuggestions = null;

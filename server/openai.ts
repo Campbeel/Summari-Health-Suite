@@ -9,16 +9,80 @@ const openai = new OpenAI({
 
 export async function transcribeAudio(audioBase64: string): Promise<string> {
   try {
-    // Decode base64 to buffer
     const audioBuffer = Buffer.from(audioBase64, 'base64');
-    
-    // Convert to compatible format and transcribe using Replit AI integration
     const { buffer, format } = await ensureCompatibleFormat(audioBuffer);
     const transcript = await speechToText(buffer, format);
-    
     return transcript;
   } catch (error) {
     console.error("Error transcribing audio:", error);
+    throw new Error("Failed to transcribe audio");
+  }
+}
+
+export async function transcribeAudioChunked(audioBase64: string): Promise<string> {
+  try {
+    const audioBuffer = Buffer.from(audioBase64, 'base64');
+    const { buffer: wavBuffer } = await ensureCompatibleFormat(audioBuffer);
+    
+    const MAX_CHUNK_SIZE = 20 * 1024 * 1024;
+    
+    if (wavBuffer.length <= MAX_CHUNK_SIZE) {
+      const transcript = await speechToText(wavBuffer, "wav");
+      return transcript;
+    }
+    
+    const { spawn } = await import("child_process");
+    const { writeFile, readdir, readFile, unlink, mkdir } = await import("fs/promises");
+    const { randomUUID } = await import("crypto");
+    const { tmpdir } = await import("os");
+    const { join } = await import("path");
+    
+    const sessionId = randomUUID();
+    const inputPath = join(tmpdir(), `full-audio-${sessionId}.wav`);
+    const chunkDir = join(tmpdir(), `chunks-${sessionId}`);
+    
+    await writeFile(inputPath, wavBuffer);
+    await mkdir(chunkDir, { recursive: true });
+    
+    await new Promise<void>((resolve, reject) => {
+      const ffmpeg = spawn("ffmpeg", [
+        "-i", inputPath,
+        "-f", "segment",
+        "-segment_time", "120",
+        "-ar", "16000",
+        "-ac", "1",
+        "-acodec", "pcm_s16le",
+        "-y",
+        join(chunkDir, "chunk-%03d.wav"),
+      ]);
+      ffmpeg.stderr.on("data", () => {});
+      ffmpeg.on("close", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`ffmpeg segment exited with code ${code}`));
+      });
+      ffmpeg.on("error", reject);
+    });
+    
+    const chunkFiles = (await readdir(chunkDir)).filter(f => f.endsWith(".wav")).sort();
+    console.log(`[Transcription] Split audio into ${chunkFiles.length} chunks for transcription`);
+    
+    const transcripts: string[] = [];
+    for (const chunkFile of chunkFiles) {
+      const chunkBuffer = await readFile(join(chunkDir, chunkFile));
+      const chunkTranscript = await speechToText(chunkBuffer, "wav");
+      if (chunkTranscript && chunkTranscript.trim()) {
+        transcripts.push(chunkTranscript.trim());
+      }
+      await unlink(join(chunkDir, chunkFile)).catch(() => {});
+    }
+    
+    await unlink(inputPath).catch(() => {});
+    const { rm } = await import("fs/promises");
+    await rm(chunkDir, { recursive: true, force: true }).catch(() => {});
+    
+    return transcripts.join(" ");
+  } catch (error) {
+    console.error("Error in chunked transcription:", error);
     throw new Error("Failed to transcribe audio");
   }
 }

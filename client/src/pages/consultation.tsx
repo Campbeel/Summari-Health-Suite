@@ -76,18 +76,14 @@ export default function ConsultationPage() {
   const { user } = useAuth();
 
   const [isRecording, setIsRecording] = useState(false);
-  const [transcription, setTranscription] = useState("");
   const [notes, setNotes] = useState("");
   const [hasJoinedCall, setHasJoinedCall] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const isTranscribingRef = useRef(false);
-  const transcriptionQueueRef = useRef<Blob[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const transcriptionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mixedStreamRef = useRef<MediaStream | null>(null);
 
@@ -177,27 +173,57 @@ export default function ConsultationPage() {
     await connect();
   };
 
-  const handleEndCall = () => {
-    if (isRecording) {
-      stopRecording();
+  const handleEndCall = async () => {
+    let audioBase64: string | null = null;
+
+    if (isRecording && mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      await new Promise<void>((resolve) => {
+        mediaRecorderRef.current!.onstop = () => resolve();
+        mediaRecorderRef.current!.stop();
+      });
     }
+
+    if (audioChunksRef.current.length > 0) {
+      const fullBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      audioChunksRef.current = [];
+      audioBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const result = reader.result as string;
+          resolve(result.split(',')[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(fullBlob);
+      });
+    }
+
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    mixedStreamRef.current = null;
+    setIsRecording(false);
+
     autoStartedRef.current = false;
     disconnect();
     setHasJoinedCall(false);
+
     if (isDoctor) {
-      endConsultationMutation.mutate();
+      endConsultationMutation.mutate(audioBase64);
     }
   };
 
   const endConsultationMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (audioData: string | null) => {
+      setIsProcessing(true);
       const response = await apiRequest("POST", `/api/consultations/${id}/end`, {
-        transcription,
+        audioData,
         notes,
       });
       return response.json();
     },
     onSuccess: (data) => {
+      setIsProcessing(false);
       queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
       toast({
         title: "Consulta finalizada",
@@ -206,6 +232,7 @@ export default function ConsultationPage() {
       navigate(`/doctor/consultation/${id}/validate`);
     },
     onError: () => {
+      setIsProcessing(false);
       toast({
         title: "Error",
         description: "No se pudo finalizar la consulta",
@@ -213,50 +240,6 @@ export default function ConsultationPage() {
       });
     },
   });
-
-  const processTranscriptionQueue = useCallback(async () => {
-    if (isTranscribingRef.current || transcriptionQueueRef.current.length === 0) return;
-
-    const audioBlob = transcriptionQueueRef.current.shift()!;
-    if (audioBlob.size < 1000) {
-      console.log("[Transcription] Audio blob too small, skipping:", audioBlob.size);
-      if (transcriptionQueueRef.current.length > 0) {
-        processTranscriptionQueue();
-      }
-      return;
-    }
-
-    try {
-      setIsTranscribing(true);
-      isTranscribingRef.current = true;
-      const base64Audio = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const result = reader.result as string;
-          const base64 = result.split(',')[1];
-          resolve(base64);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(audioBlob);
-      });
-
-      const response = await apiRequest("POST", "/api/transcribe", {
-        audioData: base64Audio,
-      });
-      const data = await response.json();
-      if (data.transcript && data.transcript.trim()) {
-        setTranscription(prev => prev + (prev ? " " : "") + data.transcript.trim());
-      }
-    } catch (error) {
-      console.error("Transcription error:", error);
-    } finally {
-      setIsTranscribing(false);
-      isTranscribingRef.current = false;
-      if (transcriptionQueueRef.current.length > 0) {
-        processTranscriptionQueue();
-      }
-    }
-  }, []);
 
   const createMixedAudioStream = useCallback(async (local: MediaStream, remote: MediaStream | null): Promise<MediaStream> => {
     if (audioContextRef.current) {
@@ -330,45 +313,24 @@ export default function ConsultationPage() {
 
       mediaRecorder.start(5000);
       setIsRecording(true);
-      console.log("[Transcription] Recording started successfully");
-
-      transcriptionIntervalRef.current = setInterval(() => {
-        if (audioChunksRef.current.length > 0) {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          audioChunksRef.current = [];
-          transcriptionQueueRef.current.push(audioBlob);
-          processTranscriptionQueue();
-        }
-      }, 10000);
+      console.log("[Recording] Recording started - audio will be transcribed when consultation ends");
 
     } catch (error) {
       console.error("Error starting recording:", error);
     }
-  }, [localStream, remoteStream, createMixedAudioStream, processTranscriptionQueue]);
+  }, [localStream, remoteStream, createMixedAudioStream]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
-    }
-    if (transcriptionIntervalRef.current) {
-      clearInterval(transcriptionIntervalRef.current);
-      transcriptionIntervalRef.current = null;
     }
     if (audioContextRef.current) {
       audioContextRef.current.close().catch(() => {});
       audioContextRef.current = null;
     }
     mixedStreamRef.current = null;
-    
-    if (audioChunksRef.current.length > 0) {
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-      audioChunksRef.current = [];
-      transcriptionQueueRef.current.push(audioBlob);
-      processTranscriptionQueue();
-    }
-    
     setIsRecording(false);
-  }, [processTranscriptionQueue]);
+  }, []);
 
   const restartRecordingWithRemote = useCallback(() => {
     if (!isRecording || !remoteStream) return;
@@ -412,14 +374,10 @@ export default function ConsultationPage() {
     restartRecordingWithRemote();
   }, [restartRecordingWithRemote]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
-      }
-      if (transcriptionIntervalRef.current) {
-        clearInterval(transcriptionIntervalRef.current);
       }
       if (audioContextRef.current) {
         audioContextRef.current.close().catch(() => {});
@@ -465,6 +423,24 @@ export default function ConsultationPage() {
   }
 
   const { appointment, doctor, patient, clinicalRecord } = consultation;
+
+  if (isProcessing) {
+    return (
+      <div className="h-[calc(100vh-8rem)] flex items-center justify-center" data-testid="processing-overlay">
+        <div className="text-center max-w-md px-6">
+          <Loader2 className="h-16 w-16 animate-spin text-primary mx-auto mb-6" />
+          <h2 className="text-xl font-semibold mb-2">Procesando consulta</h2>
+          <p className="text-muted-foreground mb-4">
+            Transcribiendo el audio de la consulta y generando sugerencias clínicas con IA. Esto puede tomar unos momentos...
+          </p>
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Activity className="h-4 w-4 animate-pulse" />
+            <span>No cierres esta ventana</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col lg:flex-row gap-4">
@@ -578,11 +554,10 @@ export default function ConsultationPage() {
             )}
           </div>
 
-          {/* Recording Indicator */}
           {isRecording && (
             <div className="absolute top-4 left-4 flex items-center gap-2 bg-destructive/90 text-destructive-foreground px-3 py-1.5 rounded-full text-sm" data-testid="status-recording">
               <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-              Transcribiendo
+              Grabando
             </div>
           )}
 
@@ -715,7 +690,7 @@ export default function ConsultationPage() {
             </TabsTrigger>
             <TabsTrigger value="transcript" data-testid="tab-transcript">
               <Mic className="h-4 w-4 mr-1" />
-              Transcripción
+              Grabación
             </TabsTrigger>
           </TabsList>
 
@@ -803,44 +778,34 @@ export default function ConsultationPage() {
             <Card className="h-full">
               <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
                 <CardTitle className="text-base flex items-center gap-2">
-                  Transcripción
+                  Grabación
                   {isRecording && (
                     <Badge variant="outline" className="text-xs">
                       <span className="w-1.5 h-1.5 bg-destructive rounded-full mr-1 animate-pulse" />
-                      En vivo
+                      Grabando
                     </Badge>
-                  )}
-                  {isTranscribing && (
-                    <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                   )}
                 </CardTitle>
               </CardHeader>
               <ScrollArea className="h-[calc(100%-4rem)]">
                 <CardContent className="p-4">
-                  {transcription || clinicalRecord?.transcription ? (
-                    <div>
-                      <p className="text-sm whitespace-pre-wrap" data-testid="text-transcription">
-                        {transcription || clinicalRecord?.transcription}
+                  <div className="text-center py-8 text-muted-foreground" data-testid="transcription-empty-state">
+                    <Mic className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">
+                      {isRecording
+                        ? "Grabando audio de la consulta. La transcripción se generará al finalizar."
+                        : isDoctor
+                          ? "La grabación se inicia automáticamente al unirse a la consulta"
+                          : "El médico controla la grabación de la consulta"}
+                    </p>
+                    {isRecording && (
+                      <p className="text-xs mt-2 text-muted-foreground">
+                        {audioChunksRef.current.length > 0 
+                          ? `${audioChunksRef.current.length} fragmentos grabados`
+                          : "Esperando audio..."}
                       </p>
-                      {isRecording && isTranscribing && (
-                        <span className="inline-block mt-1 text-xs text-muted-foreground">
-                          <Loader2 className="h-3 w-3 animate-spin inline mr-1" />
-                          Procesando audio...
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 text-muted-foreground" data-testid="transcription-empty-state">
-                      <Mic className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">
-                        {isRecording 
-                          ? "Escuchando... la transcripción aparecerá pronto" 
-                          : isDoctor
-                            ? "La transcripción se inicia automáticamente al unirse a la consulta"
-                            : "El médico controla la transcripción de la consulta"}
-                      </p>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </CardContent>
               </ScrollArea>
             </Card>
