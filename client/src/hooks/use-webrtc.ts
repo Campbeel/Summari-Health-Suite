@@ -72,6 +72,9 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteParticipantRef = useRef<string | null>(null);
   const disconnectedManuallyRef = useRef(false);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptRef = useRef(0);
+  const maxReconnectAttempts = 10;
 
   const sendMessage = useCallback((message: object) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -128,14 +131,23 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
       if (state === 'connected') {
         setIsConnected(true);
         setIsConnecting(false);
-      } else if (state === 'disconnected' || state === 'failed') {
-        setIsConnected(false);
-        setIsConnecting(false);
-        if (state === 'failed') {
-          console.log('[WebRTC] Peer connection failed, attempting to restart...');
-          if (remoteParticipantRef.current) {
+        setError(null);
+        reconnectAttemptRef.current = 0;
+      } else if (state === 'disconnected') {
+        console.log('[WebRTC] Peer connection disconnected, waiting before retry...');
+        setTimeout(() => {
+          if (pc.connectionState === 'disconnected' && remoteParticipantRef.current) {
+            console.log('[WebRTC] Still disconnected, attempting to restart...');
+            setIsConnected(false);
             initiateCall(remoteParticipantRef.current);
           }
+        }, 3000);
+      } else if (state === 'failed') {
+        setIsConnected(false);
+        setIsConnecting(false);
+        console.log('[WebRTC] Peer connection failed, attempting to restart...');
+        if (remoteParticipantRef.current) {
+          initiateCall(remoteParticipantRef.current);
         }
       }
     };
@@ -249,6 +261,12 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
       return;
     }
 
+    if (wsRef.current) {
+      wsRef.current.onclose = null;
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
     if (!userId) {
       console.error('[WebRTC] No userId provided');
       setError('Debes iniciar sesión para unirte a la videollamada');
@@ -264,16 +282,22 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
     }
 
     setIsConnecting(true);
+    setError(null);
     disconnectedManuallyRef.current = false;
 
-    console.log('[WebRTC] Requesting media access...');
-    const stream = await startMedia();
-    if (!stream) {
-      console.error('[WebRTC] Failed to get media stream');
-      setIsConnecting(false);
-      return;
+    let stream = localStreamRef.current;
+    if (!stream || stream.getTracks().every(t => t.readyState === 'ended')) {
+      console.log('[WebRTC] Requesting media access...');
+      stream = await startMedia();
+      if (!stream) {
+        console.error('[WebRTC] Failed to get media stream');
+        setIsConnecting(false);
+        return;
+      }
+      console.log('[WebRTC] Media access granted');
+    } else {
+      console.log('[WebRTC] Reusing existing media stream');
     }
-    console.log('[WebRTC] Media access granted');
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -314,6 +338,7 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
           case 'room-joined':
             console.log('[WebRTC] Joined room, existing participants:', message.participants);
             setIsWaiting(false);
+            reconnectAttemptRef.current = 0;
             if (message.participants && message.participants.length > 0) {
               console.log('[WebRTC] Initiating call to:', message.participants[0]);
               initiateCall(message.participants[0]);
@@ -409,17 +434,31 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
 
     ws.onclose = () => {
       console.log('[WebRTC] WebSocket closed');
-      setIsConnected(false);
       if (!disconnectedManuallyRef.current && roomId && userId && appointmentId) {
-        setTimeout(() => {
-          connect();
-        }, 3000);
+        if (reconnectAttemptRef.current < maxReconnectAttempts) {
+          const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptRef.current), 10000);
+          reconnectAttemptRef.current += 1;
+          console.log(`[WebRTC] Reconnecting in ${delay}ms (attempt ${reconnectAttemptRef.current}/${maxReconnectAttempts})`);
+          reconnectTimeoutRef.current = setTimeout(() => {
+            connect();
+          }, delay);
+        } else {
+          setIsConnected(false);
+          setError('Se perdió la conexión. Por favor recarga la página.');
+        }
+      } else {
+        setIsConnected(false);
       }
     };
   }, [roomId, userId, appointmentId, startMedia, sendMessage, initiateCall, handleOffer, handleAnswer, handleIceCandidate]);
 
   const disconnect = useCallback(() => {
     disconnectedManuallyRef.current = true;
+    reconnectAttemptRef.current = 0;
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
 
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
