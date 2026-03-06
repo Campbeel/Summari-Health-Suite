@@ -1740,6 +1740,13 @@ ${latest.map(l => `- ${l.metricType}: ${l.value} ${l.unit} (${new Date(l.recorde
         const message = JSON.parse(data.toString());
         
         switch (message.type) {
+          case 'ping': {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'pong' }));
+            }
+            break;
+          }
+
           case 'join': {
             const { roomId, userId, appointmentId } = message;
             
@@ -1794,6 +1801,25 @@ ${latest.map(l => `- ${l.metricType}: ${l.value} ${l.unit} (${new Date(l.recorde
             }
 
             const room = signalingRooms.get(roomId)!;
+
+            // If this user is already in the room (reconnecting), remove old connection first
+            if (room.participants.has(newParticipantId)) {
+              const oldWs = room.participants.get(newParticipantId);
+              if (oldWs && oldWs !== ws && oldWs.readyState === WebSocket.OPEN) {
+                try { oldWs.close(); } catch {}
+              }
+              room.participants.delete(newParticipantId);
+              log(`Removed stale connection for ${newParticipantId} in room ${roomId}`);
+            }
+            // Also check waiting patients for stale connections
+            if (room.waitingPatients.has(newParticipantId)) {
+              const oldEntry = room.waitingPatients.get(newParticipantId);
+              if (oldEntry && oldEntry.ws !== ws && oldEntry.ws.readyState === WebSocket.OPEN) {
+                try { oldEntry.ws.close(); } catch {}
+              }
+              room.waitingPatients.delete(newParticipantId);
+              log(`Removed stale waiting entry for ${newParticipantId} in room ${roomId}`);
+            }
             
             // Limit to 2 participants per consultation room
             if (room.participants.size >= 2 && !room.participants.has(newParticipantId)) {

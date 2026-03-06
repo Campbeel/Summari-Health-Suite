@@ -33,9 +33,6 @@ const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
     {
       urls: 'turn:openrelay.metered.ca:80',
       username: 'openrelayproject',
@@ -75,6 +72,18 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const maxReconnectAttempts = 10;
+  const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const onRemoteStreamRef = useRef(onRemoteStream);
+  const onConnectionStateChangeRef = useRef(onConnectionStateChange);
+  const onErrorRef = useRef(onError);
+  const onWaitingPatientRef = useRef(onWaitingPatient);
+
+  useEffect(() => { onRemoteStreamRef.current = onRemoteStream; }, [onRemoteStream]);
+  useEffect(() => { onConnectionStateChangeRef.current = onConnectionStateChange; }, [onConnectionStateChange]);
+  useEffect(() => { onErrorRef.current = onError; }, [onError]);
+  useEffect(() => { onWaitingPatientRef.current = onWaitingPatient; }, [onWaitingPatient]);
 
   const sendMessage = useCallback((message: object) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -82,10 +91,34 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
     }
   }, []);
 
-  const createPeerConnection = useCallback((targetId: string) => {
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
+  const flushPendingIceCandidates = useCallback(async (pc: RTCPeerConnection) => {
+    const pending = pendingIceCandidatesRef.current;
+    pendingIceCandidatesRef.current = [];
+    for (const candidate of pending) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        console.log('[WebRTC] Flushed queued ICE candidate');
+      } catch (err) {
+        console.error('[WebRTC] Error adding queued ICE candidate:', err);
+      }
     }
+  }, []);
+
+  const cleanupPeerConnection = useCallback(() => {
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.onicecandidate = null;
+      peerConnectionRef.current.ontrack = null;
+      peerConnectionRef.current.onconnectionstatechange = null;
+      peerConnectionRef.current.oniceconnectionstatechange = null;
+      peerConnectionRef.current.onicegatheringstatechange = null;
+      try { peerConnectionRef.current.close(); } catch {}
+      peerConnectionRef.current = null;
+    }
+    pendingIceCandidatesRef.current = [];
+  }, []);
+
+  const createPeerConnection = useCallback((targetId: string) => {
+    cleanupPeerConnection();
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
     peerConnectionRef.current = pc;
@@ -120,88 +153,47 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
       console.log('[WebRTC] Received remote track:', event.track.kind);
       const [stream] = event.streams;
       setRemoteStream(stream);
-      onRemoteStream?.(stream);
+      onRemoteStreamRef.current?.(stream);
     };
 
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
       console.log('[WebRTC] Connection state changed to:', state);
-      onConnectionStateChange?.(state);
-      
+      onConnectionStateChangeRef.current?.(state);
+
       if (state === 'connected') {
         setIsConnected(true);
         setIsConnecting(false);
         setError(null);
         reconnectAttemptRef.current = 0;
       } else if (state === 'disconnected') {
-        console.log('[WebRTC] Peer connection disconnected, waiting before retry...');
+        console.log('[WebRTC] Peer disconnected, waiting 5s before considering failed...');
         setTimeout(() => {
-          if (pc.connectionState === 'disconnected' && remoteParticipantRef.current) {
-            console.log('[WebRTC] Still disconnected, attempting to restart...');
+          if (peerConnectionRef.current === pc && pc.connectionState === 'disconnected') {
+            console.log('[WebRTC] Still disconnected after timeout');
             setIsConnected(false);
-            initiateCall(remoteParticipantRef.current);
           }
-        }, 3000);
+        }, 5000);
       } else if (state === 'failed') {
         setIsConnected(false);
         setIsConnecting(false);
-        console.log('[WebRTC] Peer connection failed, attempting to restart...');
-        if (remoteParticipantRef.current) {
-          initiateCall(remoteParticipantRef.current);
-        }
+        console.log('[WebRTC] Peer connection failed');
+        setError('La conexión falló. Intenta reconectarte.');
       }
     };
 
     return pc;
-  }, [onRemoteStream, onConnectionStateChange, sendMessage]);
-
-  const handleOffer = useCallback(async (from: string, sdp: RTCSessionDescriptionInit) => {
-    const pc = createPeerConnection(from);
-    
-    try {
-      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      
-      sendMessage({
-        type: 'answer',
-        target: from,
-        sdp: pc.localDescription
-      });
-    } catch (err) {
-      console.error('Error handling offer:', err);
-      setError('Error al establecer la conexión');
-    }
-  }, [createPeerConnection, sendMessage]);
-
-  const handleAnswer = useCallback(async (sdp: RTCSessionDescriptionInit) => {
-    const pc = peerConnectionRef.current;
-    if (!pc) return;
-
-    try {
-      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-    } catch (err) {
-      console.error('Error handling answer:', err);
-    }
-  }, []);
-
-  const handleIceCandidate = useCallback(async (candidate: RTCIceCandidateInit) => {
-    const pc = peerConnectionRef.current;
-    if (!pc) return;
-
-    try {
-      await pc.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch (err) {
-      console.error('Error adding ICE candidate:', err);
-    }
-  }, []);
+  }, [cleanupPeerConnection, sendMessage]);
 
   const initiateCall = useCallback(async (targetId: string) => {
     setIsConnecting(true);
     const pc = createPeerConnection(targetId);
 
     try {
-      const offer = await pc.createOffer();
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true
+      });
       await pc.setLocalDescription(offer);
 
       sendMessage({
@@ -209,12 +201,73 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
         target: targetId,
         sdp: pc.localDescription
       });
+      console.log('[WebRTC] Offer sent to:', targetId);
     } catch (err) {
-      console.error('Error creating offer:', err);
+      console.error('[WebRTC] Error creating offer:', err);
       setError('Error al iniciar la llamada');
       setIsConnecting(false);
     }
   }, [createPeerConnection, sendMessage]);
+
+  const handleOffer = useCallback(async (from: string, sdp: RTCSessionDescriptionInit) => {
+    console.log('[WebRTC] Handling offer from:', from);
+    const pc = createPeerConnection(from);
+
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      await flushPendingIceCandidates(pc);
+
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      sendMessage({
+        type: 'answer',
+        target: from,
+        sdp: pc.localDescription
+      });
+      console.log('[WebRTC] Answer sent to:', from);
+    } catch (err) {
+      console.error('[WebRTC] Error handling offer:', err);
+      setError('Error al establecer la conexión');
+    }
+  }, [createPeerConnection, sendMessage, flushPendingIceCandidates]);
+
+  const handleAnswer = useCallback(async (sdp: RTCSessionDescriptionInit) => {
+    const pc = peerConnectionRef.current;
+    if (!pc) {
+      console.warn('[WebRTC] No peer connection for answer');
+      return;
+    }
+
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      console.log('[WebRTC] Remote description set from answer');
+      await flushPendingIceCandidates(pc);
+    } catch (err) {
+      console.error('[WebRTC] Error handling answer:', err);
+    }
+  }, [flushPendingIceCandidates]);
+
+  const handleIceCandidate = useCallback(async (candidate: RTCIceCandidateInit) => {
+    const pc = peerConnectionRef.current;
+    if (!pc) {
+      console.log('[WebRTC] Queuing ICE candidate (no peer connection yet)');
+      pendingIceCandidatesRef.current.push(candidate);
+      return;
+    }
+
+    if (!pc.remoteDescription) {
+      console.log('[WebRTC] Queuing ICE candidate (remote description not set yet)');
+      pendingIceCandidatesRef.current.push(candidate);
+      return;
+    }
+
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (err) {
+      console.error('[WebRTC] Error adding ICE candidate:', err);
+    }
+  }, []);
 
   const startMedia = useCallback(async () => {
     try {
@@ -222,14 +275,26 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
         video: true,
         audio: true
       });
-      
+
       localStreamRef.current = stream;
       setLocalStream(stream);
       return stream;
     } catch (err) {
-      console.error('Error accessing media devices:', err);
-      setError('No se pudo acceder a la cámara o micrófono. Verifica los permisos.');
-      return null;
+      console.error('[WebRTC] Error accessing media devices:', err);
+      try {
+        const audioOnly = await navigator.mediaDevices.getUserMedia({
+          video: false,
+          audio: true
+        });
+        localStreamRef.current = audioOnly;
+        setLocalStream(audioOnly);
+        setIsVideoEnabled(false);
+        return audioOnly;
+      } catch (audioErr) {
+        console.error('[WebRTC] Error accessing audio:', audioErr);
+        setError('No se pudo acceder a la cámara o micrófono. Verifica los permisos.');
+        return null;
+      }
     }
   }, []);
 
@@ -253,9 +318,37 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
     setWaitingPatients(prev => prev.filter(p => p.id !== patientId));
   }, [sendMessage, roomId, appointmentId]);
 
+  const startPingInterval = useCallback(() => {
+    if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+    pingIntervalRef.current = setInterval(() => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, 25000);
+  }, []);
+
+  const stopPingInterval = useCallback(() => {
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
+    }
+  }, []);
+
+  const initiateCallRef = useRef(initiateCall);
+  const handleOfferRef = useRef(handleOffer);
+  const handleAnswerRef = useRef(handleAnswer);
+  const handleIceCandidateRef = useRef(handleIceCandidate);
+
+  useEffect(() => { initiateCallRef.current = initiateCall; }, [initiateCall]);
+  useEffect(() => { handleOfferRef.current = handleOffer; }, [handleOffer]);
+  useEffect(() => { handleAnswerRef.current = handleAnswer; }, [handleAnswer]);
+  useEffect(() => { handleIceCandidateRef.current = handleIceCandidate; }, [handleIceCandidate]);
+
+  const connectRef = useRef<() => Promise<void>>();
+
   const connect = useCallback(async () => {
     console.log('[WebRTC] Attempting to connect...', { roomId, userId, appointmentId });
-    
+
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       console.log('[WebRTC] Already connected to WebSocket');
       return;
@@ -263,6 +356,8 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
 
     if (wsRef.current) {
       wsRef.current.onclose = null;
+      wsRef.current.onerror = null;
+      wsRef.current.onmessage = null;
       wsRef.current.close();
       wsRef.current = null;
     }
@@ -270,20 +365,21 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
     if (!userId) {
       console.error('[WebRTC] No userId provided');
       setError('Debes iniciar sesión para unirte a la videollamada');
-      onError?.('Debes iniciar sesión para unirte a la videollamada');
+      onErrorRef.current?.('Debes iniciar sesión para unirte a la videollamada');
       return;
     }
 
     if (!appointmentId) {
       console.error('[WebRTC] No appointmentId provided');
       setError('ID de cita requerido');
-      onError?.('ID de cita requerido');
+      onErrorRef.current?.('ID de cita requerido');
       return;
     }
 
     setIsConnecting(true);
     setError(null);
     disconnectedManuallyRef.current = false;
+    pendingIceCandidatesRef.current = [];
 
     let stream = localStreamRef.current;
     if (!stream || stream.getTracks().every(t => t.readyState === 'ended')) {
@@ -301,37 +397,39 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
-    
+
     console.log('[WebRTC] Connecting to WebSocket:', wsUrl);
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
       console.log('[WebRTC] WebSocket connected, joining room:', roomId);
-      sendMessage({
+      ws.send(JSON.stringify({
         type: 'join',
         roomId,
         userId,
         appointmentId
-      });
+      }));
+      startPingInterval();
     };
-    
+
     ws.onerror = (event) => {
       console.error('[WebRTC] WebSocket error:', event);
-      setError('Error de conexión WebSocket');
-      setIsConnecting(false);
     };
 
     ws.onmessage = (event) => {
       try {
         const message: SignalingMessage = JSON.parse(event.data);
-        console.log('[WebRTC] Received message:', message.type, message);
+
+        if (message.type === 'pong') return;
+
+        console.log('[WebRTC] Received message:', message.type);
 
         switch (message.type) {
           case 'error':
             console.error('[WebRTC] Server error:', message.message);
             setError(message.message || 'Error de conexión');
-            onError?.(message.message || 'Error de conexión');
+            onErrorRef.current?.(message.message || 'Error de conexión');
             setIsConnecting(false);
             break;
 
@@ -340,10 +438,14 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
             setIsWaiting(false);
             reconnectAttemptRef.current = 0;
             if (message.participants && message.participants.length > 0) {
-              console.log('[WebRTC] Initiating call to:', message.participants[0]);
-              initiateCall(message.participants[0]);
+              const targetPeer = message.participants[0];
+              console.log('[WebRTC] Initiating call to:', targetPeer);
+              setTimeout(() => {
+                initiateCallRef.current(targetPeer);
+              }, 100);
             } else {
               console.log('[WebRTC] No participants yet, waiting for others to join');
+              setIsConnecting(false);
             }
             break;
 
@@ -356,17 +458,17 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
           case 'patient-waiting': {
             const patientId = message.patientId || '';
             const patientName = message.patientName || 'Paciente';
-            console.log('[WebRTC] Patient waiting for admission:', patientId, patientName);
+            console.log('[WebRTC] Patient waiting:', patientId, patientName);
             setWaitingPatients(prev => {
               if (prev.find(p => p.id === patientId)) return prev;
               return [...prev, { id: patientId, name: patientName }];
             });
-            onWaitingPatient?.(patientId, patientName);
+            onWaitingPatientRef.current?.(patientId, patientName);
             break;
           }
 
           case 'patient-admitted':
-            console.log('[WebRTC] Patient has been admitted to the room');
+            console.log('[WebRTC] Patient has been admitted');
             setIsWaiting(false);
             setIsConnecting(true);
             break;
@@ -377,14 +479,14 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
             setIsDenied(true);
             disconnectedManuallyRef.current = true;
             setError('El médico no ha autorizado tu ingreso a la consulta');
-            onError?.('El médico no ha autorizado tu ingreso a la consulta');
+            onErrorRef.current?.('El médico no ha autorizado tu ingreso a la consulta');
             break;
 
           case 'doctor-disconnected':
-            console.log('[WebRTC] Doctor disconnected from the room');
+            console.log('[WebRTC] Doctor disconnected');
             setIsWaiting(false);
             setError('El médico se ha desconectado de la consulta');
-            onError?.('El médico se ha desconectado de la consulta');
+            onErrorRef.current?.('El médico se ha desconectado de la consulta');
             break;
 
           case 'patient-left-waiting': {
@@ -394,63 +496,68 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
           }
 
           case 'user-joined':
-            console.log('[WebRTC] New user joined, waiting for their offer');
+            console.log('[WebRTC] New user joined room');
             break;
 
           case 'offer':
-            console.log('[WebRTC] Received offer from:', message.from);
             if (message.from && message.sdp) {
-              handleOffer(message.from, message.sdp);
+              console.log('[WebRTC] Received offer from:', message.from);
+              handleOfferRef.current(message.from, message.sdp);
             }
             break;
 
           case 'answer':
-            console.log('[WebRTC] Received answer');
             if (message.sdp) {
-              handleAnswer(message.sdp);
+              console.log('[WebRTC] Received answer');
+              handleAnswerRef.current(message.sdp);
             }
             break;
 
           case 'ice-candidate':
-            console.log('[WebRTC] Received ICE candidate');
             if (message.candidate) {
-              handleIceCandidate(message.candidate);
+              handleIceCandidateRef.current(message.candidate);
             }
             break;
 
           case 'user-left':
+            console.log('[WebRTC] User left room');
             setRemoteStream(null);
             setIsConnected(false);
-            if (peerConnectionRef.current) {
-              peerConnectionRef.current.close();
-              peerConnectionRef.current = null;
-            }
+            cleanupPeerConnection();
             break;
         }
       } catch (err) {
-        console.error('Error parsing WebSocket message:', err);
+        console.error('[WebRTC] Error parsing message:', err);
       }
     };
 
-    ws.onclose = () => {
-      console.log('[WebRTC] WebSocket closed');
+    ws.onclose = (event) => {
+      console.log('[WebRTC] WebSocket closed, code:', event.code, 'reason:', event.reason);
+      stopPingInterval();
+
       if (!disconnectedManuallyRef.current && roomId && userId && appointmentId) {
         if (reconnectAttemptRef.current < maxReconnectAttempts) {
           const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptRef.current), 10000);
           reconnectAttemptRef.current += 1;
           console.log(`[WebRTC] Reconnecting in ${delay}ms (attempt ${reconnectAttemptRef.current}/${maxReconnectAttempts})`);
           reconnectTimeoutRef.current = setTimeout(() => {
-            connect();
+            connectRef.current?.();
           }, delay);
         } else {
           setIsConnected(false);
+          setIsConnecting(false);
           setError('Se perdió la conexión. Por favor recarga la página.');
         }
       } else {
         setIsConnected(false);
+        setIsConnecting(false);
       }
     };
-  }, [roomId, userId, appointmentId, startMedia, sendMessage, initiateCall, handleOffer, handleAnswer, handleIceCandidate]);
+  }, [roomId, userId, appointmentId, startMedia, sendMessage, cleanupPeerConnection, startPingInterval, stopPingInterval]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   const disconnect = useCallback(() => {
     disconnectedManuallyRef.current = true;
@@ -460,19 +567,19 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
       reconnectTimeoutRef.current = null;
     }
 
+    stopPingInterval();
+
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
       localStreamRef.current = null;
       setLocalStream(null);
     }
 
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
+    cleanupPeerConnection();
 
     if (wsRef.current) {
       sendMessage({ type: 'leave' });
+      wsRef.current.onclose = null;
       wsRef.current.close();
       wsRef.current = null;
     }
@@ -483,7 +590,7 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
     setIsWaiting(false);
     setIsDenied(false);
     setWaitingPatients([]);
-  }, [sendMessage]);
+  }, [sendMessage, cleanupPeerConnection, stopPingInterval]);
 
   const toggleMute = useCallback(() => {
     if (localStreamRef.current) {
