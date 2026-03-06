@@ -443,20 +443,20 @@ export default function ConsultationPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col lg:flex-row gap-4">
+    <div className="h-[calc(100vh-8rem)] flex flex-col lg:flex-row gap-4 overflow-y-auto lg:overflow-hidden">
       {/* Main Video Area */}
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-none lg:flex-1 flex flex-col min-h-0">
         {/* Video Container */}
-        <div className="flex-1 bg-muted rounded-xl relative overflow-hidden min-h-[300px]">
+        <div className="flex-1 bg-muted rounded-xl relative overflow-hidden min-h-[200px] sm:min-h-[300px]">
           {/* Denied State for Patient */}
           {isDenied ? (
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center max-w-md px-6">
-                <div className="w-20 h-20 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-6">
-                  <UserX className="h-10 w-10 text-destructive" />
+              <div className="text-center max-w-md px-4 sm:px-6">
+                <div className="w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-3 sm:mb-6">
+                  <UserX className="h-7 w-7 sm:h-10 sm:w-10 text-destructive" />
                 </div>
-                <h3 className="text-xl font-semibold mb-2" data-testid="text-denied-title">Ingreso no autorizado</h3>
-                <p className="text-muted-foreground mb-6" data-testid="text-denied-message">
+                <h3 className="text-lg sm:text-xl font-semibold mb-2" data-testid="text-denied-title">Ingreso no autorizado</h3>
+                <p className="text-sm sm:text-base text-muted-foreground mb-4 sm:mb-6" data-testid="text-denied-message">
                   El médico no ha autorizado tu ingreso a esta consulta. Si crees que es un error, contacta a tu médico.
                 </p>
                 <Button variant="outline" onClick={() => navigate("/appointments")} data-testid="button-back-from-denied">
@@ -466,12 +466,12 @@ export default function ConsultationPage() {
             </div>
           ) : isWaiting ? (
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center max-w-md px-6">
-                <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-6">
-                  <ShieldCheck className="h-10 w-10 text-primary" />
+              <div className="text-center max-w-md px-4 sm:px-6">
+                <div className="w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3 sm:mb-6">
+                  <ShieldCheck className="h-7 w-7 sm:h-10 sm:w-10 text-primary" />
                 </div>
-                <h3 className="text-xl font-semibold mb-2" data-testid="text-waiting-room-title">Sala de espera</h3>
-                <p className="text-muted-foreground mb-6" data-testid="text-waiting-room-message">
+                <h3 className="text-lg sm:text-xl font-semibold mb-2" data-testid="text-waiting-room-title">Sala de espera</h3>
+                <p className="text-sm sm:text-base text-muted-foreground mb-4 sm:mb-6" data-testid="text-waiting-room-message">
                   Estás en la sala de espera. El Dr. {doctor.userName} debe autorizar tu ingreso a la consulta.
                 </p>
                 <div className="flex items-center justify-center gap-2 text-muted-foreground">
@@ -481,16 +481,16 @@ export default function ConsultationPage() {
               </div>
             </div>
           ) : !hasJoinedCall ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <Avatar className="h-32 w-32 mx-auto mb-4">
+            <div className="absolute inset-0 flex items-center justify-center z-10">
+              <div className="text-center px-4">
+                <Avatar className="h-20 w-20 sm:h-32 sm:w-32 mx-auto mb-3 sm:mb-4">
                   <AvatarImage src={isDoctor ? patient.userImage : doctor.userImage} />
-                  <AvatarFallback className="bg-primary/10 text-primary text-4xl">
+                  <AvatarFallback className="bg-primary/10 text-primary text-2xl sm:text-4xl">
                     {isDoctor ? (patient.userName?.[0] || "P") : (doctor.userName?.[0] || "DR")}
                   </AvatarFallback>
                 </Avatar>
-                <h3 className="text-xl font-semibold">{isDoctor ? patient.userName : doctor.userName}</h3>
-                <p className="text-muted-foreground mb-4">{isDoctor ? "Paciente" : doctor.specialty}</p>
+                <h3 className="text-lg sm:text-xl font-semibold">{isDoctor ? patient.userName : doctor.userName}</h3>
+                <p className="text-sm sm:text-base text-muted-foreground mb-3 sm:mb-4">{isDoctor ? "Paciente" : doctor.specialty}</p>
                 <Button 
                   size="lg" 
                   onClick={handleJoinCall}
@@ -516,15 +516,15 @@ export default function ConsultationPage() {
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <Avatar className="h-32 w-32 mx-auto mb-4">
+              <div className="text-center px-4">
+                <Avatar className="h-20 w-20 sm:h-32 sm:w-32 mx-auto mb-3 sm:mb-4">
                   <AvatarImage src={isDoctor ? patient.userImage : doctor.userImage} />
-                  <AvatarFallback className="bg-primary/10 text-primary text-4xl">
+                  <AvatarFallback className="bg-primary/10 text-primary text-2xl sm:text-4xl">
                     {isDoctor ? (patient.userName?.[0] || "P") : (doctor.userName?.[0] || "DR")}
                   </AvatarFallback>
                 </Avatar>
-                <h3 className="text-xl font-semibold">{isDoctor ? patient.userName : doctor.userName}</h3>
-                <p className="text-muted-foreground">{isDoctor ? "Paciente" : doctor.specialty}</p>
+                <h3 className="text-lg sm:text-xl font-semibold">{isDoctor ? patient.userName : doctor.userName}</h3>
+                <p className="text-sm sm:text-base text-muted-foreground">{isDoctor ? "Paciente" : doctor.specialty}</p>
                 {isConnecting && (
                   <div className="flex items-center justify-center gap-2 mt-4 text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -536,7 +536,7 @@ export default function ConsultationPage() {
           )}
 
           {/* Local Video (Picture-in-Picture) */}
-          <div className="absolute bottom-4 right-4 w-40 h-28 bg-background rounded-lg border overflow-hidden shadow-lg">
+          <div className="absolute bottom-2 right-2 w-24 h-16 sm:bottom-4 sm:right-4 sm:w-40 sm:h-28 bg-background rounded-lg border overflow-hidden shadow-lg">
             {localStream ? (
               <video 
                 ref={localVideoRef}
@@ -631,53 +631,53 @@ export default function ConsultationPage() {
         </div>
 
         {/* Controls */}
-        <div className="flex items-center justify-center gap-4 py-4">
+        <div className="flex items-center justify-center gap-3 sm:gap-4 py-2 sm:py-4">
           <Button
             variant={isMuted ? "destructive" : "outline"}
             size="icon"
-            className="h-12 w-12 rounded-full"
+            className="h-10 w-10 sm:h-12 sm:w-12 rounded-full"
             onClick={toggleMute}
             disabled={!hasJoinedCall || isWaiting}
             data-testid="button-mute"
           >
-            {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+            {isMuted ? <MicOff className="h-4 w-4 sm:h-5 sm:w-5" /> : <Mic className="h-4 w-4 sm:h-5 sm:w-5" />}
           </Button>
           <Button
             variant={!isVideoEnabled ? "destructive" : "outline"}
             size="icon"
-            className="h-12 w-12 rounded-full"
+            className="h-10 w-10 sm:h-12 sm:w-12 rounded-full"
             onClick={toggleVideo}
             disabled={!hasJoinedCall || isWaiting}
             data-testid="button-video"
           >
-            {isVideoEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+            {isVideoEnabled ? <Video className="h-4 w-4 sm:h-5 sm:w-5" /> : <VideoOff className="h-4 w-4 sm:h-5 sm:w-5" />}
           </Button>
           {isDoctor && (
             <Button
               variant={isRecording ? "default" : "outline"}
               size="icon"
-              className="h-12 w-12 rounded-full"
+              className="h-10 w-10 sm:h-12 sm:w-12 rounded-full"
               onClick={handleToggleRecording}
               data-testid="button-record"
             >
-              <Activity className={`h-5 w-5 ${isRecording ? "animate-pulse" : ""}`} />
+              <Activity className={`h-4 w-4 sm:h-5 sm:w-5 ${isRecording ? "animate-pulse" : ""}`} />
             </Button>
           )}
           <Button
             variant="destructive"
             size="icon"
-            className="h-12 w-12 rounded-full"
+            className="h-10 w-10 sm:h-12 sm:w-12 rounded-full"
             onClick={handleEndCall}
             disabled={!hasJoinedCall || isWaiting}
             data-testid="button-end-call"
           >
-            <PhoneOff className="h-5 w-5" />
+            <PhoneOff className="h-4 w-4 sm:h-5 sm:w-5" />
           </Button>
         </div>
       </div>
 
       {/* Sidebar - Clinical Information */}
-      <div className="w-full lg:w-96 flex flex-col min-h-0">
+      <div className="w-full lg:w-96 flex flex-col min-h-[300px] lg:min-h-0">
         <Tabs defaultValue="patient" className="flex-1 flex flex-col min-h-0">
           <TabsList className="grid grid-cols-3">
             <TabsTrigger value="patient" data-testid="tab-patient">
