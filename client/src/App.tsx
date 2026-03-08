@@ -58,7 +58,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
+function ProtectedRoute({ component: Component, fullScreen }: { component: React.ComponentType; fullScreen?: boolean }) {
   const { isAuthenticated, isLoading } = useAuth();
   const [location, navigate] = useLocation();
 
@@ -80,6 +80,14 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 
   if (shouldRedirectToLogin) {
     return null;
+  }
+
+  if (fullScreen) {
+    return (
+      <div className="flex flex-col h-screen w-full overflow-hidden">
+        <Component />
+      </div>
+    );
   }
 
   return (
@@ -160,7 +168,7 @@ function Router() {
         <ProtectedRoute component={BookAppointmentPage} />
       </Route>
       <Route path="/consultation/:id">
-        <ProtectedRoute component={ConsultationPage} />
+        <ProtectedRoute component={ConsultationPage} fullScreen />
       </Route>
       <Route path="/records">
         <ProtectedRoute component={RecordsPage} />

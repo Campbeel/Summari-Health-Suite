@@ -37,8 +37,10 @@ import {
   Download,
   File,
   Image,
-  X
+  X,
+  ArrowLeft
 } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface ConsultationData {
   appointment: {
@@ -527,7 +529,7 @@ export default function ConsultationPage() {
 
   if (isProcessing) {
     return (
-      <div className="h-[calc(100vh-8rem)] flex items-center justify-center" data-testid="processing-overlay">
+      <div className="h-screen flex items-center justify-center" data-testid="processing-overlay">
         <div className="text-center max-w-md px-6">
           <Loader2 className="h-16 w-16 animate-spin text-primary mx-auto mb-6" />
           <h2 className="text-xl font-semibold mb-2">Procesando consulta</h2>
@@ -544,7 +546,28 @@ export default function ConsultationPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col lg:flex-row gap-4 overflow-y-auto lg:overflow-hidden">
+    <div className="h-screen flex flex-col overflow-hidden">
+      <header className="flex items-center justify-between gap-3 px-4 py-2 border-b bg-background/80 backdrop-blur-md shrink-0 z-10">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate(isDoctor ? "/doctor/appointments" : "/appointments")}
+            data-testid="button-back-consultation"
+          >
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Volver
+          </Button>
+          <div className="hidden sm:block text-sm">
+            <span className="font-medium">Consulta</span>
+            <span className="text-muted-foreground ml-1">
+              — {isDoctor ? patient.userName : `Dr. ${doctor.userName}`}
+            </span>
+          </div>
+        </div>
+        <ThemeToggle />
+      </header>
+      <div className="flex-1 flex flex-col lg:flex-row gap-4 p-4 overflow-y-auto lg:overflow-hidden">
       {/* Main Video Area */}
       <div className="flex-none lg:flex-1 flex flex-col min-h-0">
         {/* Video Container */}
@@ -1080,6 +1103,7 @@ export default function ConsultationPage() {
           )}
         </Tabs>
       </div>
+    </div>
     </div>
   );
 }
