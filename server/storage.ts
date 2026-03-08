@@ -29,7 +29,10 @@ import {
   type InsertWearableConnection,
   examOrders,
   type ExamOrder,
-  type InsertExamOrder
+  type InsertExamOrder,
+  consultationMessages,
+  type ConsultationMessage,
+  type InsertConsultationMessage
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, sql, notInArray } from "drizzle-orm";
 
@@ -238,6 +241,10 @@ export interface IStorage {
   getExamOrdersByRecordId(clinicalRecordId: number): Promise<ExamOrder[]>;
   deleteExamOrdersByRecordId(clinicalRecordId: number): Promise<void>;
   createExamOrder(examOrder: InsertExamOrder): Promise<ExamOrder>;
+
+  // Consultation Messages
+  getConsultationMessages(appointmentId: number): Promise<ConsultationMessage[]>;
+  createConsultationMessage(message: InsertConsultationMessage): Promise<ConsultationMessage>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -934,6 +941,18 @@ export class DatabaseStorage implements IStorage {
 
   async createExamOrder(examOrder: InsertExamOrder): Promise<ExamOrder> {
     const [created] = await db.insert(examOrders).values(examOrder).returning();
+    return created;
+  }
+
+  // Consultation Messages
+  async getConsultationMessages(appointmentId: number): Promise<ConsultationMessage[]> {
+    return await db.select().from(consultationMessages)
+      .where(eq(consultationMessages.appointmentId, appointmentId))
+      .orderBy(consultationMessages.createdAt);
+  }
+
+  async createConsultationMessage(message: InsertConsultationMessage): Promise<ConsultationMessage> {
+    const [created] = await db.insert(consultationMessages).values(message).returning();
     return created;
   }
 }

@@ -1,7 +1,10 @@
-import type { Express, Request, Response } from "express";
+import express, { type Express, type Request, type Response } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { z } from "zod";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 import { storage } from "./storage";
 import { isAuthenticated, registerAuthRoutes } from "./auth";
 import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText, verifyFlowSignature } from "./flow";
@@ -1723,6 +1726,164 @@ ${latest.map(l => `- ${l.metricType}: ${l.value} ${l.unit} (${new Date(l.recorde
     } catch (error: any) {
       console.error("AI analysis error:", error);
       res.status(500).json({ error: "Error al generar análisis de IA" });
+    }
+  });
+
+  // Chat file upload configuration
+  const uploadsDir = path.resolve(process.cwd(), 'uploads', 'chat');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  const allowedMimeTypes = [
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+    'application/pdf',
+    'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/plain', 'text/csv'
+  ];
+
+  const chatUpload = multer({
+    storage: multer.diskStorage({
+      destination: (_req, _file, cb) => cb(null, uploadsDir),
+      filename: (_req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        const ext = path.extname(file.originalname);
+        cb(null, uniqueSuffix + ext);
+      }
+    }),
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      if (allowedMimeTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Tipo de archivo no permitido'));
+      }
+    }
+  });
+
+  app.get('/uploads/chat/:filename', (req: Request, res: Response) => {
+    let token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token && req.query.token) {
+      token = req.query.token as string;
+    }
+    if (!token) {
+      return res.status(401).json({ error: 'No autorizado' });
+    }
+    try {
+      const jwt = require('jsonwebtoken');
+      jwt.verify(token, process.env.SESSION_SECRET!);
+    } catch {
+      return res.status(401).json({ error: 'Token inválido' });
+    }
+    const filename = path.basename(req.params.filename);
+    const filePath = path.join(uploadsDir, filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Archivo no encontrado' });
+    }
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    res.sendFile(filePath);
+  });
+
+  // Consultation Chat Messages
+  app.get("/api/consultations/:id/messages", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment) return res.status(404).json({ error: "Cita no encontrada" });
+
+      const userId = (req as any).userId;
+      const patient = await storage.getPatientByUserId(userId);
+      const doctor = await storage.getDoctorByUserId(userId);
+      const isPatient = patient && appointment.patientId === patient.id;
+      const isDoctor = doctor && appointment.doctorId === doctor.id;
+      if (!isPatient && !isDoctor) return res.status(403).json({ error: "No autorizado" });
+
+      const messages = await storage.getConsultationMessages(appointmentId);
+
+      const userCache = new Map<string, { firstName: string; lastName: string }>();
+      const enriched = await Promise.all(messages.map(async (msg) => {
+        if (!userCache.has(msg.senderUserId)) {
+          const u = await storage.getUser(msg.senderUserId);
+          userCache.set(msg.senderUserId, {
+            firstName: u?.firstName || '',
+            lastName: u?.lastName || ''
+          });
+        }
+        const sender = userCache.get(msg.senderUserId)!;
+        return {
+          ...msg,
+          senderName: `${sender.firstName} ${sender.lastName}`.trim() || 'Usuario'
+        };
+      }));
+
+      res.json(enriched);
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+      res.status(500).json({ error: "Error al obtener mensajes" });
+    }
+  });
+
+  app.post("/api/consultations/:id/messages", isAuthenticated, chatUpload.single('file'), async (req: Request, res: Response) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment) return res.status(404).json({ error: "Cita no encontrada" });
+
+      const userId = (req as any).userId;
+      const patient = await storage.getPatientByUserId(userId);
+      const doctor = await storage.getDoctorByUserId(userId);
+      const isPatient = patient && appointment.patientId === patient.id;
+      const isDoctorUser = doctor && appointment.doctorId === doctor.id;
+      if (!isPatient && !isDoctorUser) return res.status(403).json({ error: "No autorizado" });
+
+      const content = req.body.content || null;
+      const file = req.file;
+
+      if (!content && !file) {
+        return res.status(400).json({ error: "Debe enviar un mensaje o archivo" });
+      }
+
+      const senderRole = isDoctorUser ? 'doctor' : 'patient';
+      const messageData: any = {
+        appointmentId,
+        senderUserId: userId,
+        senderRole,
+        content,
+      };
+
+      if (file) {
+        messageData.fileName = file.originalname;
+        messageData.fileUrl = `/uploads/chat/${file.filename}`;
+        messageData.fileType = file.mimetype;
+        messageData.fileSize = file.size;
+      }
+
+      const message = await storage.createConsultationMessage(messageData);
+
+      const user = await storage.getUser(userId);
+      const enrichedMessage = {
+        ...message,
+        senderName: `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Usuario'
+      };
+
+      const roomId = `consultation-${appointmentId}`;
+      const room = signalingRooms.get(roomId);
+      if (room) {
+        const chatPayload = JSON.stringify({
+          type: 'chat-message',
+          message: enrichedMessage
+        });
+        room.participants.forEach((client) => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(chatPayload);
+          }
+        });
+      }
+
+      res.json(enrichedMessage);
+    } catch (error) {
+      console.error("Error sending message:", error);
+      res.status(500).json({ error: "Error al enviar mensaje" });
     }
   });
 

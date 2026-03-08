@@ -261,7 +261,26 @@ export const medicalInstructionsRelations = relations(medicalInstructions, ({ on
   }),
 }));
 
+// Consultation Chat Messages
+export const consultationMessages = pgTable("consultation_messages", {
+  id: serial("id").primaryKey(),
+  appointmentId: integer("appointment_id").notNull().references(() => appointments.id),
+  senderUserId: varchar("sender_user_id").notNull(),
+  senderRole: text("sender_role").notNull(), // 'doctor' | 'patient'
+  content: text("content"),
+  fileName: text("file_name"),
+  fileUrl: text("file_url"),
+  fileType: text("file_type"),
+  fileSize: integer("file_size"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Insert schemas
+export const insertConsultationMessageSchema = createInsertSchema(consultationMessages).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertDoctorSchema = createInsertSchema(doctors).omit({
   id: true,
   createdAt: true,
@@ -328,3 +347,5 @@ export type WearableConnection = typeof wearableConnections.$inferSelect;
 export type InsertWearableConnection = z.infer<typeof insertWearableConnectionSchema>;
 export type ExamOrder = typeof examOrders.$inferSelect;
 export type InsertExamOrder = z.infer<typeof insertExamOrderSchema>;
+export type ConsultationMessage = typeof consultationMessages.$inferSelect;
+export type InsertConsultationMessage = z.infer<typeof insertConsultationMessageSchema>;

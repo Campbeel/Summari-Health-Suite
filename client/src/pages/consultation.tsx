@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useWebRTC, WaitingPatient } from "@/hooks/use-webrtc";
@@ -30,7 +31,13 @@ import {
   Phone,
   UserCheck,
   UserX,
-  ShieldCheck
+  ShieldCheck,
+  MessageCircle,
+  Paperclip,
+  Download,
+  File,
+  Image,
+  X
 } from "lucide-react";
 
 interface ConsultationData {
@@ -69,6 +76,20 @@ interface ConsultationData {
   };
 }
 
+interface ChatMessage {
+  id: number;
+  appointmentId: number;
+  senderUserId: string;
+  senderRole: string;
+  senderName: string;
+  content: string | null;
+  fileName: string | null;
+  fileUrl: string | null;
+  fileType: string | null;
+  fileSize: number | null;
+  createdAt: string;
+}
+
 export default function ConsultationPage() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
@@ -79,6 +100,12 @@ export default function ConsultationPage() {
   const [notes, setNotes] = useState("");
   const [hasJoinedCall, setHasJoinedCall] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatFile, setChatFile] = useState<globalThis.File | null>(null);
+  const [isSendingChat, setIsSendingChat] = useState(false);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -142,6 +169,12 @@ export default function ConsultationPage() {
       toast({
         title: "Paciente en sala de espera",
         description: `${patientName} está esperando para ingresar a la consulta`,
+      });
+    },
+    onChatMessage: (message: ChatMessage) => {
+      setChatMessages(prev => {
+        if (prev.find(m => m.id === message.id)) return prev;
+        return [...prev, message];
       });
     }
   });
@@ -400,6 +433,74 @@ export default function ConsultationPage() {
       description: "Se ha denegado el ingreso del paciente",
       variant: "destructive",
     });
+  };
+
+  useEffect(() => {
+    if (!id) return;
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    fetch(`/api/consultations/${id}/messages`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(res => res.ok ? res.json() : [])
+      .then(msgs => setChatMessages(msgs))
+      .catch(() => {});
+  }, [id]);
+
+
+  useEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [chatMessages]);
+
+  const sendChatMessage = async () => {
+    if ((!chatInput.trim() && !chatFile) || isSendingChat) return;
+    setIsSendingChat(true);
+    try {
+      const token = localStorage.getItem('token');
+      const formData = new FormData();
+      if (chatInput.trim()) formData.append('content', chatInput.trim());
+      if (chatFile) formData.append('file', chatFile);
+
+      const res = await fetch(`/api/consultations/${id}/messages`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+      if (!res.ok) throw new Error('Failed to send');
+      const msg = await res.json();
+      setChatMessages(prev => {
+        if (prev.find(m => m.id === msg.id)) return prev;
+        return [...prev, msg];
+      });
+      setChatInput("");
+      setChatFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    } catch {
+      toast({
+        title: "Error",
+        description: "No se pudo enviar el mensaje",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSendingChat(false);
+    }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const isImageFile = (type: string | null) => type?.startsWith('image/');
+  const getAuthFileUrl = (url: string | null) => {
+    if (!url) return '';
+    const token = localStorage.getItem('token');
+    if (!token) return url;
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}token=${encodeURIComponent(token)}`;
   };
 
   if (isLoading) {
@@ -678,138 +779,305 @@ export default function ConsultationPage() {
 
       {/* Sidebar - Clinical Information */}
       <div className="w-full lg:w-96 flex flex-col min-h-[300px] lg:min-h-0">
-        <Tabs defaultValue="patient" className="flex-1 flex flex-col min-h-0">
-          <TabsList className="grid grid-cols-3">
-            <TabsTrigger value="patient" data-testid="tab-patient">
-              <User className="h-4 w-4 mr-1" />
-              Paciente
+        <Tabs defaultValue="chat" className="flex-1 flex flex-col min-h-0">
+          <TabsList className={`grid ${isDoctor ? 'grid-cols-4' : 'grid-cols-2'}`}>
+            <TabsTrigger value="chat" data-testid="tab-chat">
+              <MessageCircle className="h-4 w-4 mr-1" />
+              Chat
             </TabsTrigger>
-            <TabsTrigger value="notes" data-testid="tab-notes">
-              <FileText className="h-4 w-4 mr-1" />
-              Notas
-            </TabsTrigger>
-            <TabsTrigger value="transcript" data-testid="tab-transcript">
-              <Mic className="h-4 w-4 mr-1" />
-              Grabación
-            </TabsTrigger>
+            {isDoctor && (
+              <TabsTrigger value="patient" data-testid="tab-patient">
+                <User className="h-4 w-4 mr-1" />
+                Paciente
+              </TabsTrigger>
+            )}
+            {isDoctor && (
+              <TabsTrigger value="notes" data-testid="tab-notes">
+                <FileText className="h-4 w-4 mr-1" />
+                Notas
+              </TabsTrigger>
+            )}
+            {!isDoctor ? (
+              <TabsTrigger value="info" data-testid="tab-info">
+                <User className="h-4 w-4 mr-1" />
+                Médico
+              </TabsTrigger>
+            ) : (
+              <TabsTrigger value="transcript" data-testid="tab-transcript">
+                <Mic className="h-4 w-4 mr-1" />
+                Grabación
+              </TabsTrigger>
+            )}
           </TabsList>
 
-          <TabsContent value="patient" className="flex-1 mt-4 min-h-0">
-            <Card className="h-full">
-              <ScrollArea className="h-full">
-                <CardContent className="p-4 space-y-4">
-                  {/* Patient Info */}
-                  <div className="flex items-center gap-3 pb-4 border-b" data-testid="patient-info">
-                    <Avatar className="h-12 w-12">
-                      <AvatarImage src={patient.userImage} />
-                      <AvatarFallback className="bg-secondary/10 text-secondary">
-                        {patient.userName?.[0] || "P"}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <h3 className="font-semibold" data-testid="text-patient-name">{patient.userName}</h3>
-                      <p className="text-sm text-muted-foreground" data-testid="text-patient-details">
-                        {patient.gender || "No especificado"} {patient.bloodType ? `\u2022 ${patient.bloodType}` : ""}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Allergies */}
-                  {patient.allergies && patient.allergies.length > 0 && (
-                    <div data-testid="patient-allergies">
-                      <h4 className="text-sm font-medium text-destructive mb-2 flex items-center gap-1">
-                        <AlertCircle className="h-4 w-4" />
-                        Alergias
-                      </h4>
-                      <div className="flex flex-wrap gap-1">
-                        {patient.allergies.map((allergy, i) => (
-                          <Badge key={i} variant="destructive" className="text-xs" data-testid={`badge-allergy-${i}`}>
-                            {allergy}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Medical History */}
-                  {patient.medicalHistory && (
-                    <div>
-                      <h4 className="text-sm font-medium mb-2">Historial Médico</h4>
-                      <p className="text-sm text-muted-foreground">{patient.medicalHistory}</p>
-                    </div>
-                  )}
-
-                  {/* Chief Complaint */}
-                  {appointment.notes && (
-                    <div>
-                      <h4 className="text-sm font-medium mb-2">Motivo de Consulta</h4>
-                      <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
-                        {appointment.notes}
-                      </p>
-                    </div>
-                  )}
-                </CardContent>
-              </ScrollArea>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="notes" className="flex-1 mt-4 min-h-0">
+          {/* Chat Tab */}
+          <TabsContent value="chat" className="flex-1 mt-4 min-h-0">
             <Card className="h-full flex flex-col">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Notas de Consulta</CardTitle>
-              </CardHeader>
-              <CardContent className="flex-1 flex flex-col gap-4 pb-4">
-                <Textarea
-                  placeholder="Escribe tus notas aquí..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="flex-1 min-h-[200px] resize-none"
-                  data-testid="input-consultation-notes"
-                />
-                <Button className="w-full" data-testid="button-save-notes">
-                  <Send className="h-4 w-4 mr-2" />
-                  Guardar notas
-                </Button>
+              <CardContent className="flex-1 flex flex-col p-0 min-h-0">
+                <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-3 space-y-3" data-testid="chat-messages">
+                  {chatMessages.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <MessageCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">Envía un mensaje o archivo para iniciar la conversación</p>
+                    </div>
+                  )}
+                  {chatMessages.map((msg) => {
+                    const isOwn = msg.senderUserId === userId;
+                    return (
+                      <div
+                        key={msg.id}
+                        className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}
+                        data-testid={`chat-message-${msg.id}`}
+                      >
+                        <div className={`max-w-[80%] rounded-lg p-2.5 ${isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+                          <p className={`text-xs font-medium mb-1 ${isOwn ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                            {msg.senderName}
+                            {msg.senderRole === 'doctor' && <Badge variant="outline" className="ml-1 text-[10px] py-0 px-1 border-current">Dr.</Badge>}
+                          </p>
+                          {msg.content && (
+                            <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                          )}
+                          {msg.fileUrl && (
+                            <div className="mt-1.5">
+                              {isImageFile(msg.fileType) ? (
+                                <a href={getAuthFileUrl(msg.fileUrl)} target="_blank" rel="noopener noreferrer">
+                                  <img
+                                    src={getAuthFileUrl(msg.fileUrl)}
+                                    alt={msg.fileName || 'imagen'}
+                                    className="max-w-full rounded-md max-h-48 object-cover"
+                                    data-testid={`chat-image-${msg.id}`}
+                                  />
+                                </a>
+                              ) : (
+                                <a
+                                  href={getAuthFileUrl(msg.fileUrl)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={`flex items-center gap-2 p-2 rounded-md ${isOwn ? 'bg-primary-foreground/10' : 'bg-background'}`}
+                                  data-testid={`chat-file-${msg.id}`}
+                                >
+                                  <File className="h-4 w-4 flex-shrink-0" />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-medium truncate">{msg.fileName}</p>
+                                    {msg.fileSize && <p className="text-[10px] opacity-70">{formatFileSize(msg.fileSize)}</p>}
+                                  </div>
+                                  <Download className="h-3.5 w-3.5 flex-shrink-0" />
+                                </a>
+                              )}
+                            </div>
+                          )}
+                          <p className={`text-[10px] mt-1 ${isOwn ? 'text-primary-foreground/60' : 'text-muted-foreground'}`}>
+                            {new Date(msg.createdAt).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {chatFile && (
+                  <div className="mx-3 mb-1 flex items-center gap-2 bg-muted rounded-md px-2 py-1.5 text-sm">
+                    <Paperclip className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    <span className="truncate flex-1 text-xs">{chatFile.name}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5"
+                      onClick={() => { setChatFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                      data-testid="button-remove-file"
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 p-3 border-t">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    onChange={(e) => { if (e.target.files?.[0]) setChatFile(e.target.files[0]); }}
+                    data-testid="input-chat-file"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 flex-shrink-0"
+                    onClick={() => fileInputRef.current?.click()}
+                    data-testid="button-attach-file"
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </Button>
+                  <Input
+                    placeholder="Escribe un mensaje..."
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
+                    className="flex-1 h-8 text-sm"
+                    data-testid="input-chat-message"
+                  />
+                  <Button
+                    size="icon"
+                    className="h-8 w-8 flex-shrink-0"
+                    onClick={sendChatMessage}
+                    disabled={isSendingChat || (!chatInput.trim() && !chatFile)}
+                    data-testid="button-send-chat"
+                  >
+                    {isSendingChat ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="transcript" className="flex-1 mt-4 min-h-0">
-            <Card className="h-full">
-              <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  Grabación
-                  {isRecording && (
-                    <Badge variant="outline" className="text-xs">
-                      <span className="w-1.5 h-1.5 bg-destructive rounded-full mr-1 animate-pulse" />
-                      Grabando
-                    </Badge>
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <ScrollArea className="h-[calc(100%-4rem)]">
-                <CardContent className="p-4">
-                  <div className="text-center py-8 text-muted-foreground" data-testid="transcription-empty-state">
-                    <Mic className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">
-                      {isRecording
-                        ? "Grabando audio de la consulta. La transcripción se generará al finalizar."
-                        : isDoctor
-                          ? "La grabación se inicia automáticamente al unirse a la consulta"
-                          : "El médico controla la grabación de la consulta"}
-                    </p>
-                    {isRecording && (
-                      <p className="text-xs mt-2 text-muted-foreground">
-                        {audioChunksRef.current.length > 0 
-                          ? `${audioChunksRef.current.length} fragmentos grabados`
-                          : "Esperando audio..."}
-                      </p>
+          {/* Patient Info Tab (Doctor only) */}
+          {isDoctor && (
+            <TabsContent value="patient" className="flex-1 mt-4 min-h-0">
+              <Card className="h-full">
+                <ScrollArea className="h-full">
+                  <CardContent className="p-4 space-y-4">
+                    <div className="flex items-center gap-3 pb-4 border-b" data-testid="patient-info">
+                      <Avatar className="h-12 w-12">
+                        <AvatarImage src={patient.userImage} />
+                        <AvatarFallback className="bg-secondary/10 text-secondary">
+                          {patient.userName?.[0] || "P"}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <h3 className="font-semibold" data-testid="text-patient-name">{patient.userName}</h3>
+                        <p className="text-sm text-muted-foreground" data-testid="text-patient-details">
+                          {patient.gender || "No especificado"} {patient.bloodType ? `\u2022 ${patient.bloodType}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    {patient.allergies && patient.allergies.length > 0 && (
+                      <div data-testid="patient-allergies">
+                        <h4 className="text-sm font-medium text-destructive mb-2 flex items-center gap-1">
+                          <AlertCircle className="h-4 w-4" />
+                          Alergias
+                        </h4>
+                        <div className="flex flex-wrap gap-1">
+                          {patient.allergies.map((allergy, i) => (
+                            <Badge key={i} variant="destructive" className="text-xs" data-testid={`badge-allergy-${i}`}>
+                              {allergy}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
                     )}
-                  </div>
+                    {patient.medicalHistory && (
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">Historial Médico</h4>
+                        <p className="text-sm text-muted-foreground">{patient.medicalHistory}</p>
+                      </div>
+                    )}
+                    {appointment.notes && (
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">Motivo de Consulta</h4>
+                        <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
+                          {appointment.notes}
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </ScrollArea>
+              </Card>
+            </TabsContent>
+          )}
+
+          {/* Doctor Info Tab (Patient only) */}
+          {!isDoctor && (
+            <TabsContent value="info" className="flex-1 mt-4 min-h-0">
+              <Card className="h-full">
+                <ScrollArea className="h-full">
+                  <CardContent className="p-4 space-y-4">
+                    <div className="flex items-center gap-3 pb-4 border-b" data-testid="doctor-info">
+                      <Avatar className="h-12 w-12">
+                        <AvatarImage src={doctor.userImage} />
+                        <AvatarFallback className="bg-primary/10 text-primary">
+                          {doctor.userName?.[0] || "DR"}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <h3 className="font-semibold" data-testid="text-doctor-name">Dr. {doctor.userName}</h3>
+                        <p className="text-sm text-muted-foreground" data-testid="text-doctor-specialty">{doctor.specialty}</p>
+                      </div>
+                    </div>
+                    {appointment.notes && (
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">Motivo de Consulta</h4>
+                        <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
+                          {appointment.notes}
+                        </p>
+                      </div>
+                    )}
+                    <div>
+                      <h4 className="text-sm font-medium mb-2">Detalles de la cita</h4>
+                      <div className="text-sm text-muted-foreground space-y-1">
+                        <p><Clock className="h-3.5 w-3.5 inline mr-1" />{appointment.scheduledDate} a las {appointment.scheduledTime.slice(0, 5)}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </ScrollArea>
+              </Card>
+            </TabsContent>
+          )}
+
+          {/* Notes Tab (Doctor only) */}
+          {isDoctor && (
+            <TabsContent value="notes" className="flex-1 mt-4 min-h-0">
+              <Card className="h-full flex flex-col">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Notas de Consulta</CardTitle>
+                </CardHeader>
+                <CardContent className="flex-1 flex flex-col gap-4 pb-4">
+                  <Textarea
+                    placeholder="Escribe tus notas aquí..."
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    className="flex-1 min-h-[200px] resize-none"
+                    data-testid="input-consultation-notes"
+                  />
                 </CardContent>
-              </ScrollArea>
-            </Card>
-          </TabsContent>
+              </Card>
+            </TabsContent>
+          )}
+
+          {/* Recording Tab (Doctor only) */}
+          {isDoctor && (
+            <TabsContent value="transcript" className="flex-1 mt-4 min-h-0">
+              <Card className="h-full">
+                <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    Grabación
+                    {isRecording && (
+                      <Badge variant="outline" className="text-xs">
+                        <span className="w-1.5 h-1.5 bg-destructive rounded-full mr-1 animate-pulse" />
+                        Grabando
+                      </Badge>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <ScrollArea className="h-[calc(100%-4rem)]">
+                  <CardContent className="p-4">
+                    <div className="text-center py-8 text-muted-foreground" data-testid="transcription-empty-state">
+                      <Mic className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">
+                        {isRecording
+                          ? "Grabando audio de la consulta. La transcripción se generará al finalizar."
+                          : "La grabación se inicia automáticamente al unirse a la consulta"}
+                      </p>
+                      {isRecording && (
+                        <p className="text-xs mt-2 text-muted-foreground">
+                          {audioChunksRef.current.length > 0 
+                            ? `${audioChunksRef.current.length} fragmentos grabados`
+                            : "Esperando audio..."}
+                        </p>
+                      )}
+                    </div>
+                  </CardContent>
+                </ScrollArea>
+              </Card>
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </div>
