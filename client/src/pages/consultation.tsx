@@ -437,7 +437,7 @@ export default function ConsultationPage() {
 
   useEffect(() => {
     if (!id) return;
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('auth_token');
     if (!token) return;
     fetch(`/api/consultations/${id}/messages`, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -458,7 +458,7 @@ export default function ConsultationPage() {
     if ((!chatInput.trim() && !chatFile) || isSendingChat) return;
     setIsSendingChat(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('auth_token');
       const formData = new FormData();
       if (chatInput.trim()) formData.append('content', chatInput.trim());
       if (chatFile) formData.append('file', chatFile);
@@ -497,7 +497,7 @@ export default function ConsultationPage() {
   const isImageFile = (type: string | null) => type?.startsWith('image/');
   const getAuthFileUrl = (url: string | null) => {
     if (!url) return '';
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('auth_token');
     if (!token) return url;
     const separator = url.includes('?') ? '&' : '?';
     return `${url}${separator}token=${encodeURIComponent(token)}`;
