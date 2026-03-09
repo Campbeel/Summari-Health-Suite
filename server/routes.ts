@@ -936,12 +936,18 @@ export async function registerRoutes(
       let transcription = "";
       if (audioData) {
         try {
-          console.log(`[Transcription] Starting server-side transcription for appointment ${appointmentId}...`);
+          const audioBuffer = Buffer.from(audioData, 'base64');
+          console.log(`[Transcription] Starting server-side transcription for appointment ${appointmentId}. Audio size: ${audioBuffer.length} bytes`);
           transcription = await transcribeAudioChunked(audioData);
           console.log(`[Transcription] Completed. Length: ${transcription.length} chars`);
+          if (transcription.length > 0) {
+            console.log(`[Transcription] Successfully transcribed ${transcription.length} characters`);
+          }
         } catch (e) {
           console.error("Error transcribing audio server-side:", e);
         }
+      } else {
+        console.log(`[Transcription] No audio data received for appointment ${appointmentId}`);
       }
       
       const record = await storage.createClinicalRecord({
@@ -958,7 +964,69 @@ export async function registerRoutes(
       let aiSuggestions = null;
       if (transcription) {
         try {
+          console.log(`[AI] Generating suggestions from transcription for appointment ${appointmentId}...`);
           aiSuggestions = await generateFullConsultationSuggestions(transcription);
+          console.log(`[AI] Suggestions generated successfully`);
+          
+          if (aiSuggestions) {
+            const updateData: any = {};
+            if (aiSuggestions.clinicalSummary) {
+              if (aiSuggestions.clinicalSummary.chiefComplaint) updateData.chiefComplaint = aiSuggestions.clinicalSummary.chiefComplaint;
+              if (aiSuggestions.clinicalSummary.symptoms) updateData.symptoms = aiSuggestions.clinicalSummary.symptoms;
+              if (aiSuggestions.clinicalSummary.diagnosis) updateData.diagnosis = aiSuggestions.clinicalSummary.diagnosis;
+              if (aiSuggestions.clinicalSummary.notes) updateData.notes = aiSuggestions.clinicalSummary.notes;
+            }
+            if (Object.keys(updateData).length > 0) {
+              await storage.updateClinicalRecord(record.id, updateData);
+            }
+
+            if (aiSuggestions.prescription && aiSuggestions.prescription.medications?.length > 0) {
+              try {
+                await storage.createPrescription({
+                  clinicalRecordId: record.id,
+                  patientId: appointment.patientId,
+                  doctorId: appointment.doctorId,
+                  medications: aiSuggestions.prescription.medications,
+                  instructions: aiSuggestions.prescription.instructions || null,
+                  validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                  status: "draft",
+                });
+              } catch (e) {
+                console.error("[AI] Error creating draft prescription:", e);
+              }
+            }
+
+            if (aiSuggestions.medicalInstructions && aiSuggestions.medicalInstructions.length > 0) {
+              for (const instr of aiSuggestions.medicalInstructions) {
+                try {
+                  await storage.createMedicalInstruction({
+                    clinicalRecordId: record.id,
+                    patientId: appointment.patientId,
+                    doctorId: appointment.doctorId,
+                    category: instr.category || "follow-up",
+                    title: instr.title,
+                    description: instr.description,
+                    priority: instr.priority || "normal",
+                  });
+                } catch (e) {
+                  console.error("[AI] Error creating draft instruction:", e);
+                }
+              }
+            }
+
+            if (aiSuggestions.examOrders && aiSuggestions.examOrders.length > 0) {
+              try {
+                await storage.createExamOrder({
+                  clinicalRecordId: record.id,
+                  patientId: appointment.patientId,
+                  doctorId: appointment.doctorId,
+                  exams: aiSuggestions.examOrders,
+                });
+              } catch (e) {
+                console.error("[AI] Error creating draft exam order:", e);
+              }
+            }
+          }
         } catch (e) {
           console.error("Error generating AI suggestions:", e);
         }

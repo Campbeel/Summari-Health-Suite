@@ -22,12 +22,27 @@ export async function transcribeAudio(audioBase64: string): Promise<string> {
 export async function transcribeAudioChunked(audioBase64: string): Promise<string> {
   try {
     const audioBuffer = Buffer.from(audioBase64, 'base64');
+    console.log(`[Transcription] Raw audio buffer size: ${audioBuffer.length} bytes`);
+    
+    if (audioBuffer.length < 1000) {
+      console.log(`[Transcription] Audio buffer too small (${audioBuffer.length} bytes), likely empty recording`);
+      return "";
+    }
+    
     const { buffer: wavBuffer } = await ensureCompatibleFormat(audioBuffer);
+    console.log(`[Transcription] WAV buffer size after conversion: ${wavBuffer.length} bytes`);
+    
+    if (wavBuffer.length < 1000) {
+      console.log(`[Transcription] WAV buffer too small after conversion (${wavBuffer.length} bytes)`);
+      return "";
+    }
     
     const MAX_CHUNK_SIZE = 20 * 1024 * 1024;
     
     if (wavBuffer.length <= MAX_CHUNK_SIZE) {
+      console.log(`[Transcription] Sending single buffer (${wavBuffer.length} bytes) to speech-to-text...`);
       const transcript = await speechToText(wavBuffer, "wav");
+      console.log(`[Transcription] Single buffer result: ${transcript.length} chars`);
       return transcript;
     }
     
