@@ -328,7 +328,26 @@ export const insertExamOrderSchema = createInsertSchema(examOrders).omit({
   issuedAt: true,
 });
 
+// Consultation Ratings
+export const consultationRatings = pgTable("consultation_ratings", {
+  id: serial("id").primaryKey(),
+  appointmentId: integer("appointment_id").references(() => appointments.id).notNull().unique(),
+  patientUserId: varchar("patient_user_id").notNull(),
+  doctorRating: integer("doctor_rating").notNull(),
+  doctorComment: text("doctor_comment"),
+  platformRating: integer("platform_rating"),
+  platformComment: text("platform_comment"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertConsultationRatingSchema = createInsertSchema(consultationRatings).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
+export type ConsultationRating = typeof consultationRatings.$inferSelect;
+export type InsertConsultationRating = z.infer<typeof insertConsultationRatingSchema>;
 export type Doctor = typeof doctors.$inferSelect;
 export type InsertDoctor = z.infer<typeof insertDoctorSchema>;
 export type Patient = typeof patients.$inferSelect;

@@ -10,6 +10,7 @@ interface UseWebRTCOptions {
   onError?: (error: string) => void;
   onWaitingPatient?: (patientId: string, patientName: string) => void;
   onChatMessage?: (message: any) => void;
+  onDoctorDisconnected?: () => void;
 }
 
 interface SignalingMessage {
@@ -53,7 +54,7 @@ const ICE_SERVERS: RTCConfiguration = {
   iceCandidatePoolSize: 10
 };
 
-export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStream, onConnectionStateChange, onError, onWaitingPatient, onChatMessage }: UseWebRTCOptions) {
+export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStream, onConnectionStateChange, onError, onWaitingPatient, onChatMessage, onDoctorDisconnected }: UseWebRTCOptions) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -80,12 +81,14 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
   const onConnectionStateChangeRef = useRef(onConnectionStateChange);
   const onErrorRef = useRef(onError);
   const onWaitingPatientRef = useRef(onWaitingPatient);
+  const onDoctorDisconnectedRef = useRef(onDoctorDisconnected);
   const onChatMessageRef = useRef(onChatMessage);
 
   useEffect(() => { onRemoteStreamRef.current = onRemoteStream; }, [onRemoteStream]);
   useEffect(() => { onConnectionStateChangeRef.current = onConnectionStateChange; }, [onConnectionStateChange]);
   useEffect(() => { onErrorRef.current = onError; }, [onError]);
   useEffect(() => { onWaitingPatientRef.current = onWaitingPatient; }, [onWaitingPatient]);
+  useEffect(() => { onDoctorDisconnectedRef.current = onDoctorDisconnected; }, [onDoctorDisconnected]);
   useEffect(() => { onChatMessageRef.current = onChatMessage; }, [onChatMessage]);
 
   const sendMessage = useCallback((message: object) => {
@@ -490,6 +493,7 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
             setIsWaiting(false);
             setError('El médico se ha desconectado de la consulta');
             onErrorRef.current?.('El médico se ha desconectado de la consulta');
+            onDoctorDisconnectedRef.current?.();
             break;
 
           case 'patient-left-waiting': {

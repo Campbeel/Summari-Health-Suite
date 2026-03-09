@@ -1887,6 +1887,67 @@ ${latest.map(l => `- ${l.metricType}: ${l.value} ${l.unit} (${new Date(l.recorde
     }
   });
 
+  // Consultation Ratings
+  app.get("/api/consultations/:id/rating", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const userId = (req as any).userId;
+
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment) return res.status(404).json({ error: "Cita no encontrada" });
+
+      const patient = await storage.getPatientByUserId(userId);
+      const doctor = await storage.getDoctorByUserId(userId);
+      const isPatient = patient && appointment.patientId === patient.id;
+      const isDoctorUser = doctor && appointment.doctorId === doctor.id;
+      if (!isPatient && !isDoctorUser) return res.status(403).json({ error: "No autorizado" });
+
+      const rating = await storage.getConsultationRating(appointmentId);
+      res.json(rating || null);
+    } catch (error) {
+      res.status(500).json({ error: "Error al obtener calificación" });
+    }
+  });
+
+  app.post("/api/consultations/:id/rating", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const userId = (req as any).userId;
+
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment) return res.status(404).json({ error: "Cita no encontrada" });
+
+      const patient = await storage.getPatientByUserId(userId);
+      if (!patient || appointment.patientId !== patient.id) {
+        return res.status(403).json({ error: "Solo el paciente puede calificar" });
+      }
+
+      const existing = await storage.getConsultationRating(appointmentId);
+      if (existing) {
+        return res.status(400).json({ error: "Ya has calificado esta consulta" });
+      }
+
+      const { doctorRating, doctorComment, platformRating, platformComment } = req.body;
+      if (!doctorRating || doctorRating < 1 || doctorRating > 5) {
+        return res.status(400).json({ error: "Calificación del médico requerida (1-5)" });
+      }
+
+      const rating = await storage.createConsultationRating({
+        appointmentId,
+        patientUserId: userId,
+        doctorRating,
+        doctorComment: doctorComment || null,
+        platformRating: platformRating || null,
+        platformComment: platformComment || null,
+      });
+
+      res.json(rating);
+    } catch (error) {
+      console.error("Error creating rating:", error);
+      res.status(500).json({ error: "Error al guardar calificación" });
+    }
+  });
+
   // WebRTC Signaling Server
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
 
@@ -2182,10 +2243,16 @@ ${latest.map(l => `- ${l.metricType}: ${l.value} ${l.unit} (${new Date(l.recorde
           log(`User ${participantId} left room ${currentRoom}. Remaining: ${room.participants.size}`);
           
           if (wasDoctorDisconnect) {
-            // Doctor disconnected: notify all waiting patients
             room.waitingPatients.forEach((entry, wId) => {
               if (entry.ws.readyState === WebSocket.OPEN) {
                 entry.ws.send(JSON.stringify({
+                  type: 'doctor-disconnected'
+                }));
+              }
+            });
+            room.participants.forEach((client, pId) => {
+              if (client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({
                   type: 'doctor-disconnected'
                 }));
               }

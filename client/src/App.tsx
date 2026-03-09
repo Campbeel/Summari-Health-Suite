@@ -33,6 +33,7 @@ import AdminUsersPage from "@/pages/admin/users";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
 import HealthDataPage from "@/pages/health-data";
+import ConsultationFeedbackPage from "@/pages/consultation-feedback";
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -169,6 +170,9 @@ function Router() {
       </Route>
       <Route path="/consultation/:id">
         <ProtectedRoute component={ConsultationPage} fullScreen />
+      </Route>
+      <Route path="/consultation/:id/feedback">
+        <ProtectedRoute component={ConsultationFeedbackPage} fullScreen />
       </Route>
       <Route path="/records">
         <ProtectedRoute component={RecordsPage} />

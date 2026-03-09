@@ -178,6 +178,13 @@ export default function ConsultationPage() {
         if (prev.find(m => m.id === message.id)) return prev;
         return [...prev, message];
       });
+    },
+    onDoctorDisconnected: () => {
+      if (!isDoctor) {
+        setTimeout(() => {
+          navigate(`/consultation/${id}/feedback`);
+        }, 2000);
+      }
     }
   });
 
@@ -245,6 +252,8 @@ export default function ConsultationPage() {
 
     if (isDoctor) {
       endConsultationMutation.mutate(audioBase64);
+    } else {
+      navigate(`/consultation/${id}/feedback`);
     }
   };
 

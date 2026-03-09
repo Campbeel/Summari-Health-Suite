@@ -32,7 +32,10 @@ import {
   type InsertExamOrder,
   consultationMessages,
   type ConsultationMessage,
-  type InsertConsultationMessage
+  type InsertConsultationMessage,
+  consultationRatings,
+  type ConsultationRating,
+  type InsertConsultationRating
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, sql, notInArray } from "drizzle-orm";
 
@@ -245,6 +248,10 @@ export interface IStorage {
   // Consultation Messages
   getConsultationMessages(appointmentId: number): Promise<ConsultationMessage[]>;
   createConsultationMessage(message: InsertConsultationMessage): Promise<ConsultationMessage>;
+
+  // Consultation Ratings
+  getConsultationRating(appointmentId: number): Promise<ConsultationRating | undefined>;
+  createConsultationRating(rating: InsertConsultationRating): Promise<ConsultationRating>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -953,6 +960,17 @@ export class DatabaseStorage implements IStorage {
 
   async createConsultationMessage(message: InsertConsultationMessage): Promise<ConsultationMessage> {
     const [created] = await db.insert(consultationMessages).values(message).returning();
+    return created;
+  }
+
+  async getConsultationRating(appointmentId: number): Promise<ConsultationRating | undefined> {
+    const [rating] = await db.select().from(consultationRatings)
+      .where(eq(consultationRatings.appointmentId, appointmentId));
+    return rating;
+  }
+
+  async createConsultationRating(rating: InsertConsultationRating): Promise<ConsultationRating> {
+    const [created] = await db.insert(consultationRatings).values(rating).returning();
     return created;
   }
 }
