@@ -10,13 +10,17 @@ function escapeHtml(str: string): string {
 }
 
 function getTransporter() {
-  const user = process.env.GMAIL_USER;
-  const pass = process.env.GMAIL_APP_PASSWORD;
-  if (!user || !pass) {
-    throw new Error('GMAIL_USER or GMAIL_APP_PASSWORD not configured');
+  const host = process.env.SMTP_HOST;
+  const port = parseInt(process.env.SMTP_PORT || '587', 10);
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASSWORD;
+  if (!host || !user || !pass) {
+    throw new Error('SMTP_HOST, SMTP_USER, or SMTP_PASSWORD not configured');
   }
   return nodemailer.createTransport({
-    service: 'gmail',
+    host,
+    port,
+    secure: port === 465,
     auth: { user, pass },
   });
 }
@@ -27,7 +31,7 @@ export async function sendPasswordResetEmail(
   firstName: string
 ) {
   const transporter = getTransporter();
-  const fromEmail = process.env.GMAIL_USER!;
+  const fromEmail = process.env.SMTP_USER!;
 
   const baseUrl = process.env.REPLIT_DEV_DOMAIN
     ? `https://${process.env.REPLIT_DEV_DOMAIN}`
@@ -230,7 +234,7 @@ function buildExamOrdersSection(examOrders: ConsultationDocumentsEmailData['exam
 
 export async function sendConsultationDocuments(data: ConsultationDocumentsEmailData) {
   const transporter = getTransporter();
-  const fromEmail = process.env.GMAIL_USER!;
+  const fromEmail = process.env.SMTP_USER!;
 
   let sections = '';
   const subjectParts: string[] = [];
