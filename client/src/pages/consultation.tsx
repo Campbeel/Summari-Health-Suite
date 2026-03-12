@@ -225,8 +225,10 @@ export default function ConsultationPage() {
       });
     }
 
+    console.log(`[Recording] End call: ${audioChunksRef.current.length} chunks collected`);
     if (audioChunksRef.current.length > 0) {
       const fullBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      console.log(`[Recording] Combined blob size: ${fullBlob.size} bytes (${(fullBlob.size / 1024 / 1024).toFixed(2)} MB)`);
       audioChunksRef.current = [];
       audioBase64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -237,6 +239,8 @@ export default function ConsultationPage() {
         reader.onerror = reject;
         reader.readAsDataURL(fullBlob);
       });
+    } else {
+      console.log("[Recording] No audio chunks collected - recording may not have started properly");
     }
 
     if (audioContextRef.current) {
@@ -247,6 +251,7 @@ export default function ConsultationPage() {
     setIsRecording(false);
 
     autoStartedRef.current = false;
+    hasRestartedWithRemoteRef.current = false;
     disconnect();
     setHasJoinedCall(false);
 
@@ -327,42 +332,54 @@ export default function ConsultationPage() {
     }
   }, []);
 
-  const startRecording = useCallback(async () => {
-    if (!localStream) {
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
+  const hasRestartedWithRemoteRef = useRef(false);
+
+  useEffect(() => { localStreamRef.current = localStream; }, [localStream]);
+  useEffect(() => { remoteStreamRef.current = remoteStream; }, [remoteStream]);
+
+  const startRecording = useCallback(async (preserveChunks = false) => {
+    const currentLocal = localStreamRef.current;
+    if (!currentLocal) {
       console.log("[Transcription] No local stream available");
       return;
     }
 
     try {
-      const localAudioTracks = localStream.getAudioTracks();
+      const localAudioTracks = currentLocal.getAudioTracks();
       if (localAudioTracks.length === 0) {
         console.log("[Transcription] No local audio tracks");
         return;
       }
 
-      const mixedStream = await createMixedAudioStream(localStream, remoteStream);
+      const currentRemote = remoteStreamRef.current;
+      const mixedStream = await createMixedAudioStream(currentLocal, currentRemote);
 
       const mediaRecorder = new MediaRecorder(mixedStream, {
         mimeType: 'audio/webm;codecs=opus',
       });
       
       mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
+      if (!preserveChunks) {
+        audioChunksRef.current = [];
+      }
 
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
+          console.log(`[Recording] Chunk received: ${event.data.size} bytes, total chunks: ${audioChunksRef.current.length}`);
         }
       };
 
       mediaRecorder.start(5000);
       setIsRecording(true);
-      console.log("[Recording] Recording started - audio will be transcribed when consultation ends");
+      console.log(`[Recording] Recording started (preserveChunks=${preserveChunks}, existing chunks: ${audioChunksRef.current.length})`);
 
     } catch (error) {
       console.error("Error starting recording:", error);
     }
-  }, [localStream, remoteStream, createMixedAudioStream]);
+  }, [createMixedAudioStream]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -377,14 +394,15 @@ export default function ConsultationPage() {
   }, []);
 
   const restartRecordingWithRemote = useCallback(() => {
-    if (!isRecording || !remoteStream) return;
-    const remoteAudioTracks = remoteStream.getAudioTracks();
+    if (!isRecording || !remoteStreamRef.current || hasRestartedWithRemoteRef.current) return;
+    const remoteAudioTracks = remoteStreamRef.current.getAudioTracks();
     if (remoteAudioTracks.length === 0) return;
 
-    console.log("[Transcription] Remote audio available, restarting recorder with mixed audio");
+    hasRestartedWithRemoteRef.current = true;
+    console.log(`[Transcription] Remote audio available, restarting recorder with mixed audio (preserving ${audioChunksRef.current.length} chunks)`);
     stopRecording();
-    setTimeout(() => startRecording(), 500);
-  }, [isRecording, remoteStream, stopRecording, startRecording]);
+    setTimeout(() => startRecording(true), 500);
+  }, [isRecording, stopRecording, startRecording]);
 
   const handleToggleRecording = useCallback(() => {
     if (isRecording) {
@@ -415,8 +433,10 @@ export default function ConsultationPage() {
 
   // Restart recording when remote audio becomes available to include patient audio
   useEffect(() => {
-    restartRecordingWithRemote();
-  }, [restartRecordingWithRemote]);
+    if (remoteStream && isRecording && !hasRestartedWithRemoteRef.current) {
+      restartRecordingWithRemote();
+    }
+  }, [remoteStream, isRecording, restartRecordingWithRemote]);
 
   useEffect(() => {
     return () => {
