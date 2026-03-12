@@ -1,4 +1,4 @@
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 
 function escapeHtml(str: string): string {
   return str
@@ -9,47 +9,16 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;');
 }
 
-let connectionSettings: any;
-
-async function getCredentials() {
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY
-    ? 'repl ' + process.env.REPL_IDENTITY
-    : process.env.WEB_REPL_RENEWAL
-    ? 'depl ' + process.env.WEB_REPL_RENEWAL
-    : null;
-
-  if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
+function getTransporter() {
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+  if (!user || !pass) {
+    throw new Error('GMAIL_USER or GMAIL_APP_PASSWORD not configured');
   }
-
-  connectionSettings = await fetch(
-    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=resend',
-    {
-      headers: {
-        'Accept': 'application/json',
-        'X_REPLIT_TOKEN': xReplitToken,
-      },
-    }
-  )
-    .then((res) => res.json())
-    .then((data) => data.items?.[0]);
-
-  if (!connectionSettings || !connectionSettings.settings.api_key) {
-    throw new Error('Resend not connected');
-  }
-  return {
-    apiKey: connectionSettings.settings.api_key,
-    fromEmail: connectionSettings.settings.from_email,
-  };
-}
-
-async function getUncachableResendClient() {
-  const { apiKey, fromEmail } = await getCredentials();
-  return {
-    client: new Resend(apiKey),
-    fromEmail,
-  };
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user, pass },
+  });
 }
 
 export async function sendPasswordResetEmail(
@@ -57,7 +26,8 @@ export async function sendPasswordResetEmail(
   resetToken: string,
   firstName: string
 ) {
-  const { client, fromEmail } = await getUncachableResendClient();
+  const transporter = getTransporter();
+  const fromEmail = process.env.GMAIL_USER!;
 
   const baseUrl = process.env.REPLIT_DEV_DOMAIN
     ? `https://${process.env.REPLIT_DEV_DOMAIN}`
@@ -67,8 +37,8 @@ export async function sendPasswordResetEmail(
 
   const resetUrl = `${baseUrl}/restablecer-contrasena?token=${resetToken}`;
 
-  const { data, error } = await client.emails.send({
-    from: fromEmail || 'Summari <onboarding@resend.dev>',
+  await transporter.sendMail({
+    from: `Summari <${fromEmail}>`,
     to: toEmail,
     subject: 'Recuperar tu contraseña - Summari',
     html: `
@@ -80,7 +50,7 @@ export async function sendPasswordResetEmail(
       </head>
       <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background-color: #f4f4f5;">
         <div style="max-width: 480px; margin: 40px auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-          <div style="background: #0f766e; padding: 24px; text-align: center;">
+          <div style="background: #3473a8; padding: 24px; text-align: center;">
             <h1 style="color: white; margin: 0; font-size: 24px;">Summari</h1>
             <p style="color: rgba(255,255,255,0.8); margin: 4px 0 0; font-size: 14px;">Telemedicina</p>
           </div>
@@ -91,7 +61,7 @@ export async function sendPasswordResetEmail(
               Haz clic en el siguiente botón para crear una nueva contraseña:
             </p>
             <div style="text-align: center; margin: 0 0 24px;">
-              <a href="${resetUrl}" style="display: inline-block; background: #0f766e; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px;">
+              <a href="${resetUrl}" style="display: inline-block; background: #3473a8; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 14px;">
                 Restablecer Contraseña
               </a>
             </div>
@@ -101,7 +71,7 @@ export async function sendPasswordResetEmail(
             <hr style="border: none; border-top: 1px solid #e4e4e7; margin: 24px 0;">
             <p style="color: #a1a1aa; font-size: 12px; margin: 0;">
               Si el botón no funciona, copia y pega este enlace en tu navegador:<br>
-              <a href="${resetUrl}" style="color: #0f766e; word-break: break-all;">${resetUrl}</a>
+              <a href="${resetUrl}" style="color: #3473a8; word-break: break-all;">${resetUrl}</a>
             </p>
           </div>
         </div>
@@ -110,12 +80,7 @@ export async function sendPasswordResetEmail(
     `,
   });
 
-  if (error) {
-    console.error('Error sending password reset email:', error);
-    throw new Error('No se pudo enviar el correo de recuperación');
-  }
-
-  return data;
+  return { id: 'sent' };
 }
 
 interface ConsultationDocumentsEmailData {
@@ -264,7 +229,8 @@ function buildExamOrdersSection(examOrders: ConsultationDocumentsEmailData['exam
 }
 
 export async function sendConsultationDocuments(data: ConsultationDocumentsEmailData) {
-  const { client, fromEmail } = await getUncachableResendClient();
+  const transporter = getTransporter();
+  const fromEmail = process.env.GMAIL_USER!;
 
   let sections = '';
   const subjectParts: string[] = [];
@@ -288,8 +254,8 @@ export async function sendConsultationDocuments(data: ConsultationDocumentsEmail
 
   const subject = `${subjectParts.join(', ')} de tu consulta - Summari`;
 
-  const { error } = await client.emails.send({
-    from: fromEmail || 'Summari <onboarding@resend.dev>',
+  await transporter.sendMail({
+    from: `Summari <${fromEmail}>`,
     to: data.patientEmail,
     subject,
     html: `
@@ -331,11 +297,6 @@ export async function sendConsultationDocuments(data: ConsultationDocumentsEmail
       </html>
     `,
   });
-
-  if (error) {
-    console.error('Error sending consultation documents email:', error);
-    throw new Error('No se pudo enviar el correo con los documentos');
-  }
 
   return { sent: true, documentTypes: data.documentTypes };
 }
