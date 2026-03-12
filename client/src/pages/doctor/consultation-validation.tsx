@@ -116,11 +116,11 @@ interface AISuggestions {
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
-  diet: "Alimentaci\u00f3n",
+  diet: "Alimentación",
   exercise: "Ejercicio",
   lifestyle: "Estilo de vida",
   "follow-up": "Seguimiento",
-  tests: "Ex\u00e1menes",
+  tests: "Exámenes",
 };
 
 const PRIORITY_LABELS: Record<string, string> = {
@@ -216,7 +216,7 @@ export default function ConsultationValidationPage() {
       }
       toast({
         title: "Sugerencias generadas",
-        description: "La IA ha analizado la transcripci\u00f3n. Revisa y edita la informaci\u00f3n.",
+        description: "La IA ha analizado la transcripción. Revisa y edita la información.",
       });
     },
     onError: () => {
@@ -564,7 +564,7 @@ export default function ConsultationValidationPage() {
               Validación Post-Consulta
             </h1>
             <p className="text-sm text-muted-foreground">
-              Revisa y edita la informaci\u00f3n cl\u00ednica antes de confirmar
+              Revisa y edita la información clínica antes de confirmar
             </p>
           </div>
         </div>
@@ -606,9 +606,9 @@ export default function ConsultationValidationPage() {
           setIsConfirmOpen(false);
           validateMutation.mutate();
         }}
-        title="\u00bfEst\u00e1s seguro que quieres terminar la consulta?"
-        description="Esta acci\u00f3n guardar\u00e1 el registro cl\u00ednico, la receta y las indicaciones de forma permanente."
-        confirmText="S\u00ed, terminar"
+        title="¿Estás seguro que quieres terminar la consulta?"
+        description="Esta acción guardará el registro clínico, la receta y las indicaciones de forma permanente."
+        confirmText="Sí, terminar"
         cancelText="No, revisar"
       />
 
@@ -630,7 +630,7 @@ export default function ConsultationValidationPage() {
               </TabsTrigger>
               <TabsTrigger value="exams" data-testid="tab-exams">
                 <FlaskConical className="h-4 w-4 mr-1.5" />
-                Ex\u00e1menes
+                Exámenes
               </TabsTrigger>
             </TabsList>
 
@@ -639,7 +639,7 @@ export default function ConsultationValidationPage() {
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">
                     <FileText className="h-5 w-5" />
-                    Registro Cl\u00ednico
+                    Registro Clínico
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -656,12 +656,12 @@ export default function ConsultationValidationPage() {
                   </div>
 
                   <div>
-                    <Label data-testid="label-symptoms">S\u00edntomas</Label>
+                    <Label data-testid="label-symptoms">Síntomas</Label>
                     <div className="flex gap-2 mt-1.5">
                       <Input
                         value={symptomInput}
                         onChange={(e) => setSymptomInput(e.target.value)}
-                        placeholder="Agregar s\u00edntoma..."
+                        placeholder="Agregar síntoma..."
                         onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addSymptom())}
                         data-testid="input-symptom"
                       />
@@ -688,19 +688,19 @@ export default function ConsultationValidationPage() {
                   </div>
 
                   <div>
-                    <Label htmlFor="diagnosis" data-testid="label-diagnosis">Diagn\u00f3stico</Label>
+                    <Label htmlFor="diagnosis" data-testid="label-diagnosis">Diagnóstico</Label>
                     <Textarea
                       id="diagnosis"
                       value={diagnosis}
                       onChange={(e) => setDiagnosis(e.target.value)}
-                      placeholder="Diagn\u00f3stico cl\u00ednico..."
+                      placeholder="Diagnóstico clínico..."
                       className="mt-1.5"
                       data-testid="input-diagnosis"
                     />
                   </div>
 
                   <div>
-                    <Label htmlFor="clinicalNotes" data-testid="label-notes">Notas cl\u00ednicas</Label>
+                    <Label htmlFor="clinicalNotes" data-testid="label-notes">Notas clínicas</Label>
                     <Textarea
                       id="clinicalNotes"
                       value={clinicalNotes}
@@ -719,7 +719,7 @@ export default function ConsultationValidationPage() {
                 <CardHeader className="flex flex-row items-center justify-between gap-4">
                   <CardTitle className="text-lg flex items-center gap-2">
                     <Pill className="h-5 w-5" />
-                    Receta M\u00e9dica
+                    Receta Médica
                   </CardTitle>
                   <Button variant="outline" size="sm" onClick={addMedication} data-testid="button-add-medication">
                     <Plus className="h-4 w-4 mr-1" />
@@ -782,11 +782,11 @@ export default function ConsultationValidationPage() {
                                 />
                               </div>
                               <div>
-                                <Label>Duraci\u00f3n</Label>
+                                <Label>Duración</Label>
                                 <Input
                                   value={med.duration}
                                   onChange={(e) => updateMedication(index, "duration", e.target.value)}
-                                  placeholder="Ej: 7 d\u00edas"
+                                  placeholder="Ej: 7 días"
                                   className="mt-1"
                                   data-testid={`input-med-duration-${index}`}
                                 />
@@ -797,7 +797,7 @@ export default function ConsultationValidationPage() {
                               <Input
                                 value={med.instructions || ""}
                                 onChange={(e) => updateMedication(index, "instructions", e.target.value)}
-                                placeholder="Ej: Tomar despu\u00e9s de las comidas"
+                                placeholder="Ej: Tomar después de las comidas"
                                 className="mt-1"
                                 data-testid={`input-med-instructions-${index}`}
                               />
@@ -826,7 +826,7 @@ export default function ConsultationValidationPage() {
                 <CardHeader className="flex flex-row items-center justify-between gap-4">
                   <CardTitle className="text-lg flex items-center gap-2">
                     <ClipboardList className="h-5 w-5" />
-                    Indicaciones M\u00e9dicas
+                    Indicaciones Médicas
                   </CardTitle>
                   <Button variant="outline" size="sm" onClick={addInstruction} data-testid="button-add-instruction">
                     <Plus className="h-4 w-4 mr-1" />
@@ -837,7 +837,7 @@ export default function ConsultationValidationPage() {
                   {instructions.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground" data-testid="instructions-empty">
                       <ClipboardList className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">No hay indicaciones m\u00e9dicas</p>
+                      <p className="text-sm">No hay indicaciones médicas</p>
                       <p className="text-xs mt-1">Agrega indicaciones manualmente o genera sugerencias con IA</p>
                     </div>
                   ) : (
@@ -845,7 +845,7 @@ export default function ConsultationValidationPage() {
                       <div key={index} className="border border-dashed rounded-md p-4 space-y-3">
                           <div className="flex items-center justify-between gap-2">
                             <h4 className="text-sm font-medium text-muted-foreground">
-                              Indicaci\u00f3n {index + 1}
+                              Indicación {index + 1}
                             </h4>
                             <Button
                               variant="ghost"
@@ -858,7 +858,7 @@ export default function ConsultationValidationPage() {
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
-                              <Label>Categor\u00eda</Label>
+                              <Label>Categoría</Label>
                               <Select
                                 value={inst.category}
                                 onValueChange={(v) => updateInstruction(index, "category", v)}
@@ -867,11 +867,11 @@ export default function ConsultationValidationPage() {
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="diet">Alimentaci\u00f3n</SelectItem>
+                                  <SelectItem value="diet">Alimentación</SelectItem>
                                   <SelectItem value="exercise">Ejercicio</SelectItem>
                                   <SelectItem value="lifestyle">Estilo de vida</SelectItem>
                                   <SelectItem value="follow-up">Seguimiento</SelectItem>
-                                  <SelectItem value="tests">Ex\u00e1menes</SelectItem>
+                                  <SelectItem value="tests">Exámenes</SelectItem>
                                 </SelectContent>
                               </Select>
                             </div>
@@ -894,21 +894,21 @@ export default function ConsultationValidationPage() {
                             </div>
                           </div>
                           <div>
-                            <Label>T\u00edtulo</Label>
+                            <Label>Título</Label>
                             <Input
                               value={inst.title}
                               onChange={(e) => updateInstruction(index, "title", e.target.value)}
-                              placeholder="T\u00edtulo de la indicaci\u00f3n"
+                              placeholder="Título de la indicación"
                               className="mt-1"
                               data-testid={`input-inst-title-${index}`}
                             />
                           </div>
                           <div>
-                            <Label>Descripci\u00f3n</Label>
+                            <Label>Descripción</Label>
                             <Textarea
                               value={inst.description}
                               onChange={(e) => updateInstruction(index, "description", e.target.value)}
-                              placeholder="Descripci\u00f3n detallada..."
+                              placeholder="Descripción detallada..."
                               className="mt-1"
                               data-testid={`input-inst-description-${index}`}
                             />
@@ -1009,7 +1009,7 @@ export default function ConsultationValidationPage() {
               <p className="font-medium" data-testid="text-patient-name">{validationData.patient.name}</p>
               {validationData.patient.gender && (
                 <p className="text-sm text-muted-foreground">
-                  G\u00e9nero: {validationData.patient.gender}
+                  Género: {validationData.patient.gender}
                 </p>
               )}
               {validationData.patient.bloodType && (
@@ -1039,7 +1039,7 @@ export default function ConsultationValidationPage() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Mic className="h-4 w-4" />
-                Transcripci\u00f3n
+                Transcripción
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -1052,7 +1052,7 @@ export default function ConsultationValidationPage() {
               ) : (
                 <div className="text-center py-4 text-muted-foreground" data-testid="transcription-empty">
                   <Mic className="h-6 w-6 mx-auto mb-1 opacity-50" />
-                  <p className="text-sm">No hay transcripci\u00f3n disponible</p>
+                  <p className="text-sm">No hay transcripción disponible</p>
                 </div>
               )}
             </CardContent>
@@ -1076,7 +1076,7 @@ export default function ConsultationValidationPage() {
                 data-testid="badge-status"
               >
                 {validationData.appointment.status === "pending_validation"
-                  ? "Pendiente de validaci\u00f3n"
+                  ? "Pendiente de validación"
                   : validationData.appointment.status === "completed"
                     ? "Completada"
                     : validationData.appointment.status}
