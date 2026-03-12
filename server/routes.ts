@@ -9,6 +9,7 @@ import { storage } from "./storage";
 import { isAuthenticated, registerAuthRoutes } from "./auth";
 import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText, verifyFlowSignature } from "./flow";
 import { transcribeAudio, transcribeAudioChunked, generatePrescriptionFromTranscript, generateFullConsultationSuggestions } from "./openai";
+import { sendConsultationDocuments } from "./email";
 import { getFitbitAuthUrl, getAndRemovePendingState, exchangeCodeForTokens, refreshFitbitTokens, fetchFitbitData } from "./fitbit";
 import {
   insertPatientSchema,
@@ -1247,6 +1248,126 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error validating consultation:", error);
       res.status(500).json({ error: "Error al validar la consulta" });
+    }
+  });
+
+  app.post("/api/consultations/:id/send-documents", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const userId = req.userId;
+      const { documentTypes } = req.body;
+
+      const validTypes = ['prescription', 'instructions', 'exams'];
+      const requestedTypes: ('prescription' | 'instructions' | 'exams')[] = 
+        Array.isArray(documentTypes) ? documentTypes.filter((t: string) => validTypes.includes(t)) : validTypes;
+
+      if (requestedTypes.length === 0) {
+        return res.status(400).json({ error: "No se especificaron tipos de documentos válidos" });
+      }
+
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment) {
+        return res.status(404).json({ error: "Consulta no encontrada" });
+      }
+
+      const doctor = await storage.getDoctorByUserId(userId);
+      if (!doctor || doctor.id !== appointment.doctorId) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+
+      const patient = await storage.getPatient(appointment.patientId);
+      if (!patient) {
+        return res.status(404).json({ error: "Paciente no encontrado" });
+      }
+
+      const patientUser = await storage.getUser(patient.userId);
+      if (!patientUser || !patientUser.email) {
+        return res.status(400).json({ error: "El paciente no tiene un correo electrónico registrado" });
+      }
+
+      const doctorUser = await storage.getUser(doctor.userId);
+      const doctorName = doctorUser ? `Dr. ${doctorUser.firstName || ''} ${doctorUser.lastName || ''}`.trim() : 'Doctor';
+
+      const clinicalRecord = await storage.getClinicalRecordByAppointmentId(appointmentId);
+      if (!clinicalRecord) {
+        return res.status(404).json({ error: "Registro clínico no encontrado" });
+      }
+
+      let prescription = null;
+      let medicalInstructionsList: any[] = [];
+      let examOrdersData = null;
+
+      if (requestedTypes.includes('prescription')) {
+        const existingPrescription = await storage.getPrescriptionByRecordId(clinicalRecord.id);
+        if (existingPrescription) {
+          prescription = {
+            medications: existingPrescription.medications,
+            instructions: existingPrescription.instructions,
+          };
+        }
+      }
+
+      if (requestedTypes.includes('instructions')) {
+        const existingInstructions = await storage.getInstructionsByRecordId(clinicalRecord.id);
+        if (existingInstructions?.length > 0) {
+          medicalInstructionsList = existingInstructions.map((i: any) => ({
+            category: i.category,
+            title: i.title,
+            description: i.description,
+            priority: i.priority,
+          }));
+        }
+      }
+
+      if (requestedTypes.includes('exams')) {
+        const existingExamOrders = await storage.getExamOrdersByRecordId(clinicalRecord.id);
+        if (existingExamOrders?.length > 0) {
+          examOrdersData = {
+            exams: existingExamOrders[0].exams,
+            clinicalJustification: existingExamOrders[0].clinicalJustification,
+          };
+        }
+      }
+
+      const hasPrescription = prescription && prescription.medications?.length > 0;
+      const hasInstructions = medicalInstructionsList.length > 0;
+      const hasExams = examOrdersData && examOrdersData.exams?.length > 0;
+
+      if (!hasPrescription && !hasInstructions && !hasExams) {
+        return res.status(400).json({ error: "No hay documentos disponibles para enviar" });
+      }
+
+      const consultationDate = appointment.scheduledDate
+        ? new Date(appointment.scheduledDate).toLocaleDateString('es-CL', { year: 'numeric', month: 'long', day: 'numeric' })
+        : 'Fecha no disponible';
+
+      const patientName = `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() || 'Paciente';
+
+      await sendConsultationDocuments({
+        patientName,
+        patientEmail: patientUser.email,
+        doctorName,
+        doctorSpecialty: doctor.specialty || 'Medicina General',
+        consultationDate,
+        prescription: hasPrescription ? prescription : null,
+        medicalInstructions: hasInstructions ? medicalInstructionsList : undefined,
+        examOrders: hasExams ? examOrdersData : null,
+        documentTypes: requestedTypes,
+      });
+
+      res.json({ 
+        success: true, 
+        message: "Documentos enviados exitosamente",
+        sentTo: patientUser.email,
+        documentsSent: {
+          prescription: hasPrescription,
+          instructions: hasInstructions,
+          exams: hasExams,
+        }
+      });
+    } catch (error: any) {
+      console.error("Error sending consultation documents:", error);
+      res.status(500).json({ error: error.message || "Error al enviar los documentos" });
     }
   });
 

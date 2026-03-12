@@ -37,6 +37,9 @@ import {
   Activity,
   Heart,
   FlaskConical,
+  Mail,
+  Send,
+  CheckCircle,
 } from "lucide-react";
 
 interface Medication {
@@ -146,6 +149,11 @@ export default function ConsultationValidationPage() {
   const [exams, setExams] = useState<Exam[]>([]);
   const [clinicalJustification, setClinicalJustification] = useState("");
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [isValidated, setIsValidated] = useState(false);
+  const [sendPrescription, setSendPrescription] = useState(true);
+  const [sendInstructions, setSendInstructions] = useState(true);
+  const [sendExams, setSendExams] = useState(true);
+  const [emailSent, setEmailSent] = useState(false);
 
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -245,16 +253,39 @@ export default function ConsultationValidationPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/doctors/me/appointments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/doctors/me/stats"] });
+      setIsValidated(true);
       toast({
         title: "Consulta validada",
-        description: "La informaci\u00f3n cl\u00ednica ha sido guardada exitosamente",
+        description: "La información clínica ha sido guardada exitosamente",
       });
-      navigate("/doctor/appointments");
     },
     onError: () => {
       toast({
         title: "Error",
         description: "No se pudo validar la consulta",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const sendDocumentsMutation = useMutation({
+    mutationFn: async (documentTypes: string[]) => {
+      const response = await apiRequest("POST", `/api/consultations/${id}/send-documents`, {
+        documentTypes,
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setEmailSent(true);
+      toast({
+        title: "Documentos enviados",
+        description: `Los documentos han sido enviados al correo del paciente`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error al enviar",
+        description: error.message || "No se pudieron enviar los documentos por correo",
         variant: "destructive",
       });
     },
@@ -354,6 +385,168 @@ export default function ConsultationValidationPage() {
 
   const hasTranscription = !!validationData.clinicalRecord.transcription;
 
+  const hasMedications = medications.length > 0;
+  const hasInstructionItems = instructions.length > 0;
+  const hasExamItems = exams.length > 0;
+  const hasAnyDocuments = hasMedications || hasInstructionItems || hasExamItems;
+
+  const selectedDocCount = 
+    (sendPrescription && hasMedications ? 1 : 0) +
+    (sendInstructions && hasInstructionItems ? 1 : 0) +
+    (sendExams && hasExamItems ? 1 : 0);
+
+  const handleSendEmail = () => {
+    const types: string[] = [];
+    if (sendPrescription && hasMedications) types.push('prescription');
+    if (sendInstructions && hasInstructionItems) types.push('instructions');
+    if (sendExams && hasExamItems) types.push('exams');
+    if (types.length === 0) {
+      toast({
+        title: "Sin documentos seleccionados",
+        description: "Selecciona al menos un tipo de documento para enviar",
+        variant: "destructive",
+      });
+      return;
+    }
+    sendDocumentsMutation.mutate(types);
+  };
+
+  if (isValidated) {
+    return (
+      <div className="max-w-2xl mx-auto py-12">
+        <Card>
+          <CardContent className="pt-8 pb-8">
+            <div className="flex flex-col items-center text-center gap-4 mb-8">
+              <div className="h-16 w-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
+              </div>
+              <h1 className="text-2xl font-bold" data-testid="text-validation-success">
+                Consulta validada exitosamente
+              </h1>
+              <p className="text-muted-foreground">
+                La información clínica ha sido guardada. Puedes enviar los documentos al paciente por correo electrónico.
+              </p>
+            </div>
+
+            {hasAnyDocuments && !emailSent && (
+              <div className="space-y-4">
+                <h3 className="font-semibold text-lg flex items-center gap-2">
+                  <Mail className="h-5 w-5" />
+                  Enviar documentos al paciente
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Selecciona los documentos que deseas enviar al correo del paciente:
+                </p>
+
+                <div className="space-y-3">
+                  {hasMedications && (
+                    <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors" data-testid="checkbox-send-prescription">
+                      <input
+                        type="checkbox"
+                        checked={sendPrescription}
+                        onChange={(e) => setSendPrescription(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      <Pill className="h-4 w-4 text-blue-600" />
+                      <div>
+                        <p className="font-medium text-sm">Receta médica</p>
+                        <p className="text-xs text-muted-foreground">{medications.length} medicamento(s)</p>
+                      </div>
+                    </label>
+                  )}
+
+                  {hasInstructionItems && (
+                    <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors" data-testid="checkbox-send-instructions">
+                      <input
+                        type="checkbox"
+                        checked={sendInstructions}
+                        onChange={(e) => setSendInstructions(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      <ClipboardList className="h-4 w-4 text-green-600" />
+                      <div>
+                        <p className="font-medium text-sm">Indicaciones médicas</p>
+                        <p className="text-xs text-muted-foreground">{instructions.length} indicación(es)</p>
+                      </div>
+                    </label>
+                  )}
+
+                  {hasExamItems && (
+                    <label className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors" data-testid="checkbox-send-exams">
+                      <input
+                        type="checkbox"
+                        checked={sendExams}
+                        onChange={(e) => setSendExams(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300"
+                      />
+                      <FlaskConical className="h-4 w-4 text-purple-600" />
+                      <div>
+                        <p className="font-medium text-sm">Órdenes de exámenes</p>
+                        <p className="text-xs text-muted-foreground">{exams.length} examen(es)</p>
+                      </div>
+                    </label>
+                  )}
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <Button
+                    onClick={handleSendEmail}
+                    disabled={sendDocumentsMutation.isPending || selectedDocCount === 0}
+                    className="flex-1"
+                    data-testid="button-send-email"
+                  >
+                    {sendDocumentsMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4 mr-2" />
+                    )}
+                    Enviar por correo
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => navigate("/doctor/appointments")}
+                    data-testid="button-skip-email"
+                  >
+                    Omitir
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {emailSent && (
+              <div className="flex flex-col items-center gap-4 p-6 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                <CheckCircle className="h-8 w-8 text-green-600" />
+                <p className="font-medium text-green-800 dark:text-green-300">
+                  Documentos enviados exitosamente al paciente
+                </p>
+                <Button
+                  onClick={() => navigate("/doctor/appointments")}
+                  data-testid="button-done"
+                >
+                  Volver a consultas
+                </Button>
+              </div>
+            )}
+
+            {!hasAnyDocuments && (
+              <div className="flex flex-col items-center gap-4 pt-4">
+                <p className="text-sm text-muted-foreground">
+                  No hay documentos (receta, indicaciones o exámenes) para enviar.
+                </p>
+                <Button
+                  onClick={() => navigate("/doctor/appointments")}
+                  data-testid="button-done-no-docs"
+                >
+                  Volver a consultas
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -368,7 +561,7 @@ export default function ConsultationValidationPage() {
           </Button>
           <div>
             <h1 className="text-2xl font-bold" data-testid="text-page-title">
-              Validaci\u00f3n Post-Consulta
+              Validación Post-Consulta
             </h1>
             <p className="text-sm text-muted-foreground">
               Revisa y edita la informaci\u00f3n cl\u00ednica antes de confirmar
