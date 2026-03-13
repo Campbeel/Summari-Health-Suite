@@ -264,6 +264,7 @@ export default function DoctorAppointmentsPage() {
         appointmentId={summaryId}
         open={summaryId !== null}
         onOpenChange={(open) => { if (!open) setSummaryId(null); }}
+        isDoctor={true}
       />
       <div>
         <h1 className="text-2xl sm:text-3xl font-bold" data-testid="text-page-title">Mis Citas</h1>

@@ -2,11 +2,12 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
-import { Calendar, Clock, Video, Phone, User, Pill, ClipboardList, FlaskConical, FileText, AlertCircle, FileDown, Loader2 } from "lucide-react";
+import { Calendar, Clock, Video, Phone, User, Pill, ClipboardList, FlaskConical, FileText, AlertCircle, FileDown, Loader2, Mail, Send, CheckCircle2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
@@ -88,11 +89,15 @@ interface ConsultationSummaryDialogProps {
   appointmentId: number | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  isDoctor?: boolean;
 }
 
-export function ConsultationSummaryDialog({ appointmentId, open, onOpenChange }: ConsultationSummaryDialogProps) {
+export function ConsultationSummaryDialog({ appointmentId, open, onOpenChange, isDoctor = false }: ConsultationSummaryDialogProps) {
   const { toast } = useToast();
-  const [downloading, setDownloading] = useState(false);
+  const [downloadingType, setDownloadingType] = useState<string | null>(null);
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+  const [selectedEmailDocs, setSelectedEmailDocs] = useState<Set<string>>(new Set());
 
   const { data, isLoading, error } = useQuery<SummaryData>({
     queryKey: ["/api/consultations", appointmentId, "summary"],
@@ -107,18 +112,17 @@ export function ConsultationSummaryDialog({ appointmentId, open, onOpenChange }:
     enabled: open && appointmentId !== null,
   });
 
-  const hasDocuments = data && (
-    (data.prescription && data.prescription.medications?.length > 0) ||
-    (data.medicalInstructions && data.medicalInstructions.length > 0) ||
-    (data.examOrders && data.examOrders.exams?.length > 0)
-  );
+  const hasPrescription = data?.prescription && data.prescription.medications?.length > 0;
+  const hasInstructions = data?.medicalInstructions && data.medicalInstructions.length > 0;
+  const hasExams = data?.examOrders && data.examOrders.exams?.length > 0;
+  const hasDocuments = hasPrescription || hasInstructions || hasExams;
 
-  const handleDownloadPdf = async () => {
+  const handleDownloadPdf = async (types: string) => {
     if (!appointmentId) return;
-    setDownloading(true);
+    setDownloadingType(types);
     try {
       const token = localStorage.getItem("auth_token");
-      const res = await fetch(`/api/consultations/${appointmentId}/documents/pdf`, {
+      const res = await fetch(`/api/consultations/${appointmentId}/documents/pdf?types=${types}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
@@ -129,7 +133,10 @@ export function ConsultationSummaryDialog({ appointmentId, open, onOpenChange }:
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `consulta_${appointmentId}.pdf`;
+      const typeLabel = types.includes(',') ? 'documentos' : 
+        types === 'prescription' ? 'receta' :
+        types === 'instructions' ? 'indicaciones' : 'examenes';
+      a.download = `${typeLabel}_consulta_${appointmentId}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -141,32 +148,66 @@ export function ConsultationSummaryDialog({ appointmentId, open, onOpenChange }:
         variant: "destructive",
       });
     } finally {
-      setDownloading(false);
+      setDownloadingType(null);
+    }
+  };
+
+  const toggleEmailDoc = (type: string) => {
+    setSelectedEmailDocs(prev => {
+      const next = new Set(prev);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return next;
+    });
+    setEmailSent(false);
+  };
+
+  const handleSendEmail = async () => {
+    if (!appointmentId || selectedEmailDocs.size === 0) return;
+    setSendingEmail(true);
+    setEmailSent(false);
+    try {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch(`/api/consultations/${appointmentId}/send-documents`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ documentTypes: Array.from(selectedEmailDocs) }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Error al enviar" }));
+        throw new Error(err.error);
+      }
+      const result = await res.json();
+      setEmailSent(true);
+      toast({
+        title: "Documentos enviados",
+        description: `Enviados al correo de ${data?.patient?.name || 'paciente'}`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Error al enviar",
+        description: err.message || "No se pudieron enviar los documentos",
+        variant: "destructive",
+      });
+    } finally {
+      setSendingEmail(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(v) => {
+      if (!v) {
+        setSelectedEmailDocs(new Set());
+        setEmailSent(false);
+      }
+      onOpenChange(v);
+    }}>
       <DialogContent className="max-w-2xl max-h-[85vh] p-0" data-testid="consultation-summary-dialog">
-        <DialogHeader className="px-6 pt-6 pb-0 flex flex-row items-center justify-between gap-4">
+        <DialogHeader className="px-6 pt-6 pb-0">
           <DialogTitle className="text-xl" data-testid="text-dialog-title">Resumen de Consulta</DialogTitle>
-          {hasDocuments && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleDownloadPdf}
-              disabled={downloading}
-              className="mr-8"
-              data-testid="btn-download-pdf"
-            >
-              {downloading ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <FileDown className="h-4 w-4 mr-2" />
-              )}
-              Descargar PDF
-            </Button>
-          )}
         </DialogHeader>
         <ScrollArea className="px-6 pb-6 max-h-[calc(85vh-80px)]">
           <div className="space-y-5 pr-2 pt-2">
@@ -186,6 +227,153 @@ export function ConsultationSummaryDialog({ appointmentId, open, onOpenChange }:
             )}
 
             {data && <SummaryContent data={data} />}
+
+            {data && hasDocuments && (
+              <Card data-testid="card-document-actions">
+                <CardHeader className="pb-2 px-4 pt-4">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <FileDown className="h-5 w-5 text-primary" />
+                    Documentos
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-4 pb-4 space-y-3">
+                  <div className="grid gap-2">
+                    {hasPrescription && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="justify-start"
+                        onClick={() => handleDownloadPdf('prescription')}
+                        disabled={downloadingType === 'prescription'}
+                        data-testid="btn-download-prescription"
+                      >
+                        {downloadingType === 'prescription' ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Pill className="h-4 w-4 mr-2" />
+                        )}
+                        Descargar Receta (PDF)
+                      </Button>
+                    )}
+                    {hasInstructions && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="justify-start"
+                        onClick={() => handleDownloadPdf('instructions')}
+                        disabled={downloadingType === 'instructions'}
+                        data-testid="btn-download-instructions"
+                      >
+                        {downloadingType === 'instructions' ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <ClipboardList className="h-4 w-4 mr-2" />
+                        )}
+                        Descargar Indicaciones (PDF)
+                      </Button>
+                    )}
+                    {hasExams && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="justify-start"
+                        onClick={() => handleDownloadPdf('exams')}
+                        disabled={downloadingType === 'exams'}
+                        data-testid="btn-download-exams"
+                      >
+                        {downloadingType === 'exams' ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <FlaskConical className="h-4 w-4 mr-2" />
+                        )}
+                        Descargar Órdenes de Exámenes (PDF)
+                      </Button>
+                    )}
+                    {(hasPrescription ? 1 : 0) + (hasInstructions ? 1 : 0) + (hasExams ? 1 : 0) > 1 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="justify-start"
+                        onClick={() => handleDownloadPdf('prescription,instructions,exams')}
+                        disabled={downloadingType === 'prescription,instructions,exams'}
+                        data-testid="btn-download-all"
+                      >
+                        {downloadingType === 'prescription,instructions,exams' ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <FileDown className="h-4 w-4 mr-2" />
+                        )}
+                        Descargar Todos (PDF)
+                      </Button>
+                    )}
+                  </div>
+
+                  {isDoctor && (
+                    <div className="border-t pt-3 mt-3 space-y-3" data-testid="section-resend-email">
+                      <p className="text-sm font-medium flex items-center gap-2">
+                        <Mail className="h-4 w-4 text-primary" />
+                        Enviar documentos por email al paciente
+                      </p>
+                      <div className="space-y-2">
+                        {hasPrescription && (
+                          <label className="flex items-center gap-2 text-sm cursor-pointer">
+                            <Checkbox
+                              checked={selectedEmailDocs.has('prescription')}
+                              onCheckedChange={() => toggleEmailDoc('prescription')}
+                              data-testid="check-email-prescription"
+                            />
+                            <Pill className="h-3.5 w-3.5 text-muted-foreground" />
+                            Receta Médica
+                          </label>
+                        )}
+                        {hasInstructions && (
+                          <label className="flex items-center gap-2 text-sm cursor-pointer">
+                            <Checkbox
+                              checked={selectedEmailDocs.has('instructions')}
+                              onCheckedChange={() => toggleEmailDoc('instructions')}
+                              data-testid="check-email-instructions"
+                            />
+                            <ClipboardList className="h-3.5 w-3.5 text-muted-foreground" />
+                            Indicaciones Médicas
+                          </label>
+                        )}
+                        {hasExams && (
+                          <label className="flex items-center gap-2 text-sm cursor-pointer">
+                            <Checkbox
+                              checked={selectedEmailDocs.has('exams')}
+                              onCheckedChange={() => toggleEmailDoc('exams')}
+                              data-testid="check-email-exams"
+                            />
+                            <FlaskConical className="h-3.5 w-3.5 text-muted-foreground" />
+                            Órdenes de Exámenes
+                          </label>
+                        )}
+                      </div>
+                      {emailSent ? (
+                        <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400" data-testid="text-email-sent">
+                          <CheckCircle2 className="h-4 w-4" />
+                          Documentos enviados al correo del paciente
+                        </div>
+                      ) : (
+                        <Button
+                          size="sm"
+                          onClick={handleSendEmail}
+                          disabled={sendingEmail || selectedEmailDocs.size === 0}
+                          data-testid="btn-send-email"
+                        >
+                          {sendingEmail ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Send className="h-4 w-4 mr-2" />
+                          )}
+                          Enviar por email
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </div>
         </ScrollArea>
       </DialogContent>

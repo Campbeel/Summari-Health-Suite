@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
-import { ArrowLeft, Calendar, Clock, Video, Phone, User, Pill, ClipboardList, FlaskConical, FileText, AlertCircle, FileDown, Loader2 } from "lucide-react";
+import { ArrowLeft, Calendar, Clock, Video, Phone, User, Pill, ClipboardList, FlaskConical, FileText, AlertCircle, FileDown, Loader2, ChevronDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -87,7 +87,7 @@ const STATUS_LABELS: Record<string, string> = {
 export default function ConsultationSummaryPage() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
-  const [downloading, setDownloading] = useState(false);
+  const [downloadingType, setDownloadingType] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery<SummaryData>({
     queryKey: ["/api/consultations", id, "summary"],
@@ -137,11 +137,11 @@ export default function ConsultationSummaryPage() {
   const hasExams = examOrders && examOrders.exams?.length > 0;
   const hasDocuments = hasPrescription || hasInstructions || hasExams;
 
-  const handleDownloadPdf = async () => {
-    setDownloading(true);
+  const handleDownloadPdf = async (types: string) => {
+    setDownloadingType(types);
     try {
       const token = localStorage.getItem("auth_token");
-      const res = await fetch(`/api/consultations/${id}/documents/pdf`, {
+      const res = await fetch(`/api/consultations/${id}/documents/pdf?types=${types}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
@@ -152,7 +152,10 @@ export default function ConsultationSummaryPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `consulta_${id}.pdf`;
+      const typeLabel = types.includes(',') ? 'documentos' : 
+        types === 'prescription' ? 'receta' :
+        types === 'instructions' ? 'indicaciones' : 'examenes';
+      a.download = `${typeLabel}_consulta_${id}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -164,7 +167,7 @@ export default function ConsultationSummaryPage() {
         variant: "destructive",
       });
     } finally {
-      setDownloading(false);
+      setDownloadingType(null);
     }
   };
 
@@ -183,19 +186,56 @@ export default function ConsultationSummaryPage() {
           </div>
         </div>
         {hasDocuments && (
-          <Button
-            variant="outline"
-            onClick={handleDownloadPdf}
-            disabled={downloading}
-            data-testid="btn-download-pdf"
-          >
-            {downloading ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <FileDown className="h-4 w-4 mr-2" />
+          <div className="flex flex-wrap gap-2">
+            {hasPrescription && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleDownloadPdf('prescription')}
+                disabled={downloadingType === 'prescription'}
+                data-testid="btn-download-prescription"
+              >
+                {downloadingType === 'prescription' ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Pill className="h-4 w-4 mr-2" />
+                )}
+                Receta
+              </Button>
             )}
-            Descargar PDF
-          </Button>
+            {hasInstructions && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleDownloadPdf('instructions')}
+                disabled={downloadingType === 'instructions'}
+                data-testid="btn-download-instructions"
+              >
+                {downloadingType === 'instructions' ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <ClipboardList className="h-4 w-4 mr-2" />
+                )}
+                Indicaciones
+              </Button>
+            )}
+            {hasExams && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleDownloadPdf('exams')}
+                disabled={downloadingType === 'exams'}
+                data-testid="btn-download-exams"
+              >
+                {downloadingType === 'exams' ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <FlaskConical className="h-4 w-4 mr-2" />
+                )}
+                Exámenes
+              </Button>
+            )}
+          </div>
         )}
       </div>
 
