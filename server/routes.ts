@@ -922,6 +922,75 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/consultations/:id/summary", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const userId = req.userId;
+
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment) {
+        return res.status(404).json({ error: "Consulta no encontrada" });
+      }
+
+      const doctor = await storage.getDoctor(appointment.doctorId);
+      const doctorUser = doctor ? await storage.getUser(doctor.userId) : null;
+      const patient = await storage.getPatient(appointment.patientId);
+      const patientUser = patient ? await storage.getUser(patient.userId) : null;
+
+      const isDoctor = doctor?.userId === userId;
+      const isPatient = patient?.userId === userId;
+
+      if (!isDoctor && !isPatient) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+
+      const clinicalRecord = await storage.getClinicalRecordByAppointmentId(appointmentId);
+      let prescription = null;
+      let medicalInstructions: any[] = [];
+      let examOrders = null;
+
+      if (clinicalRecord) {
+        prescription = await storage.getPrescriptionByRecordId(clinicalRecord.id);
+        medicalInstructions = await storage.getInstructionsByRecordId(clinicalRecord.id);
+        const examOrdersList = await storage.getExamOrdersByRecordId(clinicalRecord.id);
+        examOrders = examOrdersList[0] || null;
+      }
+
+      res.json({
+        appointment: {
+          id: appointment.id,
+          scheduledDate: appointment.scheduledDate,
+          scheduledTime: appointment.scheduledTime,
+          status: appointment.status,
+          consultationType: appointment.consultationType,
+          notes: appointment.notes,
+        },
+        doctor: {
+          name: doctorUser ? `${doctorUser.firstName || ''} ${doctorUser.lastName || ''}`.trim() : '',
+          specialty: doctor?.specialty || '',
+        },
+        patient: {
+          name: patientUser ? `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() : '',
+          gender: patient?.gender,
+          bloodType: patient?.bloodType,
+          allergies: patient?.allergies,
+        },
+        clinicalRecord: clinicalRecord ? {
+          chiefComplaint: clinicalRecord.chiefComplaint,
+          symptoms: clinicalRecord.symptoms,
+          diagnosis: clinicalRecord.diagnosis,
+          notes: clinicalRecord.notes,
+        } : null,
+        prescription,
+        medicalInstructions,
+        examOrders,
+      });
+    } catch (error) {
+      console.error("Error fetching consultation summary:", error);
+      res.status(500).json({ error: "Error al obtener resumen de consulta" });
+    }
+  });
+
   app.post("/api/consultations/:id/end", isAuthenticated, async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id);

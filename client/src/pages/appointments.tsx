@@ -147,7 +147,9 @@ function AppointmentCard({ appointment }: { appointment: AppointmentWithDetails 
                 </Button>
               )}
               <Button variant="ghost" asChild>
-                <Link href={`/consultation/${appointment.id}`}>
+                <Link href={appointment.status === "completed" || appointment.status === "pending_validation" 
+                  ? `/consultation/${appointment.id}/summary` 
+                  : `/consultation/${appointment.id}`}>
                   Ver detalles
                 </Link>
               </Button>

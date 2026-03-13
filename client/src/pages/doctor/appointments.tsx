@@ -138,6 +138,13 @@ function AppointmentCard({ appointment, onStatusChange }: {
                   Cancelar
                 </Button>
               )}
+              {appointment.status === "completed" && (
+                <Button variant="ghost" asChild data-testid={`button-summary-${appointment.id}`}>
+                  <Link href={`/consultation/${appointment.id}/summary`}>
+                    Ver resumen
+                  </Link>
+                </Button>
+              )}
             </div>
           </div>
         </div>
