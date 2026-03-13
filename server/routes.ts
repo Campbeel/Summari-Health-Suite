@@ -10,6 +10,7 @@ import { isAuthenticated, registerAuthRoutes } from "./auth";
 import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText, verifyFlowSignature } from "./flow";
 import { transcribeAudio, transcribeAudioChunked, generatePrescriptionFromTranscript, generateFullConsultationSuggestions } from "./openai";
 import { sendConsultationDocuments } from "./email";
+import { generateConsultationPdf, type PdfDocumentData } from "./pdf-generator";
 import { getFitbitAuthUrl, getAndRemovePendingState, exchangeCodeForTokens, refreshFitbitTokens, fetchFitbitData } from "./fitbit";
 import {
   insertPatientSchema,
@@ -1412,6 +1413,22 @@ export async function registerRoutes(
 
       const patientName = `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() || 'Paciente';
 
+      const pdfData: PdfDocumentData = {
+        doctorName,
+        doctorSpecialty: doctor.specialty || 'Medicina General',
+        doctorLicense: doctor.licenseNumber || undefined,
+        patientName,
+        patientRut: patientUser.rut || undefined,
+        consultationDate,
+        diagnosis: clinicalRecord.diagnosis || undefined,
+        prescription: hasPrescription ? prescription : null,
+        medicalInstructions: hasInstructions ? medicalInstructionsList : undefined,
+        examOrders: hasExams ? examOrdersData : null,
+        documentTypes: requestedTypes,
+      };
+
+      const pdfBuffer = await generateConsultationPdf(pdfData);
+
       await sendConsultationDocuments({
         patientName,
         patientEmail: patientUser.email,
@@ -1422,6 +1439,7 @@ export async function registerRoutes(
         medicalInstructions: hasInstructions ? medicalInstructionsList : undefined,
         examOrders: hasExams ? examOrdersData : null,
         documentTypes: requestedTypes,
+        pdfBuffer,
       });
 
       res.json({ 
@@ -1437,6 +1455,113 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Error sending consultation documents:", error);
       res.status(500).json({ error: error.message || "Error al enviar los documentos" });
+    }
+  });
+
+  app.get("/api/consultations/:id/documents/pdf", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const userId = req.userId;
+
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment) {
+        return res.status(404).json({ error: "Consulta no encontrada" });
+      }
+
+      const requesterDoctor = await storage.getDoctorByUserId(userId);
+      const requesterPatient = await storage.getPatientByUserId(userId);
+
+      const isDoctor = requesterDoctor && requesterDoctor.id === appointment.doctorId;
+      const isPatient = requesterPatient && requesterPatient.id === appointment.patientId;
+
+      if (!isDoctor && !isPatient) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+
+      const typesParam = typeof req.query.types === 'string' ? req.query.types : 'prescription,instructions,exams';
+      const validTypes = ['prescription', 'instructions', 'exams'];
+      const documentTypes = typesParam.split(',').filter((t: string) => validTypes.includes(t)) as ('prescription' | 'instructions' | 'exams')[];
+
+      if (documentTypes.length === 0) {
+        return res.status(400).json({ error: "No se especificaron tipos de documentos válidos" });
+      }
+
+      const clinicalRecord = await storage.getClinicalRecordByAppointmentId(appointmentId);
+      if (!clinicalRecord) {
+        return res.status(404).json({ error: "Registro clínico no encontrado" });
+      }
+
+      const appointmentDoctor = await storage.getDoctor(appointment.doctorId);
+      const doctorUser = appointmentDoctor ? await storage.getUser(appointmentDoctor.userId) : null;
+      const doctorName = doctorUser ? `Dr. ${doctorUser.firstName || ''} ${doctorUser.lastName || ''}`.trim() : 'Doctor';
+
+      const appointmentPatient = await storage.getPatient(appointment.patientId);
+      const patientUser = appointmentPatient ? await storage.getUser(appointmentPatient.userId) : null;
+      const patientName = patientUser ? `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() : 'Paciente';
+
+      let prescription = null;
+      let medicalInstructionsList: any[] = [];
+      let examOrdersData = null;
+
+      if (documentTypes.includes('prescription')) {
+        const existing = await storage.getPrescriptionByRecordId(clinicalRecord.id);
+        if (existing) {
+          prescription = { medications: existing.medications, instructions: existing.instructions };
+        }
+      }
+
+      if (documentTypes.includes('instructions')) {
+        const existing = await storage.getInstructionsByRecordId(clinicalRecord.id);
+        if (existing?.length > 0) {
+          medicalInstructionsList = existing.map((i: any) => ({
+            category: i.category, title: i.title, description: i.description, priority: i.priority,
+          }));
+        }
+      }
+
+      if (documentTypes.includes('exams')) {
+        const existing = await storage.getExamOrdersByRecordId(clinicalRecord.id);
+        if (existing?.length > 0) {
+          examOrdersData = { exams: existing[0].exams, clinicalJustification: existing[0].clinicalJustification };
+        }
+      }
+
+      const hasPrescription = prescription && prescription.medications?.length > 0;
+      const hasInstructions = medicalInstructionsList.length > 0;
+      const hasExams = examOrdersData && examOrdersData.exams?.length > 0;
+
+      if (!hasPrescription && !hasInstructions && !hasExams) {
+        return res.status(404).json({ error: "No hay documentos disponibles" });
+      }
+
+      const consultationDate = appointment.scheduledDate
+        ? new Date(appointment.scheduledDate).toLocaleDateString('es-CL', { year: 'numeric', month: 'long', day: 'numeric' })
+        : 'Fecha no disponible';
+
+      const pdfData: PdfDocumentData = {
+        doctorName,
+        doctorSpecialty: appointmentDoctor?.specialty || 'Medicina General',
+        doctorLicense: appointmentDoctor?.licenseNumber || undefined,
+        patientName,
+        patientRut: patientUser?.rut || undefined,
+        consultationDate,
+        diagnosis: clinicalRecord.diagnosis || undefined,
+        prescription: hasPrescription ? prescription : null,
+        medicalInstructions: hasInstructions ? medicalInstructionsList : undefined,
+        examOrders: hasExams ? examOrdersData : null,
+        documentTypes,
+      };
+
+      const pdfBuffer = await generateConsultationPdf(pdfData);
+
+      const filename = `consulta_${appointmentId}_${new Date().toISOString().slice(0, 10)}.pdf`;
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+      res.setHeader('Content-Length', pdfBuffer.length);
+      res.end(pdfBuffer);
+    } catch (error: any) {
+      console.error("Error generating PDF:", error);
+      res.status(500).json({ error: error.message || "Error al generar el PDF" });
     }
   });
 

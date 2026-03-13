@@ -1,13 +1,15 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
-import { Calendar, Clock, Video, Phone, User, Pill, ClipboardList, FlaskConical, FileText, AlertCircle } from "lucide-react";
+import { Calendar, Clock, Video, Phone, User, Pill, ClipboardList, FlaskConical, FileText, AlertCircle, FileDown, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useToast } from "@/hooks/use-toast";
 
 interface SummaryData {
   appointment: {
@@ -89,6 +91,9 @@ interface ConsultationSummaryDialogProps {
 }
 
 export function ConsultationSummaryDialog({ appointmentId, open, onOpenChange }: ConsultationSummaryDialogProps) {
+  const { toast } = useToast();
+  const [downloading, setDownloading] = useState(false);
+
   const { data, isLoading, error } = useQuery<SummaryData>({
     queryKey: ["/api/consultations", appointmentId, "summary"],
     queryFn: async () => {
@@ -102,11 +107,66 @@ export function ConsultationSummaryDialog({ appointmentId, open, onOpenChange }:
     enabled: open && appointmentId !== null,
   });
 
+  const hasDocuments = data && (
+    (data.prescription && data.prescription.medications?.length > 0) ||
+    (data.medicalInstructions && data.medicalInstructions.length > 0) ||
+    (data.examOrders && data.examOrders.exams?.length > 0)
+  );
+
+  const handleDownloadPdf = async () => {
+    if (!appointmentId) return;
+    setDownloading(true);
+    try {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch(`/api/consultations/${appointmentId}/documents/pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Error al generar PDF" }));
+        throw new Error(err.error);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `consulta_${appointmentId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast({
+        title: "Error al descargar",
+        description: err.message || "No se pudo generar el PDF",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] p-0" data-testid="consultation-summary-dialog">
-        <DialogHeader className="px-6 pt-6 pb-0">
+        <DialogHeader className="px-6 pt-6 pb-0 flex flex-row items-center justify-between gap-4">
           <DialogTitle className="text-xl" data-testid="text-dialog-title">Resumen de Consulta</DialogTitle>
+          {hasDocuments && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadPdf}
+              disabled={downloading}
+              className="mr-8"
+              data-testid="btn-download-pdf"
+            >
+              {downloading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <FileDown className="h-4 w-4 mr-2" />
+              )}
+              Descargar PDF
+            </Button>
+          )}
         </DialogHeader>
         <ScrollArea className="px-6 pb-6 max-h-[calc(85vh-80px)]">
           <div className="space-y-5 pr-2 pt-2">

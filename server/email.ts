@@ -232,31 +232,36 @@ function buildExamOrdersSection(examOrders: ConsultationDocumentsEmailData['exam
   `;
 }
 
-export async function sendConsultationDocuments(data: ConsultationDocumentsEmailData) {
+export async function sendConsultationDocuments(data: ConsultationDocumentsEmailData & { pdfBuffer?: Buffer }) {
   const transporter = getTransporter();
   const fromEmail = process.env.SMTP_USER!;
 
-  let sections = '';
   const subjectParts: string[] = [];
 
   if (data.documentTypes.includes('prescription') && data.prescription?.medications?.length) {
-    sections += buildPrescriptionSection(data.prescription);
     subjectParts.push('Receta');
   }
   if (data.documentTypes.includes('instructions') && data.medicalInstructions?.length) {
-    sections += buildInstructionsSection(data.medicalInstructions);
     subjectParts.push('Indicaciones');
   }
   if (data.documentTypes.includes('exams') && data.examOrders?.exams?.length) {
-    sections += buildExamOrdersSection(data.examOrders);
     subjectParts.push('Exámenes');
   }
 
-  if (!sections) {
+  if (subjectParts.length === 0) {
     throw new Error('No hay documentos para enviar');
   }
 
   const subject = `${subjectParts.join(', ')} de tu consulta - Summari`;
+
+  const attachments: { filename: string; content: Buffer; contentType: string }[] = [];
+  if (data.pdfBuffer) {
+    attachments.push({
+      filename: `documentos_consulta_${data.consultationDate.replace(/\s+/g, '_')}.pdf`,
+      content: data.pdfBuffer,
+      contentType: 'application/pdf',
+    });
+  }
 
   await transporter.sendMail({
     from: `Summari <${fromEmail}>`,
@@ -278,7 +283,7 @@ export async function sendConsultationDocuments(data: ConsultationDocumentsEmail
           <div style="padding: 32px 24px;">
             <p style="color: #18181b; font-size: 16px; margin: 0 0 8px;">Hola ${escapeHtml(data.patientName)},</p>
             <p style="color: #3f3f46; font-size: 14px; line-height: 1.6; margin: 0 0 20px;">
-              A continuación encontrarás los documentos de tu consulta médica del <strong>${escapeHtml(data.consultationDate)}</strong>.
+              Adjunto encontrarás los documentos de tu consulta médica del <strong>${escapeHtml(data.consultationDate)}</strong>.
             </p>
 
             <div style="padding: 12px 16px; background: #f0f9ff; border-radius: 6px; margin-bottom: 24px;">
@@ -288,7 +293,17 @@ export async function sendConsultationDocuments(data: ConsultationDocumentsEmail
               </p>
             </div>
 
-            ${sections}
+            <div style="padding: 16px; background: #f4f4f5; border-radius: 8px; text-align: center; margin-bottom: 24px;">
+              <p style="color: #3f3f46; font-size: 14px; margin: 0 0 8px;">
+                📎 <strong>Documentos adjuntos:</strong>
+              </p>
+              <p style="color: #71717a; font-size: 13px; margin: 0;">
+                ${subjectParts.join(' · ')}
+              </p>
+              <p style="color: #a1a1aa; font-size: 12px; margin: 8px 0 0;">
+                Abre el archivo PDF adjunto para ver tus documentos completos.
+              </p>
+            </div>
 
             <hr style="border: none; border-top: 1px solid #e4e4e7; margin: 24px 0;">
             <p style="color: #a1a1aa; font-size: 12px; margin: 0; line-height: 1.5;">
@@ -300,6 +315,7 @@ export async function sendConsultationDocuments(data: ConsultationDocumentsEmail
       </body>
       </html>
     `,
+    attachments,
   });
 
   return { sent: true, documentTypes: data.documentTypes };

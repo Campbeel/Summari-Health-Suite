@@ -1,13 +1,15 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
-import { ArrowLeft, Calendar, Clock, Video, Phone, User, Pill, ClipboardList, FlaskConical, FileText, AlertCircle } from "lucide-react";
+import { ArrowLeft, Calendar, Clock, Video, Phone, User, Pill, ClipboardList, FlaskConical, FileText, AlertCircle, FileDown, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
 
 interface SummaryData {
   appointment: {
@@ -84,6 +86,8 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default function ConsultationSummaryPage() {
   const { id } = useParams<{ id: string }>();
+  const { toast } = useToast();
+  const [downloading, setDownloading] = useState(false);
 
   const { data, isLoading, error } = useQuery<SummaryData>({
     queryKey: ["/api/consultations", id, "summary"],
@@ -131,19 +135,68 @@ export default function ConsultationSummaryPage() {
   const hasPrescription = prescription && prescription.medications?.length > 0;
   const hasInstructions = medicalInstructions && medicalInstructions.length > 0;
   const hasExams = examOrders && examOrders.exams?.length > 0;
+  const hasDocuments = hasPrescription || hasInstructions || hasExams;
+
+  const handleDownloadPdf = async () => {
+    setDownloading(true);
+    try {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch(`/api/consultations/${id}/documents/pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Error al generar PDF" }));
+        throw new Error(err.error);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `consulta_${id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast({
+        title: "Error al descargar",
+        description: err.message || "No se pudo generar el PDF",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6" data-testid="consultation-summary">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild data-testid="btn-back">
-          <Link href="/appointments"><ArrowLeft className="h-5 w-5" /></Link>
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-title">Resumen de Consulta</h1>
-          <p className="text-muted-foreground text-sm">
-            {format(parseISO(appointment.scheduledDate), "EEEE d 'de' MMMM, yyyy", { locale: es })}
-          </p>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" asChild data-testid="btn-back">
+            <Link href="/appointments"><ArrowLeft className="h-5 w-5" /></Link>
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold" data-testid="text-title">Resumen de Consulta</h1>
+            <p className="text-muted-foreground text-sm">
+              {format(parseISO(appointment.scheduledDate), "EEEE d 'de' MMMM, yyyy", { locale: es })}
+            </p>
+          </div>
         </div>
+        {hasDocuments && (
+          <Button
+            variant="outline"
+            onClick={handleDownloadPdf}
+            disabled={downloading}
+            data-testid="btn-download-pdf"
+          >
+            {downloading ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <FileDown className="h-4 w-4 mr-2" />
+            )}
+            Descargar PDF
+          </Button>
+        )}
       </div>
 
       <Card data-testid="card-appointment-info">
