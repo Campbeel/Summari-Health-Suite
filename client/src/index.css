@@ -249,4 +249,8 @@
     background: linear-gradient(to bottom, #fff 0%, #f9fafb 100%);
     border-left: 4px solid hsl(var(--primary));
   }
+
+  .dark .prescription-paper {
+    background: linear-gradient(to bottom, hsl(var(--card)) 0%, hsl(var(--muted)) 100%);
+  }
 }

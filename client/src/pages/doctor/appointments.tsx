@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -5,12 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Calendar, Clock, Video, Phone, Play, X, Check, Users, FileCheck } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { ConsultationSummaryDialog } from "@/components/consultation-summary-dialog";
 
 interface AppointmentWithPatient {
   id: number;
@@ -37,17 +39,28 @@ function getStatusBadge(status: string) {
   return <Badge variant={s.variant} data-testid={`status-badge-${status}`}>{s.label}</Badge>;
 }
 
-function AppointmentCard({ appointment, onStatusChange }: { 
+function AppointmentCard({ appointment, onStatusChange, onOpenSummary }: { 
   appointment: AppointmentWithPatient;
   onStatusChange: (id: number, status: string) => void;
+  onOpenSummary: (id: number) => void;
 }) {
+  const [, navigate] = useLocation();
   const canConfirm = appointment.status === "scheduled";
   const canStart = appointment.status === "confirmed";
   const canCancel = appointment.status === "scheduled" || appointment.status === "confirmed";
   const canValidate = appointment.status === "pending_validation";
+  const isSummaryView = appointment.status === "completed";
+
+  const detailsUrl = appointment.status === "pending_validation"
+    ? `/doctor/consultation/${appointment.id}/validate`
+    : `/consultation/${appointment.id}`;
 
   return (
-    <Card className="hover-elevate" data-testid={`appointment-${appointment.id}`}>
+    <Card 
+      className="hover-elevate cursor-pointer" 
+      data-testid={`appointment-${appointment.id}`}
+      onClick={() => isSummaryView ? onOpenSummary(appointment.id) : navigate(detailsUrl)}
+    >
       <CardContent className="p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row gap-4">
           <Avatar className="h-14 w-14 sm:h-16 sm:w-16 flex-shrink-0">
@@ -100,7 +113,7 @@ function AppointmentCard({ appointment, onStatusChange }: {
               </p>
             )}
 
-            <div className="flex flex-wrap gap-2 pt-2">
+            <div className="flex flex-wrap gap-2 pt-2" onClick={(e) => e.stopPropagation()}>
               {canValidate && (
                 <Button asChild data-testid={`button-validate-${appointment.id}`}>
                   <Link href={`/doctor/consultation/${appointment.id}/validate`}>
@@ -129,7 +142,7 @@ function AppointmentCard({ appointment, onStatusChange }: {
               )}
               {canCancel && (
                 <Button 
-                  variant="ghost" 
+                  variant="outline" 
                   className="text-destructive hover:text-destructive"
                   onClick={() => onStatusChange(appointment.id, "cancelled")}
                   data-testid={`button-cancel-${appointment.id}`}
@@ -139,10 +152,12 @@ function AppointmentCard({ appointment, onStatusChange }: {
                 </Button>
               )}
               {appointment.status === "completed" && (
-                <Button variant="ghost" asChild data-testid={`button-summary-${appointment.id}`}>
-                  <Link href={`/consultation/${appointment.id}/summary`}>
-                    Ver resumen
-                  </Link>
+                <Button 
+                  variant="outline" 
+                  onClick={() => onOpenSummary(appointment.id)}
+                  data-testid={`button-summary-${appointment.id}`}
+                >
+                  Ver resumen
                 </Button>
               )}
             </div>
@@ -155,6 +170,7 @@ function AppointmentCard({ appointment, onStatusChange }: {
 
 export default function DoctorAppointmentsPage() {
   const { toast } = useToast();
+  const [summaryId, setSummaryId] = useState<number | null>(null);
 
   const { data: appointments, isLoading } = useQuery<AppointmentWithPatient[]>({
     queryKey: ["/api/doctors/me/appointments"],
@@ -237,12 +253,18 @@ export default function DoctorAppointmentsPage() {
         key={appointment.id} 
         appointment={appointment} 
         onStatusChange={handleStatusChange}
+        onOpenSummary={setSummaryId}
       />
     ));
   };
 
   return (
     <div className="space-y-6">
+      <ConsultationSummaryDialog
+        appointmentId={summaryId}
+        open={summaryId !== null}
+        onOpenChange={(open) => { if (!open) setSummaryId(null); }}
+      />
       <div>
         <h1 className="text-2xl sm:text-3xl font-bold" data-testid="text-page-title">Mis Citas</h1>
         <p className="text-muted-foreground mt-1">

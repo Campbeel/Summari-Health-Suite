@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -5,12 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Calendar, Clock, Plus, Video, Phone, MapPin, CreditCard, Loader2 } from "lucide-react";
 import { format, parseISO, isAfter, isBefore } from "date-fns";
 import { es } from "date-fns/locale";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { ConsultationSummaryDialog } from "@/components/consultation-summary-dialog";
 
 interface AppointmentWithDetails {
   id: number;
@@ -40,11 +42,15 @@ function getStatusBadge(status: string) {
 }
 
 
-function AppointmentCard({ appointment }: { appointment: AppointmentWithDetails }) {
+function AppointmentCard({ appointment, onOpenSummary }: { appointment: AppointmentWithDetails; onOpenSummary: (id: number) => void }) {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const isUpcoming = isAfter(parseISO(appointment.scheduledDate), new Date()) || 
     (format(new Date(), "yyyy-MM-dd") === appointment.scheduledDate);
   const canJoin = appointment.status === "confirmed" || appointment.status === "in_progress";
+  const isSummaryView = appointment.status === "completed" || appointment.status === "pending_validation";
+
+  const detailsUrl = `/consultation/${appointment.id}`;
 
   const payMutation = useMutation({
     mutationFn: async () => {
@@ -66,7 +72,11 @@ function AppointmentCard({ appointment }: { appointment: AppointmentWithDetails 
   });
 
   return (
-    <Card className="hover-elevate" data-testid={`appointment-${appointment.id}`}>
+    <Card 
+      className="hover-elevate cursor-pointer" 
+      data-testid={`appointment-${appointment.id}`}
+      onClick={() => isSummaryView ? onOpenSummary(appointment.id) : navigate(detailsUrl)}
+    >
       <CardContent className="p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row gap-4">
           <Avatar className="h-14 w-14 sm:h-16 sm:w-16 flex-shrink-0">
@@ -122,7 +132,7 @@ function AppointmentCard({ appointment }: { appointment: AppointmentWithDetails 
               </p>
             )}
 
-            <div className="flex flex-wrap gap-2 pt-2">
+            <div className="flex flex-wrap gap-2 pt-2" onClick={(e) => e.stopPropagation()}>
               {canJoin && (
                 <Button asChild data-testid={`join-appointment-${appointment.id}`}>
                   <Link href={`/consultation/${appointment.id}`}>
@@ -146,12 +156,12 @@ function AppointmentCard({ appointment }: { appointment: AppointmentWithDetails 
                   Pagar consulta
                 </Button>
               )}
-              <Button variant="ghost" asChild>
-                <Link href={appointment.status === "completed" || appointment.status === "pending_validation" 
-                  ? `/consultation/${appointment.id}/summary` 
-                  : `/consultation/${appointment.id}`}>
-                  Ver detalles
-                </Link>
+              <Button 
+                variant="outline" 
+                onClick={() => isSummaryView ? onOpenSummary(appointment.id) : navigate(detailsUrl)}
+                data-testid={`button-details-${appointment.id}`}
+              >
+                Ver detalles
               </Button>
             </div>
           </div>
@@ -162,6 +172,7 @@ function AppointmentCard({ appointment }: { appointment: AppointmentWithDetails 
 }
 
 export default function AppointmentsPage() {
+  const [summaryId, setSummaryId] = useState<number | null>(null);
   const { data: appointments, isLoading } = useQuery<AppointmentWithDetails[]>({
     queryKey: ["/api/appointments"],
   });
@@ -176,6 +187,11 @@ export default function AppointmentsPage() {
 
   return (
     <div className="space-y-6">
+      <ConsultationSummaryDialog
+        appointmentId={summaryId}
+        open={summaryId !== null}
+        onOpenChange={(open) => { if (!open) setSummaryId(null); }}
+      />
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold">Mis Consultas</h1>
@@ -221,7 +237,7 @@ export default function AppointmentsPage() {
             </>
           ) : upcoming.length > 0 ? (
             upcoming.map((appointment) => (
-              <AppointmentCard key={appointment.id} appointment={appointment} />
+              <AppointmentCard key={appointment.id} appointment={appointment} onOpenSummary={setSummaryId} />
             ))
           ) : (
             <Card>
@@ -239,7 +255,7 @@ export default function AppointmentsPage() {
         <TabsContent value="past" className="space-y-4">
           {past.length > 0 ? (
             past.map((appointment) => (
-              <AppointmentCard key={appointment.id} appointment={appointment} />
+              <AppointmentCard key={appointment.id} appointment={appointment} onOpenSummary={setSummaryId} />
             ))
           ) : (
             <Card>
