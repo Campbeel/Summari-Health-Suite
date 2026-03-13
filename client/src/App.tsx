@@ -22,6 +22,8 @@ import ConsultationPage from "@/pages/consultation";
 import RecordsPage from "@/pages/records";
 import RecordDetailPage from "@/pages/record-detail";
 import PrescriptionsPage from "@/pages/prescriptions";
+import MedicalInstructionsPage from "@/pages/medical-instructions";
+import ExamOrdersPage from "@/pages/exam-orders";
 import PaymentsPage from "@/pages/payments";
 import PaymentResultPage from "@/pages/payment-result";
 import ProfilePage from "@/pages/profile";
@@ -186,6 +188,12 @@ function Router() {
       </Route>
       <Route path="/prescriptions">
         <ProtectedRoute component={PrescriptionsPage} />
+      </Route>
+      <Route path="/indicaciones">
+        <ProtectedRoute component={MedicalInstructionsPage} />
+      </Route>
+      <Route path="/examenes">
+        <ProtectedRoute component={ExamOrdersPage} />
       </Route>
       <Route path="/payments">
         <ProtectedRoute component={PaymentsPage} />

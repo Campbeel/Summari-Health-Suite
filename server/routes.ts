@@ -843,6 +843,40 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/medical-instructions", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const patient = await storage.getPatientByUserId(userId);
+      
+      if (!patient) {
+        return res.json([]);
+      }
+      
+      const instructions = await storage.getInstructionsWithDoctorByPatient(patient.id);
+      res.json(instructions);
+    } catch (error) {
+      console.error("Error fetching medical instructions:", error);
+      res.status(500).json({ error: "Failed to fetch medical instructions" });
+    }
+  });
+
+  app.get("/api/exam-orders", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const patient = await storage.getPatientByUserId(userId);
+      
+      if (!patient) {
+        return res.json([]);
+      }
+      
+      const orders = await storage.getExamOrdersWithDoctorByPatient(patient.id);
+      res.json(orders);
+    } catch (error) {
+      console.error("Error fetching exam orders:", error);
+      res.status(500).json({ error: "Failed to fetch exam orders" });
+    }
+  });
+
   app.post("/api/prescriptions", isAuthenticated, async (req: any, res) => {
     try {
       // Validate request body against prescriptionSchema

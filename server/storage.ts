@@ -138,6 +138,35 @@ type PrescriptionWithDoctor = {
   status: string;
   doctorName: string;
   doctorSpecialty: string | null;
+  appointmentId: number | null;
+};
+
+type InstructionWithDoctor = {
+  id: number;
+  category: string;
+  title: string;
+  description: string;
+  priority: string;
+  dueDate: string | null;
+  isCompleted: boolean;
+  createdAt: Date;
+  doctorName: string;
+  doctorSpecialty: string | null;
+  appointmentId: number | null;
+};
+
+type ExamOrderWithDoctor = {
+  id: number;
+  exams: Array<{
+    name: string;
+    instructions?: string;
+  }>;
+  clinicalJustification: string | null;
+  issuedAt: Date;
+  status: string;
+  doctorName: string;
+  doctorSpecialty: string | null;
+  appointmentId: number | null;
 };
 
 type DoctorDashboardStats = {
@@ -220,6 +249,7 @@ export interface IStorage {
   // Medical Instructions
   getMedicalInstruction(id: number): Promise<MedicalInstruction | undefined>;
   getInstructionsByPatient(patientId: number): Promise<MedicalInstruction[]>;
+  getInstructionsWithDoctorByPatient(patientId: number): Promise<InstructionWithDoctor[]>;
   getInstructionsByRecordId(clinicalRecordId: number): Promise<MedicalInstruction[]>;
   deleteInstructionsByRecordId(clinicalRecordId: number): Promise<void>;
   createMedicalInstruction(instruction: InsertMedicalInstruction): Promise<MedicalInstruction>;
@@ -242,6 +272,7 @@ export interface IStorage {
 
   // Exam Orders
   getExamOrdersByRecordId(clinicalRecordId: number): Promise<ExamOrder[]>;
+  getExamOrdersWithDoctorByPatient(patientId: number): Promise<ExamOrderWithDoctor[]>;
   deleteExamOrdersByRecordId(clinicalRecordId: number): Promise<void>;
   createExamOrder(examOrder: InsertExamOrder): Promise<ExamOrder>;
 
@@ -769,8 +800,10 @@ export class DatabaseStorage implements IStorage {
         status: prescriptions.status,
         doctorName: sql<string>`COALESCE(u.first_name || ' ' || u.last_name, u.email)`.as('doctorName'),
         doctorSpecialty: doctors.specialty,
+        appointmentId: clinicalRecords.appointmentId,
       })
       .from(prescriptions)
+      .leftJoin(clinicalRecords, eq(prescriptions.clinicalRecordId, clinicalRecords.id))
       .leftJoin(doctors, eq(prescriptions.doctorId, doctors.id))
       .leftJoin(sql`users u`, sql`${doctors.userId} = u.id`)
       .where(eq(prescriptions.patientId, patientId))
@@ -793,6 +826,30 @@ export class DatabaseStorage implements IStorage {
     const result = await db
       .select()
       .from(medicalInstructions)
+      .where(eq(medicalInstructions.patientId, patientId))
+      .orderBy(desc(medicalInstructions.createdAt));
+    return result;
+  }
+
+  async getInstructionsWithDoctorByPatient(patientId: number): Promise<InstructionWithDoctor[]> {
+    const result = await db
+      .select({
+        id: medicalInstructions.id,
+        category: medicalInstructions.category,
+        title: medicalInstructions.title,
+        description: medicalInstructions.description,
+        priority: medicalInstructions.priority,
+        dueDate: medicalInstructions.dueDate,
+        isCompleted: medicalInstructions.isCompleted,
+        createdAt: medicalInstructions.createdAt,
+        doctorName: sql<string>`COALESCE(u.first_name || ' ' || u.last_name, u.email)`.as('doctorName'),
+        doctorSpecialty: doctors.specialty,
+        appointmentId: clinicalRecords.appointmentId,
+      })
+      .from(medicalInstructions)
+      .leftJoin(clinicalRecords, eq(medicalInstructions.clinicalRecordId, clinicalRecords.id))
+      .leftJoin(doctors, eq(medicalInstructions.doctorId, doctors.id))
+      .leftJoin(sql`users u`, sql`${doctors.userId} = u.id`)
       .where(eq(medicalInstructions.patientId, patientId))
       .orderBy(desc(medicalInstructions.createdAt));
     return result;
@@ -940,6 +997,27 @@ export class DatabaseStorage implements IStorage {
   // Exam Orders
   async getExamOrdersByRecordId(clinicalRecordId: number): Promise<ExamOrder[]> {
     return await db.select().from(examOrders).where(eq(examOrders.clinicalRecordId, clinicalRecordId));
+  }
+
+  async getExamOrdersWithDoctorByPatient(patientId: number): Promise<ExamOrderWithDoctor[]> {
+    const result = await db
+      .select({
+        id: examOrders.id,
+        exams: examOrders.exams,
+        clinicalJustification: examOrders.clinicalJustification,
+        issuedAt: examOrders.issuedAt,
+        status: examOrders.status,
+        doctorName: sql<string>`COALESCE(u.first_name || ' ' || u.last_name, u.email)`.as('doctorName'),
+        doctorSpecialty: doctors.specialty,
+        appointmentId: clinicalRecords.appointmentId,
+      })
+      .from(examOrders)
+      .leftJoin(clinicalRecords, eq(examOrders.clinicalRecordId, clinicalRecords.id))
+      .leftJoin(doctors, eq(examOrders.doctorId, doctors.id))
+      .leftJoin(sql`users u`, sql`${doctors.userId} = u.id`)
+      .where(eq(examOrders.patientId, patientId))
+      .orderBy(desc(examOrders.issuedAt));
+    return result;
   }
 
   async deleteExamOrdersByRecordId(clinicalRecordId: number): Promise<void> {

@@ -36,6 +36,8 @@ import {
   User,
   Shield,
   Activity,
+  ClipboardList,
+  FlaskConical,
 } from "lucide-react";
 
 const patientMenuItems = [
@@ -44,6 +46,8 @@ const patientMenuItems = [
   { title: "Datos de Salud", url: "/health-data", icon: Activity, testId: "nav-health-data" },
   { title: "Historial Clínico", url: "/records", icon: FileText, testId: "nav-records" },
   { title: "Recetas", url: "/prescriptions", icon: Pill, testId: "nav-prescriptions" },
+  { title: "Indicaciones", url: "/indicaciones", icon: ClipboardList, testId: "nav-instructions" },
+  { title: "Exámenes", url: "/examenes", icon: FlaskConical, testId: "nav-exam-orders" },
 ];
 
 const doctorMenuItems = [

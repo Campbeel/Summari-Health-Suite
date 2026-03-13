@@ -1,9 +1,17 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { 
   Pill, 
   Calendar, 
@@ -11,7 +19,10 @@ import {
   Clock,
   Stethoscope,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
+  Eye,
+  FileDown,
+  Loader2,
 } from "lucide-react";
 import { format, parseISO, isAfter } from "date-fns";
 import { es } from "date-fns/locale";
@@ -33,6 +44,7 @@ interface PrescriptionWithDetails {
   status: string;
   doctorName: string;
   doctorSpecialty: string;
+  appointmentId: number | null;
 }
 
 function getStatusBadge(status: string, validUntil?: string) {
@@ -50,21 +62,62 @@ function getStatusBadge(status: string, validUntil?: string) {
   return <Badge className="bg-primary/10 text-primary" data-testid="status-active">Activa</Badge>;
 }
 
+function getPriorityColor(priority: string) {
+  switch (priority) {
+    case "urgent": return "text-red-600 bg-red-50 dark:bg-red-950/50 dark:text-red-400";
+    case "high": return "text-orange-600 bg-orange-50 dark:bg-orange-950/50 dark:text-orange-400";
+    case "normal": return "text-blue-600 bg-blue-50 dark:bg-blue-950/50 dark:text-blue-400";
+    case "low": return "text-gray-600 bg-gray-50 dark:bg-gray-950/50 dark:text-gray-400";
+    default: return "text-blue-600 bg-blue-50 dark:bg-blue-950/50 dark:text-blue-400";
+  }
+}
+
 export default function PrescriptionsPage() {
+  const { toast } = useToast();
+  const [previewPrescription, setPreviewPrescription] = useState<PrescriptionWithDetails | null>(null);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
+
   const { data: prescriptions, isLoading } = useQuery<PrescriptionWithDetails[]>({
     queryKey: ["/api/prescriptions"],
   });
 
+  const handleDownload = async (prescription: PrescriptionWithDetails) => {
+    if (!prescription.appointmentId) {
+      toast({ title: "Error", description: "No se puede descargar esta receta", variant: "destructive" });
+      return;
+    }
+    setDownloadingId(prescription.id);
+    try {
+      const token = localStorage.getItem("auth_token");
+      const response = await fetch(`/api/consultations/${prescription.appointmentId}/documents/pdf?types=prescription`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Error al descargar");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `receta_${prescription.id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch {
+      toast({ title: "Error", description: "No se pudo descargar la receta", variant: "destructive" });
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl sm:text-3xl font-bold">Mis Recetas</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold" data-testid="text-prescriptions-title">Mis Recetas</h1>
         <p className="text-muted-foreground mt-1">
           Accede a tus recetas médicas y descárgalas
         </p>
       </div>
 
-      {/* Prescriptions List */}
       <div className="space-y-4">
         {isLoading ? (
           <>
@@ -89,7 +142,6 @@ export default function PrescriptionsPage() {
           prescriptions.map((prescription) => (
             <Card key={prescription.id} data-testid={`prescription-${prescription.id}`}>
               <CardContent className="p-4 sm:p-6 space-y-4">
-                {/* Header */}
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-4">
                     <div className="w-10 h-10 rounded-lg bg-secondary/10 flex items-center justify-center flex-shrink-0">
@@ -106,13 +158,33 @@ export default function PrescriptionsPage() {
                       </p>
                     </div>
                   </div>
-                  <Button variant="outline" size="sm" data-testid={`download-prescription-${prescription.id}`}>
-                    <Download className="h-4 w-4 mr-2" />
-                    Descargar
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPreviewPrescription(prescription)}
+                      data-testid={`preview-prescription-${prescription.id}`}
+                    >
+                      <Eye className="h-4 w-4 mr-2" />
+                      Ver
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDownload(prescription)}
+                      disabled={downloadingId === prescription.id || !prescription.appointmentId}
+                      data-testid={`download-prescription-${prescription.id}`}
+                    >
+                      {downloadingId === prescription.id ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <FileDown className="h-4 w-4 mr-2" />
+                      )}
+                      Descargar
+                    </Button>
+                  </div>
                 </div>
 
-                {/* Dates */}
                 <div className="flex flex-wrap gap-4 text-sm">
                   <span className="flex items-center gap-1 text-muted-foreground">
                     <Calendar className="h-3.5 w-3.5" />
@@ -126,7 +198,6 @@ export default function PrescriptionsPage() {
                   )}
                 </div>
 
-                {/* Medications */}
                 <div className="prescription-paper rounded-lg p-4 space-y-3" data-testid={`medications-list-${prescription.id}`}>
                   <h4 className="font-medium text-sm mb-3">Medicamentos</h4>
                   {prescription.medications.map((med, i) => (
@@ -150,7 +221,6 @@ export default function PrescriptionsPage() {
                   ))}
                 </div>
 
-                {/* General Instructions */}
                 {prescription.instructions && (
                   <div className="bg-amber-50 dark:bg-amber-950/50 rounded-lg p-4">
                     <div className="flex items-start gap-2">
@@ -184,6 +254,72 @@ export default function PrescriptionsPage() {
           </Card>
         )}
       </div>
+
+      <Dialog open={!!previewPrescription} onOpenChange={() => setPreviewPrescription(null)}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pill className="h-5 w-5 text-secondary" />
+              Receta Médica
+            </DialogTitle>
+          </DialogHeader>
+          {previewPrescription && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                {getStatusBadge(previewPrescription.status, previewPrescription.validUntil)}
+                <div className="text-sm text-muted-foreground">
+                  {format(parseISO(previewPrescription.issuedAt), "d 'de' MMMM, yyyy", { locale: es })}
+                </div>
+              </div>
+
+              <div className="text-sm">
+                <p className="font-medium">{previewPrescription.doctorName}</p>
+                <p className="text-muted-foreground">{previewPrescription.doctorSpecialty}</p>
+              </div>
+
+              <div className="prescription-paper rounded-lg p-4 space-y-3">
+                <h4 className="font-medium text-sm mb-3">Medicamentos</h4>
+                {previewPrescription.medications.map((med, i) => (
+                  <div key={i} className="pb-3 border-b last:border-0 last:pb-0">
+                    <p className="font-medium">{med.name}</p>
+                    <p className="text-sm text-muted-foreground">{med.dosage} - {med.frequency}</p>
+                    <p className="text-sm text-muted-foreground">Duración: {med.duration}</p>
+                    {med.instructions && (
+                      <p className="text-sm text-muted-foreground mt-1 italic">{med.instructions}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {previewPrescription.instructions && (
+                <div className="bg-amber-50 dark:bg-amber-950/50 rounded-lg p-4">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5" />
+                    <div>
+                      <h4 className="font-medium text-sm text-amber-800 dark:text-amber-200">Indicaciones generales</h4>
+                      <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">{previewPrescription.instructions}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <Button
+                className="w-full"
+                onClick={() => handleDownload(previewPrescription)}
+                disabled={downloadingId === previewPrescription.id || !previewPrescription.appointmentId}
+                data-testid="btn-download-prescription-preview"
+              >
+                {downloadingId === previewPrescription.id ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <FileDown className="h-4 w-4 mr-2" />
+                )}
+                Descargar PDF
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
