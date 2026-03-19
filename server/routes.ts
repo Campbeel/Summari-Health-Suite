@@ -8,7 +8,7 @@ import fs from "fs";
 import { storage } from "./storage";
 import { isAuthenticated, registerAuthRoutes } from "./auth";
 import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText, verifyFlowSignature } from "./flow";
-import { transcribeAudio, transcribeAudioChunked, generatePrescriptionFromTranscript, generateFullConsultationSuggestions, generateMedicalReport, generateClinicalAlerts } from "./openai";
+import { transcribeAudio, transcribeAudioChunked, generatePrescriptionFromTranscript, generateFullConsultationSuggestions, generateMedicalReport, generateClinicalAlerts, generateAssistantWelcome, chatWithAssistant, type AssistantContext } from "./openai";
 import { sendConsultationDocuments } from "./email";
 import { generateConsultationPdf, type PdfDocumentData } from "./pdf-generator";
 import { getFitbitAuthUrl, getAndRemovePendingState, exchangeCodeForTokens, refreshFitbitTokens, fetchFitbitData } from "./fitbit";
@@ -1681,6 +1681,119 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error generating clinical alerts:", error);
       res.status(500).json({ error: "Error al generar alertas clínicas" });
+    }
+  });
+
+  async function buildAssistantContext(appointmentId: number, doctorUserId: string): Promise<AssistantContext> {
+    const appointment = await storage.getAppointment(appointmentId);
+    if (!appointment) throw new Error("Appointment not found");
+
+    const doctor = await storage.getDoctor(appointment.doctorId);
+    const doctorUser = doctor ? await storage.getUser(doctor.userId) : null;
+    const patient = await storage.getPatient(appointment.patientId);
+    const patientUser = patient ? await storage.getUser(patient.userId) : null;
+
+    const patientName = patientUser ? `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() || patientUser.email : 'Paciente';
+    const doctorName = doctorUser ? `${doctorUser.firstName || ''} ${doctorUser.lastName || ''}`.trim() : 'Doctor';
+
+    let patientAge: number | undefined;
+    if (patient?.dateOfBirth) {
+      const birth = new Date(patient.dateOfBirth);
+      const today = new Date();
+      patientAge = today.getFullYear() - birth.getFullYear();
+      const m = today.getMonth() - birth.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) patientAge--;
+    }
+
+    const allAppointments = await storage.getAppointmentsByPatient(appointment.patientId);
+    const completedPast = allAppointments.filter(a => a.id !== appointmentId && (a.status === 'completed' || a.status === 'pending_validation'));
+    const previousConsultationsCount = completedPast.length;
+
+    const clinicalRecord = await storage.getClinicalRecordByAppointmentId(appointmentId);
+
+    const genderMap: Record<string, string> = { male: "Masculino", female: "Femenino", other: "Otro" };
+
+    return {
+      doctorName,
+      patientName,
+      patientAge,
+      patientGender: patient?.gender ? (genderMap[patient.gender] || patient.gender) : undefined,
+      patientAllergies: patient?.allergies || undefined,
+      patientMedicalHistory: patient?.medicalHistory || undefined,
+      consultationReason: appointment.notes || undefined,
+      consultationType: appointment.consultationType || undefined,
+      isNewPatient: previousConsultationsCount === 0,
+      previousConsultationsCount,
+      currentClinicalRecord: clinicalRecord ? {
+        chiefComplaint: clinicalRecord.chiefComplaint || undefined,
+        symptoms: clinicalRecord.symptoms || undefined,
+        diagnosis: clinicalRecord.diagnosis || undefined,
+        notes: clinicalRecord.notes || undefined,
+      } : undefined,
+    };
+  }
+
+  app.post("/api/consultations/:id/assistant/welcome", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      if (isNaN(appointmentId)) return res.status(400).json({ error: "ID inválido" });
+      const userId = req.userId;
+
+      const doctor = await storage.getDoctorByUserId(userId);
+      if (!doctor) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment || appointment.doctorId !== doctor.id) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+
+      const context = await buildAssistantContext(appointmentId, userId);
+      const message = await generateAssistantWelcome(context);
+
+      res.json({ message, context: { patientName: context.patientName, isNewPatient: context.isNewPatient, previousConsultationsCount: context.previousConsultationsCount } });
+    } catch (error) {
+      console.error("Error generating assistant welcome:", error);
+      res.status(500).json({ error: "Error al generar mensaje de bienvenida" });
+    }
+  });
+
+  const chatMessageSchema = z.object({
+    messages: z.array(z.object({
+      role: z.enum(["user", "assistant"]),
+      content: z.string().min(1).max(2000),
+    })).min(1).max(50),
+  });
+
+  app.post("/api/consultations/:id/assistant/chat", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      if (isNaN(appointmentId)) return res.status(400).json({ error: "ID inválido" });
+      const userId = req.userId;
+
+      const doctor = await storage.getDoctorByUserId(userId);
+      if (!doctor) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment || appointment.doctorId !== doctor.id) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+
+      const parsed = chatMessageSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Datos de mensaje inválidos" });
+      }
+
+      const context = await buildAssistantContext(appointmentId, userId);
+      const response = await chatWithAssistant(parsed.data.messages, context);
+
+      res.json({ message: response });
+    } catch (error) {
+      console.error("Error in assistant chat:", error);
+      res.status(500).json({ error: "Error al procesar consulta" });
     }
   });
 

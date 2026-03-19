@@ -47,7 +47,11 @@ import {
   ShieldAlert,
   Info,
   RefreshCw,
+  Bot,
+  Heart,
+  Phone,
 } from "lucide-react";
+import { ClinicalAssistant } from "@/components/clinical-assistant";
 
 interface Medication {
   name: string;
@@ -435,14 +439,18 @@ export default function ConsultationValidationPage() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6 max-w-5xl mx-auto">
+      <div className="space-y-4 max-w-6xl mx-auto">
         <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-12 w-full" />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
             <Skeleton className="h-64" />
             <Skeleton className="h-48" />
           </div>
-          <Skeleton className="h-96" />
+          <div className="space-y-4">
+            <Skeleton className="h-[350px]" />
+            <Skeleton className="h-48" />
+          </div>
         </div>
       </div>
     );
@@ -673,7 +681,7 @@ export default function ConsultationValidationPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-4 max-w-6xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Button
@@ -770,6 +778,82 @@ export default function ConsultationValidationPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <div className="rounded-lg border bg-card p-3 mb-4" data-testid="patient-bar">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+              <User className="h-4 w-4 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold text-sm leading-none truncate" data-testid="text-patient-name">{validationData.patient.name}</p>
+              {validationData.patient.rut && (
+                <p className="text-[11px] text-muted-foreground mt-0.5" data-testid="text-patient-rut">RUT: {validationData.patient.rut}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="hidden sm:block h-6 w-px bg-border" />
+
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            {validationData.patient.dateOfBirth && (
+              <span data-testid="text-patient-age">
+                {(() => {
+                  const birth = new Date(validationData.patient.dateOfBirth!);
+                  const today = new Date();
+                  let age = today.getFullYear() - birth.getFullYear();
+                  const m = today.getMonth() - birth.getMonth();
+                  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+                  return `${age} años`;
+                })()}
+              </span>
+            )}
+            {validationData.patient.gender && (
+              <span data-testid="text-patient-gender">
+                {validationData.patient.gender === "male" ? "Masculino" : validationData.patient.gender === "female" ? "Femenino" : validationData.patient.gender === "other" ? "Otro" : validationData.patient.gender}
+              </span>
+            )}
+            {validationData.patient.bloodType && (
+              <span className="flex items-center gap-1" data-testid="text-patient-blood">
+                <Heart className="h-3 w-3" />
+                {validationData.patient.bloodType}
+              </span>
+            )}
+            {validationData.patient.email && (
+              <span className="hidden md:inline" data-testid="text-patient-email">{validationData.patient.email}</span>
+            )}
+            {validationData.patient.whatsapp && (
+              <span className="hidden md:inline flex items-center gap-1" data-testid="text-patient-whatsapp">
+                <Phone className="h-3 w-3" />
+                {validationData.patient.whatsapp}
+              </span>
+            )}
+          </div>
+
+          {validationData.patient.allergies && validationData.patient.allergies.length > 0 && (
+            <>
+              <div className="hidden sm:block h-6 w-px bg-border" />
+              <div className="flex items-center gap-1.5">
+                <AlertCircle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />
+                <div className="flex flex-wrap gap-1">
+                  {validationData.patient.allergies.map((a, i) => (
+                    <span key={i} className="text-[11px] bg-destructive/10 text-destructive px-1.5 py-0.5 rounded font-medium" data-testid={`badge-allergy-${i}`}>{a}</span>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {validationData.patient.medicalHistory && (
+            <>
+              <div className="hidden sm:block h-6 w-px bg-border" />
+              <span className="text-[11px] text-muted-foreground hidden lg:inline max-w-[200px] truncate" title={validationData.patient.medicalHistory}>
+                Ant: {validationData.patient.medicalHistory}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
@@ -1135,84 +1219,8 @@ export default function ConsultationValidationPage() {
         </div>
 
         <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <User className="h-4 w-4" />
-                Paciente
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <p className="font-medium" data-testid="text-patient-name">{validationData.patient.name}</p>
-              {validationData.patient.rut && (
-                <p className="text-sm text-muted-foreground" data-testid="text-patient-rut">
-                  RUT: {validationData.patient.rut}
-                </p>
-              )}
-              <div className="flex flex-wrap gap-x-4 gap-y-1">
-                {validationData.patient.dateOfBirth && (
-                  <p className="text-sm text-muted-foreground" data-testid="text-patient-age">
-                    Edad: {(() => {
-                      const birth = new Date(validationData.patient.dateOfBirth!);
-                      const today = new Date();
-                      let age = today.getFullYear() - birth.getFullYear();
-                      const m = today.getMonth() - birth.getMonth();
-                      if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
-                      return `${age} años`;
-                    })()}
-                  </p>
-                )}
-                {validationData.patient.gender && (
-                  <p className="text-sm text-muted-foreground" data-testid="text-patient-gender">
-                    Sexo: {validationData.patient.gender === "male" ? "Masculino" : validationData.patient.gender === "female" ? "Femenino" : validationData.patient.gender === "other" ? "Otro" : validationData.patient.gender}
-                  </p>
-                )}
-                {validationData.patient.bloodType && (
-                  <p className="text-sm text-muted-foreground" data-testid="text-patient-blood">
-                    Grupo: {validationData.patient.bloodType}
-                  </p>
-                )}
-              </div>
-              {validationData.patient.email && (
-                <p className="text-sm text-muted-foreground" data-testid="text-patient-email">
-                  Email: {validationData.patient.email}
-                </p>
-              )}
-              {validationData.patient.whatsapp && (
-                <p className="text-sm text-muted-foreground" data-testid="text-patient-whatsapp">
-                  WhatsApp: {validationData.patient.whatsapp}
-                </p>
-              )}
-              {validationData.patient.allergies && validationData.patient.allergies.length > 0 && (
-                <div>
-                  <p className="text-sm font-medium text-destructive flex items-center gap-1">
-                    <AlertCircle className="h-3 w-3" />
-                    Alergias
-                  </p>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {validationData.patient.allergies.map((a, i) => (
-                      <Badge key={i} variant="destructive" className="text-xs" data-testid={`badge-allergy-${i}`}>
-                        {a}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {validationData.patient.medicalHistory && (
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">Antecedentes</p>
-                  <p className="text-xs text-muted-foreground">{validationData.patient.medicalHistory}</p>
-                </div>
-              )}
-              {validationData.patient.emergencyContact && (
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground">Contacto de emergencia</p>
-                  <p className="text-xs text-muted-foreground">
-                    {validationData.patient.emergencyContact}{validationData.patient.emergencyPhone ? ` - ${validationData.patient.emergencyPhone}` : ""}
-                  </p>
-                </div>
-              )}
-            </CardContent>
+          <Card className="overflow-hidden">
+            <ClinicalAssistant appointmentId={id!} className="h-[350px]" />
           </Card>
 
           <Card>

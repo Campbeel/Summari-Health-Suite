@@ -42,6 +42,8 @@ import {
   ArrowLeft
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { ClinicalAssistant } from "@/components/clinical-assistant";
+import { Bot } from "lucide-react";
 
 interface ConsultationData {
   appointment: {
@@ -865,18 +867,18 @@ export default function ConsultationPage() {
 
       {/* Sidebar - Clinical Information */}
       <div className="w-full lg:w-96 flex flex-col min-h-[300px] lg:min-h-0">
-        <Tabs defaultValue="chat" className="flex-1 flex flex-col min-h-0">
+        <Tabs defaultValue={isDoctor ? "assistant" : "chat"} className="flex-1 flex flex-col min-h-0">
           <TabsList className={`grid ${isDoctor ? 'grid-cols-3' : 'grid-cols-2'}`}>
+            {isDoctor && (
+              <TabsTrigger value="assistant" data-testid="tab-assistant">
+                <Bot className="h-4 w-4 mr-1" />
+                Asistente
+              </TabsTrigger>
+            )}
             <TabsTrigger value="chat" data-testid="tab-chat">
               <MessageCircle className="h-4 w-4 mr-1" />
               Chat
             </TabsTrigger>
-            {isDoctor && (
-              <TabsTrigger value="patient" data-testid="tab-patient">
-                <User className="h-4 w-4 mr-1" />
-                Paciente
-              </TabsTrigger>
-            )}
             {isDoctor && (
               <TabsTrigger value="notes" data-testid="tab-notes">
                 <FileText className="h-4 w-4 mr-1" />
@@ -890,6 +892,15 @@ export default function ConsultationPage() {
               </TabsTrigger>
             )}
           </TabsList>
+
+          {/* Assistant Tab (Doctor only) */}
+          {isDoctor && (
+            <TabsContent value="assistant" className="flex-1 mt-4 min-h-0 data-[state=inactive]:hidden" forceMount>
+              <Card className="h-full flex flex-col">
+                <ClinicalAssistant appointmentId={id!} className="flex-1 min-h-[400px]" />
+              </Card>
+            </TabsContent>
+          )}
 
           {/* Chat Tab */}
           <TabsContent value="chat" className="flex-1 mt-4 min-h-0">
@@ -1009,60 +1020,6 @@ export default function ConsultationPage() {
             </Card>
           </TabsContent>
 
-          {/* Patient Info Tab (Doctor only) */}
-          {isDoctor && (
-            <TabsContent value="patient" className="flex-1 mt-4 min-h-0">
-              <Card className="h-full">
-                <ScrollArea className="h-full">
-                  <CardContent className="p-4 space-y-4">
-                    <div className="flex items-center gap-3 pb-4 border-b" data-testid="patient-info">
-                      <Avatar className="h-12 w-12">
-                        <AvatarImage src={patient.userImage} />
-                        <AvatarFallback className="bg-secondary/10 text-secondary">
-                          {patient.userName?.[0] || "P"}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <h3 className="font-semibold" data-testid="text-patient-name">{patient.userName}</h3>
-                        <p className="text-sm text-muted-foreground" data-testid="text-patient-details">
-                          {patient.gender || "No especificado"} {patient.bloodType ? `\u2022 ${patient.bloodType}` : ""}
-                        </p>
-                      </div>
-                    </div>
-                    {patient.allergies && patient.allergies.length > 0 && (
-                      <div data-testid="patient-allergies">
-                        <h4 className="text-sm font-medium text-destructive mb-2 flex items-center gap-1">
-                          <AlertCircle className="h-4 w-4" />
-                          Alergias
-                        </h4>
-                        <div className="flex flex-wrap gap-1">
-                          {patient.allergies.map((allergy, i) => (
-                            <Badge key={i} variant="destructive" className="text-xs" data-testid={`badge-allergy-${i}`}>
-                              {allergy}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {patient.medicalHistory && (
-                      <div>
-                        <h4 className="text-sm font-medium mb-2">Historial Médico</h4>
-                        <p className="text-sm text-muted-foreground">{patient.medicalHistory}</p>
-                      </div>
-                    )}
-                    {appointment.notes && (
-                      <div>
-                        <h4 className="text-sm font-medium mb-2">Motivo de Consulta</h4>
-                        <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
-                          {appointment.notes}
-                        </p>
-                      </div>
-                    )}
-                  </CardContent>
-                </ScrollArea>
-              </Card>
-            </TabsContent>
-          )}
 
           {/* Doctor Info Tab (Patient only) */}
           {!isDoctor && (

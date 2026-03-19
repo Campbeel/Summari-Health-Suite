@@ -616,3 +616,108 @@ ${data.medicalReport?.diagnosticImpression ? `IMPRESIÓN DIAGNÓSTICA: ${data.me
     throw new Error("Failed to generate clinical alerts");
   }
 }
+
+export interface AssistantContext {
+  doctorName: string;
+  patientName: string;
+  patientAge?: number;
+  patientGender?: string;
+  patientAllergies?: string[];
+  patientMedicalHistory?: string;
+  consultationReason?: string;
+  consultationType?: string;
+  isNewPatient: boolean;
+  previousConsultationsCount: number;
+  previousConsultationsSummary?: string;
+  currentClinicalRecord?: {
+    chiefComplaint?: string;
+    symptoms?: string[];
+    diagnosis?: string;
+    notes?: string;
+  };
+}
+
+export async function generateAssistantWelcome(context: AssistantContext): Promise<string> {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `Eres un asistente clínico inteligente para médicos en una plataforma de telemedicina chilena llamada Summari. Tu rol es apoyar al doctor durante y después de las consultas médicas.
+
+Genera un mensaje de bienvenida conciso y profesional en español para el doctor. El mensaje debe:
+1. Saludar al doctor por su nombre
+2. Resumir brevemente quién es el paciente (edad, sexo si está disponible)
+3. Indicar el motivo de consulta si está disponible
+4. Mencionar si es paciente nuevo o recurrente (y cuántas consultas previas tiene)
+5. Resaltar información clínica relevante (alergias, antecedentes importantes)
+6. Ser directo y útil, como un briefing clínico rápido
+
+Mantén el tono profesional pero cálido. No uses formato markdown extenso, solo texto plano con saltos de línea simples. Máximo 200 palabras.`
+        },
+        {
+          role: "user",
+          content: JSON.stringify(context),
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 400,
+    });
+
+    return response.choices[0]?.message?.content || "Bienvenido a la consulta.";
+  } catch (error) {
+    console.error("Error generating assistant welcome:", error);
+    return `Hola Dr. ${context.doctorName}, bienvenido a la consulta con ${context.patientName}. ${context.consultationReason ? `Motivo: ${context.consultationReason}.` : ''} ${context.isNewPatient ? 'Es un paciente nuevo.' : `Paciente recurrente (${context.previousConsultationsCount} consultas previas).`}`;
+  }
+}
+
+export async function chatWithAssistant(
+  messages: Array<{ role: "user" | "assistant"; content: string }>,
+  context: AssistantContext,
+): Promise<string> {
+  try {
+    const systemMessage = `Eres un asistente clínico inteligente para médicos en una plataforma de telemedicina chilena llamada Summari.
+
+Contexto del paciente actual:
+- Nombre: ${context.patientName}
+- Edad: ${context.patientAge ? `${context.patientAge} años` : 'No especificada'}
+- Sexo: ${context.patientGender || 'No especificado'}
+- Alergias: ${context.patientAllergies?.length ? context.patientAllergies.join(', ') : 'Ninguna registrada'}
+- Antecedentes: ${context.patientMedicalHistory || 'Sin antecedentes registrados'}
+- Motivo de consulta: ${context.consultationReason || 'No especificado'}
+- Paciente ${context.isNewPatient ? 'nuevo' : `recurrente (${context.previousConsultationsCount} consultas previas)`}
+${context.currentClinicalRecord ? `
+Registro clínico actual:
+- Motivo de consulta: ${context.currentClinicalRecord.chiefComplaint || 'No registrado'}
+- Síntomas: ${context.currentClinicalRecord.symptoms?.join(', ') || 'No registrados'}
+- Diagnóstico: ${context.currentClinicalRecord.diagnosis || 'Pendiente'}
+- Notas: ${context.currentClinicalRecord.notes || 'Sin notas'}
+` : ''}
+
+Tu rol:
+- Responder preguntas clínicas del doctor sobre el paciente
+- Sugerir diagnósticos diferenciales cuando se te pregunte
+- Ayudar con dosis de medicamentos, interacciones y contraindicaciones
+- Recordar información del paciente cuando se necesite
+- Ser conciso, profesional y útil
+- Responder siempre en español
+- NO diagnosticar por ti mismo, solo asistir al doctor
+- Máximo 150 palabras por respuesta`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: systemMessage },
+        ...messages.map(m => ({ role: m.role as "user" | "assistant", content: m.content })),
+      ],
+      temperature: 0.7,
+      max_tokens: 300,
+    });
+
+    return response.choices[0]?.message?.content || "Lo siento, no pude procesar tu consulta.";
+  } catch (error) {
+    console.error("Error in assistant chat:", error);
+    throw new Error("Failed to get assistant response");
+  }
+}

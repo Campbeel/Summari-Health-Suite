@@ -34,12 +34,13 @@ Preferred communication style: Simple, everyday language.
 ### Core Features
 - **User Authentication**: JWT-based, RUT (Chilean ID) as primary identifier, password hashing (bcryptjs), localStorage for JWT storage.
 - **Consultations**: WebRTC video/audio with tooltips on call controls (mute, camera, record, end call), appointment-based authorization, audio processing (WebM/Opus), continuous audio recording during consultations, server-side transcription post-consultation.
-- **AI Integration**: OpenAI Whisper for audio transcription, GPT-4o for generating clinical summaries, prescriptions, medical instructions, exam orders, and structured medical reports (informe médico) from transcripts. Raw transcription is stored in DB but hidden from UI; a structured medical report is displayed instead.
+- **AI Integration**: OpenAI Whisper for audio transcription, GPT-4o for generating clinical summaries, prescriptions, medical instructions, exam orders, and structured medical reports (informe médico) from transcripts. Raw transcription is stored in DB but hidden from UI; a structured medical report is displayed instead. AI Clinical Assistant chatbot available during consultations (doctor sidebar) and on validation page (right panel) - provides context-aware clinical support with patient summary on load.
 - **Payment Gateway**: Flow (Chilean payment gateway) for consultation fees, HMAC-SHA256 webhook verification.
 - **Wearable Health Data**: Tracking system for various metrics (heart rate, steps, etc.), support for manual entry, CSV import, and Fitbit OAuth2 integration with scheduled sync.
 - **Post-Consultation Workflow**: Doctor validation page with clinical alerts system (prescription error detection, dosage warnings, health risk analysis), patient feedback system, PDF document generation with in-app preview modal, and email delivery of documents (prescriptions, instructions, exam orders) via Resend. Exam orders use per-exam justification (not global). No AI suggestion button on validation page.
 - **Document Management**: Patient-facing pages for medical instructions and exam orders, with PDF download and preview.
-- **Patient Card**: Validation page shows patient name, RUT, age (calculated), gender (Spanish), blood type, email, WhatsApp, allergies, medical history, and emergency contact.
+- **Patient Card**: Validation page shows a compact horizontal patient info bar at the top with name, RUT, age, gender, blood type, email, WhatsApp, allergies, and medical history. Emergency contact data is available via the API.
+- **Clinical Assistant Chatbot**: Reusable `ClinicalAssistant` component (`client/src/components/clinical-assistant.tsx`). Backend endpoints: `POST /api/consultations/:id/assistant/welcome` (auto-greeting with patient context) and `POST /api/consultations/:id/assistant/chat` (conversation). Both verify doctor ownership of the appointment. Available in consultation sidebar (forceMount to preserve state across tab switches) and validation page right panel.
 
 ## External Dependencies
 
