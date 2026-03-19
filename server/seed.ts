@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { doctors, patients, users, appointments, clinicalRecords, prescriptions, medicalInstructions, conversations, messages, sessions, wearableMetrics, wearableConnections } from "@shared/schema";
+import { doctors, patients, users, appointments, clinicalRecords, prescriptions, medicalInstructions, examOrders, conversations, messages, sessions, wearableMetrics, wearableConnections } from "@shared/schema";
 import { eq, ne, and, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 
@@ -12,6 +12,7 @@ export async function cleanAndSetupDatabase() {
     const targetUsers = await db.select().from(users).where(eq(users.rut, TARGET_RUT));
     const targetUserId = targetUsers.length > 0 ? targetUsers[0].id : null;
 
+    await db.delete(examOrders);
     await db.delete(prescriptions);
     await db.delete(medicalInstructions);
     await db.delete(clinicalRecords);

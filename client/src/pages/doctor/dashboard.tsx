@@ -1,22 +1,25 @@
+import { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Link } from "wouter";
-import { 
-  Calendar, 
-  Clock, 
-  FileText, 
+import { Link, useLocation } from "wouter";
+import {
+  Calendar,
+  Clock,
+  FileText,
   ChevronRight,
+  ChevronLeft,
   CheckCircle,
   Video,
   Phone,
-  Users
+  Users,
+  AlertCircle,
+  ClipboardCheck,
 } from "lucide-react";
-import { format, parseISO, isToday, isTomorrow } from "date-fns";
+import { format, parseISO, isToday, addDays, subDays, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
 
 interface DoctorStats {
@@ -29,42 +32,95 @@ interface AppointmentWithPatient {
   id: number;
   scheduledDate: string;
   scheduledTime: string;
+  durationMinutes?: number;
   status: string;
   consultationType: string;
+  notes?: string;
   patientName: string;
   patientImage?: string;
 }
 
-function getStatusBadge(status: string) {
-  switch (status) {
-    case "scheduled":
-      return <Badge variant="outline" className="bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300" data-testid={`status-${status}`}>Programada</Badge>;
-    case "confirmed":
-      return <Badge className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" data-testid={`status-${status}`}>Confirmada</Badge>;
-    case "in_progress":
-      return <Badge className="bg-primary text-primary-foreground" data-testid={`status-${status}`}>En curso</Badge>;
-    case "completed":
-      return <Badge variant="secondary" data-testid={`status-${status}`}>Completada</Badge>;
-    case "cancelled":
-      return <Badge variant="destructive" data-testid={`status-${status}`}>Cancelada</Badge>;
-    default:
-      return <Badge variant="outline" data-testid={`status-${status}`}>{status}</Badge>;
+const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; darkBg: string; barColor: string }> = {
+  scheduled: {
+    label: "Programada",
+    color: "text-blue-700 dark:text-blue-300",
+    bg: "bg-blue-50 dark:bg-blue-950/50",
+    darkBg: "bg-blue-100 dark:bg-blue-900",
+    barColor: "bg-blue-500",
+  },
+  confirmed: {
+    label: "Confirmada",
+    color: "text-emerald-700 dark:text-emerald-300",
+    bg: "bg-emerald-50 dark:bg-emerald-950/50",
+    darkBg: "bg-emerald-100 dark:bg-emerald-900",
+    barColor: "bg-emerald-500",
+  },
+  in_progress: {
+    label: "En curso",
+    color: "text-purple-700 dark:text-purple-300",
+    bg: "bg-purple-50 dark:bg-purple-950/50",
+    darkBg: "bg-purple-100 dark:bg-purple-900",
+    barColor: "bg-purple-500",
+  },
+  completed: {
+    label: "Completada",
+    color: "text-gray-600 dark:text-gray-400",
+    bg: "bg-gray-50 dark:bg-gray-900/50",
+    darkBg: "bg-gray-100 dark:bg-gray-800",
+    barColor: "bg-gray-400 dark:bg-gray-600",
+  },
+  pending_validation: {
+    label: "Pendiente validación",
+    color: "text-amber-700 dark:text-amber-300",
+    bg: "bg-amber-50 dark:bg-amber-950/50",
+    darkBg: "bg-amber-100 dark:bg-amber-900",
+    barColor: "bg-amber-500",
+  },
+  cancelled: {
+    label: "Cancelada",
+    color: "text-red-600 dark:text-red-400",
+    bg: "bg-red-50 dark:bg-red-950/50",
+    darkBg: "bg-red-100 dark:bg-red-900",
+    barColor: "bg-red-400",
+  },
+};
+
+function getStatusConfig(status: string) {
+  return STATUS_CONFIG[status] || {
+    label: status,
+    color: "text-gray-600",
+    bg: "bg-gray-50 dark:bg-gray-900",
+    darkBg: "bg-gray-100",
+    barColor: "bg-gray-400",
+  };
+}
+
+function generateTimeSlots(startHour: number, endHour: number): string[] {
+  const slots: string[] = [];
+  for (let h = startHour; h <= endHour; h++) {
+    slots.push(`${h.toString().padStart(2, "0")}:00`);
+    if (h < endHour) slots.push(`${h.toString().padStart(2, "0")}:30`);
   }
+  return slots;
 }
 
-function formatAppointmentDate(dateStr: string) {
-  const date = parseISO(dateStr);
-  if (isToday(date)) return "Hoy";
-  if (isTomorrow(date)) return "Mañana";
-  return format(date, "d 'de' MMMM", { locale: es });
+function getEndTime(startTime: string, durationMinutes: number): string {
+  const [h, m] = startTime.split(":").map(Number);
+  const totalMin = h * 60 + m + durationMinutes;
+  const endH = Math.floor(totalMin / 60);
+  const endM = totalMin % 60;
+  return `${endH.toString().padStart(2, "0")}:${endM.toString().padStart(2, "0")}`;
 }
 
-function getConsultationTypeIcon(type: string) {
-  return type === "video" ? <Video className="h-4 w-4" /> : <Phone className="h-4 w-4" />;
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
 }
 
 export default function DoctorDashboard() {
   const { user } = useAuth();
+  const [, navigate] = useLocation();
+  const [selectedDate, setSelectedDate] = useState(new Date());
 
   const { data: stats, isLoading: loadingStats } = useQuery<DoctorStats>({
     queryKey: ["/api/doctors/me/stats"],
@@ -74,172 +130,277 @@ export default function DoctorDashboard() {
     queryKey: ["/api/doctors/me/appointments"],
   });
 
-  const upcomingAppointments = appointments?.filter(a => 
-    a.status === "scheduled" || a.status === "confirmed"
-  ).slice(0, 5) || [];
+  const todayAppts = useMemo(() => {
+    if (!appointments) return [];
+    return appointments
+      .filter((a) => {
+        const apptDate = parseISO(a.scheduledDate);
+        return isSameDay(apptDate, selectedDate) && a.status !== "cancelled";
+      })
+      .sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime));
+  }, [appointments, selectedDate]);
+
+  const timeSlots = useMemo(() => {
+    if (todayAppts.length === 0) return generateTimeSlots(8, 18);
+    const times = todayAppts.map((a) => timeToMinutes(a.scheduledTime));
+    const endTimes = todayAppts.map((a) => timeToMinutes(a.scheduledTime) + (a.durationMinutes || 30));
+    const earliest = Math.min(...times);
+    const latest = Math.max(...endTimes);
+    const startH = Math.floor(earliest / 60);
+    const endH = Math.ceil(latest / 60);
+    return generateTimeSlots(startH, endH);
+  }, [todayAppts]);
+
+  const dayLabel = format(selectedDate, "d 'de' MMMM 'de' yyyy", { locale: es });
+  const weekdayLabel = format(selectedDate, "EEEE", { locale: es });
+  const isTodaySelected = isToday(selectedDate);
+
+  const handleAppointmentClick = (appt: AppointmentWithPatient) => {
+    if (appt.status === "pending_validation") {
+      navigate(`/doctor/consultation/${appt.id}/validate`);
+    } else if (appt.status === "in_progress") {
+      navigate(`/consultation/${appt.id}`);
+    } else if (appt.status === "scheduled" || appt.status === "confirmed") {
+      navigate(`/doctor/appointments`);
+    }
+  };
+
+  const completedToday = todayAppts.filter(a => a.status === "completed" || a.status === "pending_validation").length;
+  const pendingToday = todayAppts.filter(a => a.status === "scheduled" || a.status === "confirmed").length;
+  const inProgressToday = todayAppts.filter(a => a.status === "in_progress").length;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold" data-testid="text-page-title">
-            Panel del Doctor
+            Agenda Profesional
           </h1>
           <p className="text-muted-foreground mt-1">
-            Bienvenido, Dr. {user?.lastName || user?.firstName || ""}
+            Dr. {user?.lastName || user?.firstName || ""}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" asChild data-testid="button-view-schedule">
+          <Button variant="outline" asChild data-testid="button-view-all-appointments">
             <Link href="/doctor/appointments">
               <Calendar className="h-4 w-4 mr-2" />
-              Ver Agenda
+              Todas las citas
             </Link>
           </Button>
           <Button variant="outline" asChild data-testid="button-view-records">
             <Link href="/records">
               <FileText className="h-4 w-4 mr-2" />
-              Ver Expedientes
+              Expedientes
             </Link>
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Link href="/doctor/appointments" className="block">
-          <Card className="cursor-pointer hover-elevate transition-colors" data-testid="stat-card-today">
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Calendar className="h-6 w-6 text-primary" />
-              </div>
-              <div className="flex-1">
-                {loadingStats ? (
-                  <Skeleton className="h-8 w-12" />
-                ) : (
-                  <p className="text-2xl font-bold" data-testid="text-today-count">
-                    {stats?.todayAppointments || 0}
-                  </p>
-                )}
-                <p className="text-sm text-muted-foreground">Citas de Hoy</p>
-              </div>
-              <ChevronRight className="h-5 w-5 text-muted-foreground" />
-            </CardContent>
-          </Card>
-        </Link>
-
-        <Link href="/doctor/appointments" className="block">
-          <Card className="cursor-pointer hover-elevate transition-colors" data-testid="stat-card-pending">
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-lg bg-amber-100 dark:bg-amber-950 flex items-center justify-center">
-                <Clock className="h-6 w-6 text-amber-600 dark:text-amber-400" />
-              </div>
-              <div className="flex-1">
-                {loadingStats ? (
-                  <Skeleton className="h-8 w-12" />
-                ) : (
-                  <p className="text-2xl font-bold" data-testid="text-upcoming-count">
-                    {stats?.upcomingAppointments || 0}
-                  </p>
-                )}
-                <p className="text-sm text-muted-foreground">Citas Pendientes</p>
-              </div>
-              <ChevronRight className="h-5 w-5 text-muted-foreground" />
-            </CardContent>
-          </Card>
-        </Link>
-
-        <Link href="/doctor/appointments" className="block">
-          <Card className="cursor-pointer hover-elevate transition-colors" data-testid="stat-card-completed">
-            <CardContent className="p-4 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-lg bg-green-100 dark:bg-green-950 flex items-center justify-center">
-                <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
-              </div>
-              <div className="flex-1">
-                {loadingStats ? (
-                  <Skeleton className="h-8 w-12" />
-                ) : (
-                  <p className="text-2xl font-bold" data-testid="text-completed-count">
-                    {stats?.completedConsultations || 0}
-                  </p>
-                )}
-                <p className="text-sm text-muted-foreground">Consultas Completadas</p>
-              </div>
-              <ChevronRight className="h-5 w-5 text-muted-foreground" />
-            </CardContent>
-          </Card>
-        </Link>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Card className="border-l-4 border-l-blue-500" data-testid="stat-card-today">
+          <CardContent className="p-3 flex items-center gap-3">
+            <Calendar className="h-5 w-5 text-blue-500 flex-shrink-0" />
+            <div>
+              {loadingStats ? <Skeleton className="h-6 w-8" /> : (
+                <p className="text-xl font-bold" data-testid="text-today-count">{stats?.todayAppointments || 0}</p>
+              )}
+              <p className="text-xs text-muted-foreground">Citas hoy</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-amber-500" data-testid="stat-card-pending">
+          <CardContent className="p-3 flex items-center gap-3">
+            <Clock className="h-5 w-5 text-amber-500 flex-shrink-0" />
+            <div>
+              {loadingStats ? <Skeleton className="h-6 w-8" /> : (
+                <p className="text-xl font-bold" data-testid="text-upcoming-count">{stats?.upcomingAppointments || 0}</p>
+              )}
+              <p className="text-xs text-muted-foreground">Pendientes total</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-green-500" data-testid="stat-card-completed">
+          <CardContent className="p-3 flex items-center gap-3">
+            <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
+            <div>
+              {loadingStats ? <Skeleton className="h-6 w-8" /> : (
+                <p className="text-xl font-bold" data-testid="text-completed-count">{stats?.completedConsultations || 0}</p>
+              )}
+              <p className="text-xs text-muted-foreground">Completadas</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0 pb-4">
-          <div>
-            <CardTitle>Próximas Citas</CardTitle>
-            <CardDescription>Tus consultas programadas</CardDescription>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setSelectedDate(subDays(selectedDate, 1))}
+                aria-label="Día anterior"
+                data-testid="button-prev-day"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={isTodaySelected ? "default" : "outline"}
+                size="sm"
+                className="text-xs"
+                onClick={() => setSelectedDate(new Date())}
+                data-testid="button-today"
+              >
+                Hoy
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setSelectedDate(addDays(selectedDate, 1))}
+                aria-label="Día siguiente"
+                data-testid="button-next-day"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="text-center sm:text-left">
+              <CardTitle className="text-lg capitalize" data-testid="text-selected-date">{dayLabel}</CardTitle>
+              <p className="text-xs text-muted-foreground capitalize">{weekdayLabel}</p>
+            </div>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              {completedToday > 0 && (
+                <span className="flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-gray-400 dark:bg-gray-600" />
+                  {completedToday} completada{completedToday !== 1 ? "s" : ""}
+                </span>
+              )}
+              {pendingToday > 0 && (
+                <span className="flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-blue-500" />
+                  {pendingToday} pendiente{pendingToday !== 1 ? "s" : ""}
+                </span>
+              )}
+              {inProgressToday > 0 && (
+                <span className="flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-purple-500" />
+                  {inProgressToday} en curso
+                </span>
+              )}
+            </div>
           </div>
-          <Button variant="ghost" size="sm" asChild data-testid="link-view-all-appointments">
-            <Link href="/doctor/appointments">
-              Ver todas
-              <ChevronRight className="h-4 w-4 ml-1" />
-            </Link>
-          </Button>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="p-0">
           {loadingAppointments ? (
-            <>
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="flex items-center gap-4 p-4 rounded-lg border">
-                  <Skeleton className="h-12 w-12 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-32" />
-                    <Skeleton className="h-3 w-24" />
-                  </div>
+            <div className="p-6 space-y-4">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex gap-4">
+                  <Skeleton className="h-4 w-12 flex-shrink-0" />
+                  <Skeleton className="h-16 flex-1" />
                 </div>
               ))}
-            </>
-          ) : upcomingAppointments.length > 0 ? (
-            upcomingAppointments.map((appointment) => (
-              <div
-                key={appointment.id}
-                className="flex items-center gap-4 p-4 rounded-lg border hover-elevate cursor-pointer"
-                data-testid={`appointment-card-${appointment.id}`}
-              >
-                <Avatar className="h-12 w-12">
-                  <AvatarImage src={appointment.patientImage} />
-                  <AvatarFallback className="bg-secondary/10 text-secondary">
-                    {appointment.patientName?.split(" ").map(n => n[0]).join("") || "P"}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate" data-testid={`text-patient-name-${appointment.id}`}>
-                    {appointment.patientName}
-                  </p>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    {getConsultationTypeIcon(appointment.consultationType)}
-                    <span>{appointment.consultationType === "video" ? "Videollamada" : "Llamada"}</span>
+            </div>
+          ) : todayAppts.length > 0 ? (
+            <div className="relative" data-testid="agenda-timeline">
+              {timeSlots.map((slot, slotIndex) => {
+                const slotMin = timeToMinutes(slot);
+                const slotAppts = todayAppts.filter((a) => {
+                  const aMin = timeToMinutes(a.scheduledTime);
+                  return aMin >= slotMin && aMin < slotMin + 30;
+                });
+
+                return (
+                  <div
+                    key={slot}
+                    className={`flex border-t border-border/50 min-h-[3.25rem] ${slotIndex === 0 ? "border-t-0" : ""}`}
+                    data-testid={`timeslot-${slot}`}
+                  >
+                    <div className="w-16 sm:w-20 flex-shrink-0 py-2 px-2 sm:px-3 text-xs text-muted-foreground font-mono text-right">
+                      {slot}
+                    </div>
+                    <div className="flex-1 py-1 pr-2 sm:pr-4 space-y-1">
+                      {slotAppts.map((appt) => {
+                        const cfg = getStatusConfig(appt.status);
+                        const duration = appt.durationMinutes || 30;
+                        const endTime = getEndTime(appt.scheduledTime, duration);
+                        const isClickable = ["scheduled", "confirmed", "in_progress", "pending_validation"].includes(appt.status);
+                        return (
+                          <div
+                            key={appt.id}
+                            role={isClickable ? "button" : undefined}
+                            tabIndex={isClickable ? 0 : undefined}
+                            className={`flex items-stretch rounded-md overflow-hidden border ${cfg.bg} ${isClickable ? "cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none" : "opacity-75"}`}
+                            onClick={() => isClickable && handleAppointmentClick(appt)}
+                            onKeyDown={(e) => { if (isClickable && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); handleAppointmentClick(appt); }}}
+                            aria-label={isClickable ? `Cita con ${appt.patientName} a las ${appt.scheduledTime.slice(0, 5)}` : undefined}
+                            data-testid={`agenda-appointment-${appt.id}`}
+                          >
+                            <div className={`w-1.5 flex-shrink-0 ${cfg.barColor}`} />
+                            <div className="flex-1 py-2 px-3 min-w-0">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <span className="text-[11px] font-mono text-muted-foreground">
+                                  {appt.scheduledTime.slice(0, 5)} – {endTime.slice(0, 5)}
+                                </span>
+                                {appt.consultationType === "video" ? (
+                                  <Video className="h-3 w-3 text-muted-foreground" />
+                                ) : (
+                                  <Phone className="h-3 w-3 text-muted-foreground" />
+                                )}
+                              </div>
+                              <p className="font-semibold text-sm truncate" data-testid={`text-patient-name-${appt.id}`}>
+                                {appt.patientName}
+                              </p>
+                              {appt.notes && (
+                                <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                                  {appt.notes}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 pr-3 flex-shrink-0">
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] px-1.5 py-0 border-current ${cfg.color}`}
+                                data-testid={`badge-status-${appt.id}`}
+                              >
+                                {cfg.label}
+                              </Badge>
+                              {isClickable && (
+                                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-                <div className="text-right">
-                  <p className="font-medium" data-testid={`text-appointment-date-${appointment.id}`}>
-                    {formatAppointmentDate(appointment.scheduledDate)}
-                  </p>
-                  <p className="text-sm text-muted-foreground flex items-center gap-1 justify-end">
-                    <Clock className="h-3 w-3" />
-                    {appointment.scheduledTime.slice(0, 5)}
-                  </p>
-                </div>
-                <div>
-                  {getStatusBadge(appointment.status)}
-                </div>
-              </div>
-            ))
+                );
+              })}
+            </div>
           ) : (
-            <div className="text-center py-8">
-              <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">No tienes citas programadas</p>
+            <div className="text-center py-12" data-testid="agenda-empty">
+              <Users className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+              <p className="text-muted-foreground font-medium">
+                {isTodaySelected ? "No hay citas programadas para hoy" : "No hay citas para este día"}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Usa la navegación para ver otros días
+              </p>
             </div>
           )}
         </CardContent>
       </Card>
+
+      <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground px-1">
+        <span className="font-medium">Leyenda:</span>
+        {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+          <span key={key} className="flex items-center gap-1.5">
+            <span className={`w-3 h-2 rounded-sm ${cfg.barColor}`} />
+            {cfg.label}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
