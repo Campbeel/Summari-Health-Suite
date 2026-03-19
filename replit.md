@@ -41,6 +41,7 @@ Preferred communication style: Simple, everyday language.
 - **Document Management**: Patient-facing pages for medical instructions and exam orders, with PDF download and preview.
 - **Patient Card**: Validation page shows a compact horizontal patient info bar at the top with name, RUT, age, gender, blood type, email, WhatsApp, allergies, and medical history. Emergency contact data is available via the API.
 - **Clinical Assistant Chatbot**: Reusable `ClinicalAssistant` component (`client/src/components/clinical-assistant.tsx`). Backend endpoints: `POST /api/consultations/:id/assistant/welcome` (auto-greeting with patient context) and `POST /api/consultations/:id/assistant/chat` (conversation). Both verify doctor ownership of the appointment. Available in consultation sidebar (forceMount to preserve state across tab switches) and validation page right panel.
+- **Doctor Patient Management**: Patient list page (`/doctor/patients`) with search by name/RUT/email, patient detail page (`/doctor/patients/:patientId`) with tabs for appointment history, clinical records, prescriptions, and exam orders. Doctors can see full patient history including consultations with other doctors. Access is relationship-scoped: doctors can only view patients they have at least one appointment with. Backend enforces authorization via `doctorHasPatientRelationship` check. APIs: `GET /api/doctors/me/patients`, `GET /api/doctors/me/patients/:id`, `GET /api/doctors/me/patients/:id/history`, `/records`, `/prescriptions`, `/exam-orders`.
 
 ## External Dependencies
 

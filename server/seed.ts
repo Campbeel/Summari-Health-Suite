@@ -81,10 +81,95 @@ export async function cleanAndSetupDatabase() {
       console.log("Ensured target user has doctor and patient profiles");
     }
 
+    const FELIX_RUT = "19892370-2";
+    const existingFelix = await db.select().from(users).where(eq(users.rut, FELIX_RUT));
+    if (existingFelix.length === 0) {
+      const felixPassword = await bcrypt.hash("felix123", 10);
+      const felixUserId = `user_felix_${crypto.randomUUID().slice(0, 8)}`;
+      await db.insert(users).values({
+        id: felixUserId,
+        rut: FELIX_RUT,
+        username: FELIX_RUT,
+        firstName: "Felix",
+        lastName: "Vargas",
+        email: "felix.vargas.cs@gmail.com",
+        whatsapp: "+56912345678",
+        passwordHash: felixPassword,
+      });
+      await db.insert(patients).values({
+        userId: felixUserId,
+        rut: FELIX_RUT,
+        email: "felix.vargas.cs@gmail.com",
+        whatsapp: "+56912345678",
+        dateOfBirth: "1995-06-15",
+        gender: "Masculino",
+        bloodType: "O+",
+        allergies: ["Penicilina", "Mariscos"],
+        medicalHistory: "Hipertensión arterial controlada, diabetes tipo 2",
+        emergencyContact: "María Vargas",
+        emergencyPhone: "+56998765432",
+      });
+      console.log("Created test patient Felix Vargas");
+    }
+
+    const allDoctors = await db.select().from(doctors);
+    const allPatients = await db.select().from(patients);
+    if (allDoctors.length > 0 && allPatients.length > 0) {
+      const existingAppts = await db.select().from(appointments);
+      if (existingAppts.length === 0) {
+        const doctorId = allDoctors[0].id;
+        for (const patient of allPatients) {
+          const today = new Date();
+          const oneWeekAgo = new Date(today);
+          oneWeekAgo.setDate(today.getDate() - 7);
+          const twoWeeksAgo = new Date(today);
+          twoWeeksAgo.setDate(today.getDate() - 14);
+
+          await db.insert(appointments).values([
+            {
+              patientId: patient.id,
+              doctorId,
+              scheduledDate: twoWeeksAgo.toISOString().slice(0, 10),
+              scheduledTime: "10:00:00",
+              durationMinutes: 30,
+              status: "completed",
+              paymentStatus: "paid",
+              consultationType: "video",
+              notes: "Consulta de control",
+            },
+            {
+              patientId: patient.id,
+              doctorId,
+              scheduledDate: oneWeekAgo.toISOString().slice(0, 10),
+              scheduledTime: "15:00:00",
+              durationMinutes: 30,
+              status: "completed",
+              paymentStatus: "paid",
+              consultationType: "phone",
+              notes: "Seguimiento",
+            },
+            {
+              patientId: patient.id,
+              doctorId,
+              scheduledDate: today.toISOString().slice(0, 10),
+              scheduledTime: patient.rut === FELIX_RUT ? "15:00:00" : "09:00:00",
+              durationMinutes: 30,
+              status: "scheduled",
+              paymentStatus: "paid",
+              consultationType: "video",
+              notes: "Próxima consulta",
+            },
+          ]);
+        }
+        console.log("Created seed appointments");
+      }
+    }
+
     const finalUsers = await db.select().from(users);
     const finalDoctors = await db.select().from(doctors);
     const finalPatients = await db.select().from(patients);
-    console.log(`Database cleanup complete: ${finalUsers.length} user(s), ${finalDoctors.length} doctor(s), ${finalPatients.length} patient(s)`);
+    const finalAppts = await db.select().from(appointments);
+    console.log(`Database cleanup complete: ${finalUsers.length} user(s), ${finalDoctors.length} doctor(s), ${finalPatients.length} patient(s), ${finalAppts.length} appointment(s)`);
   } catch (error) {
     console.error("Error during database cleanup:", error);
   }

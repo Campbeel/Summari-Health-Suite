@@ -34,6 +34,7 @@ import {
   Pill,
   LayoutDashboard,
   User,
+  Users,
   Shield,
   Activity,
   ClipboardList,
@@ -53,6 +54,7 @@ const patientMenuItems = [
 const doctorMenuItems = [
   { title: "Panel", url: "/doctor/dashboard", icon: LayoutDashboard, testId: "link-doctor-dashboard" },
   { title: "Mis Citas", url: "/doctor/appointments", icon: Calendar, testId: "link-doctor-appointments" },
+  { title: "Pacientes", url: "/doctor/patients", icon: Users, testId: "link-doctor-patients" },
   { title: "Mi Perfil Profesional", url: "/doctor/profile", icon: User, testId: "link-doctor-profile" },
 ];
 

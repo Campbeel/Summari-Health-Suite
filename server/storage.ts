@@ -175,6 +175,58 @@ type DoctorDashboardStats = {
   completedConsultations: number;
 };
 
+type PatientListItem = {
+  id: number;
+  userId: string;
+  rut: string | null;
+  email: string | null;
+  whatsapp: string | null;
+  dateOfBirth: string | null;
+  gender: string | null;
+  bloodType: string | null;
+  allergies: string[] | null;
+  medicalHistory: string | null;
+  emergencyContact: string | null;
+  emergencyPhone: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  profileImageUrl: string | null;
+  lastAppointmentDate: string | null;
+  totalAppointments: number;
+};
+
+type PatientFullProfile = {
+  id: number;
+  userId: string;
+  rut: string | null;
+  email: string | null;
+  whatsapp: string | null;
+  dateOfBirth: string | null;
+  gender: string | null;
+  bloodType: string | null;
+  allergies: string[] | null;
+  medicalHistory: string | null;
+  emergencyContact: string | null;
+  emergencyPhone: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  profileImageUrl: string | null;
+};
+
+type PatientAppointmentHistory = {
+  id: number;
+  scheduledDate: string;
+  scheduledTime: string;
+  durationMinutes: number;
+  status: string;
+  consultationType: string;
+  notes: string | null;
+  doctorName: string;
+  doctorSpecialty: string | null;
+  diagnosis: string | null;
+  hasPrescription: boolean;
+};
+
 type AppointmentWithPatient = {
   id: number;
   patientId: number;
@@ -283,6 +335,12 @@ export interface IStorage {
   // Consultation Ratings
   getConsultationRating(appointmentId: number): Promise<ConsultationRating | undefined>;
   createConsultationRating(rating: InsertConsultationRating): Promise<ConsultationRating>;
+
+  // Doctor Patient Management
+  getAllPatientsForDoctor(doctorId: number, search?: string): Promise<PatientListItem[]>;
+  getPatientFullProfile(patientId: number): Promise<PatientFullProfile | undefined>;
+  getPatientAppointmentHistory(patientId: number): Promise<PatientAppointmentHistory[]>;
+  doctorHasPatientRelationship(doctorId: number, patientId: number): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1050,6 +1108,127 @@ export class DatabaseStorage implements IStorage {
   async createConsultationRating(rating: InsertConsultationRating): Promise<ConsultationRating> {
     const [created] = await db.insert(consultationRatings).values(rating).returning();
     return created;
+  }
+
+  async getAllPatientsForDoctor(doctorId: number, search?: string): Promise<PatientListItem[]> {
+    const doctorPatientIds = await db
+      .selectDistinct({ patientId: appointments.patientId })
+      .from(appointments)
+      .where(eq(appointments.doctorId, doctorId));
+
+    const patientIds = doctorPatientIds.map((r) => r.patientId);
+    if (patientIds.length === 0) return [];
+
+    const result = await db
+      .select({
+        id: patients.id,
+        userId: patients.userId,
+        rut: patients.rut,
+        email: patients.email,
+        whatsapp: patients.whatsapp,
+        dateOfBirth: patients.dateOfBirth,
+        gender: patients.gender,
+        bloodType: patients.bloodType,
+        allergies: patients.allergies,
+        medicalHistory: patients.medicalHistory,
+        emergencyContact: patients.emergencyContact,
+        emergencyPhone: patients.emergencyPhone,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        profileImageUrl: users.profileImageUrl,
+        lastAppointmentDate: sql<string>`MAX(${appointments.scheduledDate})`.as("last_appointment_date"),
+        totalAppointments: sql<number>`COUNT(${appointments.id})::int`.as("total_appointments"),
+      })
+      .from(patients)
+      .innerJoin(users, eq(patients.userId, users.id))
+      .leftJoin(appointments, eq(appointments.patientId, patients.id))
+      .where(sql`${patients.id} IN (${sql.join(patientIds.map(id => sql`${id}`), sql`, `)})`)
+      .groupBy(patients.id, users.id)
+      .orderBy(desc(sql`MAX(${appointments.scheduledDate})`));
+
+    if (search && search.trim()) {
+      const searchLower = search.trim().toLowerCase();
+      return result.filter((p) => {
+        const fullName = `${p.firstName || ""} ${p.lastName || ""}`.toLowerCase();
+        const rut = (p.rut || "").toLowerCase();
+        const email = (p.email || "").toLowerCase();
+        return fullName.includes(searchLower) || rut.includes(searchLower) || email.includes(searchLower);
+      });
+    }
+
+    return result;
+  }
+
+  async getPatientFullProfile(patientId: number): Promise<PatientFullProfile | undefined> {
+    const [result] = await db
+      .select({
+        id: patients.id,
+        userId: patients.userId,
+        rut: patients.rut,
+        email: patients.email,
+        whatsapp: patients.whatsapp,
+        dateOfBirth: patients.dateOfBirth,
+        gender: patients.gender,
+        bloodType: patients.bloodType,
+        allergies: patients.allergies,
+        medicalHistory: patients.medicalHistory,
+        emergencyContact: patients.emergencyContact,
+        emergencyPhone: patients.emergencyPhone,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        profileImageUrl: users.profileImageUrl,
+      })
+      .from(patients)
+      .innerJoin(users, eq(patients.userId, users.id))
+      .where(eq(patients.id, patientId));
+    return result;
+  }
+
+  async getPatientAppointmentHistory(patientId: number): Promise<PatientAppointmentHistory[]> {
+    const result = await db
+      .select({
+        id: appointments.id,
+        scheduledDate: appointments.scheduledDate,
+        scheduledTime: appointments.scheduledTime,
+        durationMinutes: appointments.durationMinutes,
+        status: appointments.status,
+        consultationType: appointments.consultationType,
+        notes: appointments.notes,
+        doctorFirstName: users.firstName,
+        doctorLastName: users.lastName,
+        doctorSpecialty: doctors.specialty,
+        diagnosis: clinicalRecords.diagnosis,
+        prescriptionId: prescriptions.id,
+      })
+      .from(appointments)
+      .innerJoin(doctors, eq(appointments.doctorId, doctors.id))
+      .innerJoin(users, eq(doctors.userId, users.id))
+      .leftJoin(clinicalRecords, eq(clinicalRecords.appointmentId, appointments.id))
+      .leftJoin(prescriptions, eq(prescriptions.clinicalRecordId, clinicalRecords.id))
+      .where(eq(appointments.patientId, patientId))
+      .orderBy(desc(appointments.scheduledDate), desc(appointments.scheduledTime));
+
+    return result.map((r) => ({
+      id: r.id,
+      scheduledDate: r.scheduledDate,
+      scheduledTime: r.scheduledTime,
+      durationMinutes: r.durationMinutes,
+      status: r.status,
+      consultationType: r.consultationType,
+      notes: r.notes,
+      doctorName: r.doctorFirstName ? `Dr. ${r.doctorFirstName} ${r.doctorLastName}` : "Doctor",
+      doctorSpecialty: r.doctorSpecialty,
+      diagnosis: r.diagnosis,
+      hasPrescription: r.prescriptionId !== null,
+    }));
+  }
+
+  async doctorHasPatientRelationship(doctorId: number, patientId: number): Promise<boolean> {
+    const [result] = await db
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(appointments)
+      .where(and(eq(appointments.doctorId, doctorId), eq(appointments.patientId, patientId)));
+    return (result?.count || 0) > 0;
   }
 }
 

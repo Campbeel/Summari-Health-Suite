@@ -245,6 +245,140 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/doctors/me/patients", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const doctor = await storage.getDoctorByUserId(userId);
+      if (!doctor) {
+        return res.status(403).json({ error: "User is not a doctor" });
+      }
+      const search = req.query.search as string | undefined;
+      const patients = await storage.getAllPatientsForDoctor(doctor.id, search);
+      res.json(patients);
+    } catch (error) {
+      console.error("Error fetching patients:", error);
+      res.status(500).json({ error: "Failed to fetch patients" });
+    }
+  });
+
+  app.get("/api/doctors/me/patients/:patientId", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const doctor = await storage.getDoctorByUserId(userId);
+      if (!doctor) {
+        return res.status(403).json({ error: "User is not a doctor" });
+      }
+      const patientId = parseInt(req.params.patientId);
+      if (isNaN(patientId) || patientId <= 0) {
+        return res.status(400).json({ error: "Invalid patient ID" });
+      }
+      const hasRelationship = await storage.doctorHasPatientRelationship(doctor.id, patientId);
+      if (!hasRelationship) {
+        return res.status(403).json({ error: "No authorized relationship with this patient" });
+      }
+      const profile = await storage.getPatientFullProfile(patientId);
+      if (!profile) {
+        return res.status(404).json({ error: "Patient not found" });
+      }
+      res.json(profile);
+    } catch (error) {
+      console.error("Error fetching patient profile:", error);
+      res.status(500).json({ error: "Failed to fetch patient profile" });
+    }
+  });
+
+  app.get("/api/doctors/me/patients/:patientId/history", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const doctor = await storage.getDoctorByUserId(userId);
+      if (!doctor) {
+        return res.status(403).json({ error: "User is not a doctor" });
+      }
+      const patientId = parseInt(req.params.patientId);
+      if (isNaN(patientId) || patientId <= 0) {
+        return res.status(400).json({ error: "Invalid patient ID" });
+      }
+      const hasRelationship = await storage.doctorHasPatientRelationship(doctor.id, patientId);
+      if (!hasRelationship) {
+        return res.status(403).json({ error: "No authorized relationship with this patient" });
+      }
+      const history = await storage.getPatientAppointmentHistory(patientId);
+      res.json(history);
+    } catch (error) {
+      console.error("Error fetching patient history:", error);
+      res.status(500).json({ error: "Failed to fetch patient history" });
+    }
+  });
+
+  app.get("/api/doctors/me/patients/:patientId/records", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const doctor = await storage.getDoctorByUserId(userId);
+      if (!doctor) {
+        return res.status(403).json({ error: "User is not a doctor" });
+      }
+      const patientId = parseInt(req.params.patientId);
+      if (isNaN(patientId) || patientId <= 0) {
+        return res.status(400).json({ error: "Invalid patient ID" });
+      }
+      const hasRelationship = await storage.doctorHasPatientRelationship(doctor.id, patientId);
+      if (!hasRelationship) {
+        return res.status(403).json({ error: "No authorized relationship with this patient" });
+      }
+      const records = await storage.getClinicalRecordsByPatient(patientId);
+      res.json(records);
+    } catch (error) {
+      console.error("Error fetching patient records:", error);
+      res.status(500).json({ error: "Failed to fetch patient records" });
+    }
+  });
+
+  app.get("/api/doctors/me/patients/:patientId/prescriptions", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const doctor = await storage.getDoctorByUserId(userId);
+      if (!doctor) {
+        return res.status(403).json({ error: "User is not a doctor" });
+      }
+      const patientId = parseInt(req.params.patientId);
+      if (isNaN(patientId) || patientId <= 0) {
+        return res.status(400).json({ error: "Invalid patient ID" });
+      }
+      const hasRelationship = await storage.doctorHasPatientRelationship(doctor.id, patientId);
+      if (!hasRelationship) {
+        return res.status(403).json({ error: "No authorized relationship with this patient" });
+      }
+      const prescriptions = await storage.getPrescriptionsByPatient(patientId);
+      res.json(prescriptions);
+    } catch (error) {
+      console.error("Error fetching patient prescriptions:", error);
+      res.status(500).json({ error: "Failed to fetch patient prescriptions" });
+    }
+  });
+
+  app.get("/api/doctors/me/patients/:patientId/exam-orders", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const doctor = await storage.getDoctorByUserId(userId);
+      if (!doctor) {
+        return res.status(403).json({ error: "User is not a doctor" });
+      }
+      const patientId = parseInt(req.params.patientId);
+      if (isNaN(patientId) || patientId <= 0) {
+        return res.status(400).json({ error: "Invalid patient ID" });
+      }
+      const hasRelationship = await storage.doctorHasPatientRelationship(doctor.id, patientId);
+      if (!hasRelationship) {
+        return res.status(403).json({ error: "No authorized relationship with this patient" });
+      }
+      const examOrders = await storage.getExamOrdersWithDoctorByPatient(patientId);
+      res.json(examOrders);
+    } catch (error) {
+      console.error("Error fetching patient exam orders:", error);
+      res.status(500).json({ error: "Failed to fetch patient exam orders" });
+    }
+  });
+
   // Get doctor by ID - must be after /api/doctors/me routes
   app.get("/api/doctors/:id", async (req, res) => {
     try {
