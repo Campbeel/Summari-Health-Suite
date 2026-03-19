@@ -1196,10 +1196,16 @@ export async function registerRoutes(
         patient: {
           id: patient?.id,
           name: patientUser ? `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() || patientUser.email : 'Paciente',
+          rut: patient?.rut || patientUser?.rut || undefined,
+          email: patient?.email || patientUser?.email || undefined,
+          whatsapp: patient?.whatsapp || undefined,
           dateOfBirth: patient?.dateOfBirth,
           gender: patient?.gender,
           bloodType: patient?.bloodType,
           allergies: patient?.allergies,
+          medicalHistory: patient?.medicalHistory || undefined,
+          emergencyContact: patient?.emergencyContact || undefined,
+          emergencyPhone: patient?.emergencyPhone || undefined,
         },
         clinicalRecord: {
           id: clinicalRecord.id,
@@ -1340,9 +1346,8 @@ export async function registerRoutes(
         const examOrderSchema = z.object({
           exams: z.array(z.object({
             name: z.string().min(1, "Nombre del examen requerido"),
-            instructions: z.string().optional(),
+            justification: z.string().optional(),
           })).min(1),
-          clinicalJustification: z.string().optional().nullable(),
         });
 
         const parsedExams = examOrderSchema.safeParse(examOrdersData);
@@ -1355,7 +1360,7 @@ export async function registerRoutes(
           patientId: appointment.patientId,
           doctorId: appointment.doctorId,
           exams: parsedExams.data.exams,
-          clinicalJustification: parsedExams.data.clinicalJustification || null,
+          clinicalJustification: null,
           status: "pending",
         });
       }
@@ -1442,7 +1447,6 @@ export async function registerRoutes(
         if (existingExamOrders?.length > 0) {
           examOrdersData = {
             exams: existingExamOrders[0].exams,
-            clinicalJustification: existingExamOrders[0].clinicalJustification,
           };
         }
       }
@@ -1570,7 +1574,7 @@ export async function registerRoutes(
       if (documentTypes.includes('exams')) {
         const existing = await storage.getExamOrdersByRecordId(clinicalRecord.id);
         if (existing?.length > 0) {
-          examOrdersData = { exams: existing[0].exams, clinicalJustification: existing[0].clinicalJustification };
+          examOrdersData = { exams: existing[0].exams };
         }
       }
 

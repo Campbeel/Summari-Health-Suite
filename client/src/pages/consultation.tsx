@@ -1108,6 +1108,9 @@ export default function ConsultationPage() {
               <Card className="h-full flex flex-col">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">Notas de Consulta</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Estas notas se guardan al finalizar la consulta y estarán disponibles en la validación post-consulta. Úsalas para anotar observaciones, recordatorios o detalles relevantes durante la atención.
+                  </p>
                 </CardHeader>
                 <CardContent className="flex-1 flex flex-col gap-4 pb-4">
                   <Textarea

@@ -19,12 +19,17 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   FileText,
   Pill,
   ClipboardList,
-  Sparkles,
   Check,
   Plus,
   Trash2,
@@ -33,11 +38,9 @@ import {
   AlertTriangle,
   ArrowLeft,
   User,
-  Mic,
   Save,
-  Activity,
-  Heart,
   FlaskConical,
+  Eye,
   Mail,
   Send,
   CheckCircle,
@@ -64,7 +67,7 @@ interface MedicalInstructionDraft {
 
 interface Exam {
   name: string;
-  instructions?: string;
+  justification: string;
 }
 
 interface ValidationData {
@@ -79,10 +82,16 @@ interface ValidationData {
   patient: {
     id: number;
     name: string;
+    rut?: string;
+    email?: string;
+    whatsapp?: string;
     dateOfBirth?: string;
     gender?: string;
     bloodType?: string;
     allergies?: string[];
+    medicalHistory?: string;
+    emergencyContact?: string;
+    emergencyPhone?: string;
   };
   clinicalRecord: {
     id: number;
@@ -139,32 +148,14 @@ interface ValidationData {
         instructions: string[];
       };
     } | null;
-    hasTranscription?: boolean;
   };
   prescription: {
     medications: Medication[];
-    instructions?: string;
   } | null;
   medicalInstructions: MedicalInstructionDraft[];
   examOrders: {
     exams: Exam[];
-    clinicalJustification?: string;
   } | null;
-}
-
-interface AISuggestions {
-  clinicalSummary: {
-    chiefComplaint?: string;
-    symptoms?: string[];
-    diagnosis?: string;
-    notes?: string;
-  } | null;
-  prescription: {
-    medications: Medication[];
-    instructions?: string;
-  } | null;
-  medicalInstructions: MedicalInstructionDraft[];
-  examOrders?: Exam[];
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -194,18 +185,18 @@ export default function ConsultationValidationPage() {
   const [clinicalNotes, setClinicalNotes] = useState("");
 
   const [medications, setMedications] = useState<Medication[]>([]);
-  const [prescriptionInstructions, setPrescriptionInstructions] = useState("");
-
   const [instructions, setInstructions] = useState<MedicalInstructionDraft[]>([]);
   
   const [exams, setExams] = useState<Exam[]>([]);
-  const [clinicalJustification, setClinicalJustification] = useState("");
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isValidated, setIsValidated] = useState(false);
   const [sendPrescription, setSendPrescription] = useState(true);
   const [sendInstructions, setSendInstructions] = useState(true);
   const [sendExams, setSendExams] = useState(true);
   const [emailSent, setEmailSent] = useState(false);
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewLoading, setPdfPreviewLoading] = useState(false);
 
   const [isInitialized, setIsInitialized] = useState(false);
   
@@ -233,7 +224,6 @@ export default function ConsultationValidationPage() {
 
       if (validationData.prescription) {
         setMedications(validationData.prescription.medications || []);
-        setPrescriptionInstructions(validationData.prescription.instructions || "");
       }
 
       if (validationData.medicalInstructions?.length > 0) {
@@ -246,49 +236,15 @@ export default function ConsultationValidationPage() {
       }
 
       if (validationData.examOrders) {
-        setExams(validationData.examOrders.exams || []);
-        setClinicalJustification(validationData.examOrders.clinicalJustification || "");
+        setExams((validationData.examOrders.exams || []).map(e => ({
+          name: e.name,
+          justification: e.justification || "",
+        })));
       }
 
       setIsInitialized(true);
     }
   }, [validationData, isInitialized]);
-
-  const generateSuggestionsMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest("POST", `/api/consultations/${id}/generate-suggestions`);
-      return response.json() as Promise<AISuggestions>;
-    },
-    onSuccess: (data) => {
-      if (data.clinicalSummary) {
-        if (data.clinicalSummary.chiefComplaint) setChiefComplaint(data.clinicalSummary.chiefComplaint);
-        if (data.clinicalSummary.symptoms) setSymptoms(data.clinicalSummary.symptoms);
-        if (data.clinicalSummary.diagnosis) setDiagnosis(data.clinicalSummary.diagnosis);
-        if (data.clinicalSummary.notes) setClinicalNotes(data.clinicalSummary.notes);
-      }
-      if (data.prescription) {
-        setMedications(data.prescription.medications || []);
-        setPrescriptionInstructions(data.prescription.instructions || "");
-      }
-      if (data.medicalInstructions?.length > 0) {
-        setInstructions(data.medicalInstructions);
-      }
-      if (data.examOrders && data.examOrders.length > 0) {
-        setExams(data.examOrders);
-      }
-      toast({
-        title: "Sugerencias generadas",
-        description: "La IA ha analizado la transcripción. Revisa y edita la información.",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "No se pudieron generar las sugerencias de la IA",
-        variant: "destructive",
-      });
-    },
-  });
 
   const validateMutation = useMutation({
     mutationFn: async () => {
@@ -301,12 +257,10 @@ export default function ConsultationValidationPage() {
         },
         prescription: medications.length > 0 ? {
           medications,
-          instructions: prescriptionInstructions,
         } : null,
         medicalInstructions: instructions,
         examOrders: exams.length > 0 ? {
           exams,
-          clinicalJustification,
         } : null,
       });
       return response.json();
@@ -365,7 +319,7 @@ export default function ConsultationValidationPage() {
         examOrders: exams.map(e => ({
           name: e.name,
           type: "general",
-          clinicalJustification: clinicalJustification,
+          clinicalJustification: e.justification,
         })),
       });
       return response.json();
@@ -441,7 +395,7 @@ export default function ConsultationValidationPage() {
   };
 
   const addExam = () => {
-    setExams(prev => [...prev, { name: "", instructions: "" }]);
+    setExams(prev => [...prev, { name: "", justification: "" }]);
   };
 
   const updateExam = (index: number, field: keyof Exam, value: string) => {
@@ -452,6 +406,31 @@ export default function ConsultationValidationPage() {
 
   const removeExam = (index: number) => {
     setExams(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handlePdfPreview = async (types: string[]) => {
+    setPdfPreviewLoading(true);
+    setPdfPreviewOpen(true);
+    try {
+      const token = localStorage.getItem("auth_token");
+      const response = await fetch(`/api/consultations/${id}/documents/pdf?types=${types.join(",")}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Error al generar PDF");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+      setPdfPreviewUrl(url);
+    } catch {
+      toast({
+        title: "Error",
+        description: "No se pudo generar la vista previa del PDF",
+        variant: "destructive",
+      });
+      setPdfPreviewOpen(false);
+    } finally {
+      setPdfPreviewLoading(false);
+    }
   };
 
   if (isLoading) {
@@ -483,7 +462,6 @@ export default function ConsultationValidationPage() {
   }
 
   const hasMedicalReport = !!validationData.clinicalRecord.medicalReport;
-  const hasTranscription = !!validationData.clinicalRecord.hasTranscription;
 
   const hasMedications = medications.length > 0;
   const hasInstructionItems = instructions.length > 0;
@@ -590,6 +568,25 @@ export default function ConsultationValidationPage() {
 
                 <div className="flex gap-3 pt-2">
                   <Button
+                    variant="outline"
+                    onClick={() => {
+                      const types: string[] = [];
+                      if (sendPrescription && hasMedications) types.push("prescription");
+                      if (sendInstructions && hasInstructionItems) types.push("instructions");
+                      if (sendExams && hasExamItems) types.push("exams");
+                      if (types.length > 0) handlePdfPreview(types);
+                    }}
+                    disabled={pdfPreviewLoading || selectedDocCount === 0}
+                    data-testid="button-preview-pdf-success"
+                  >
+                    {pdfPreviewLoading ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Eye className="h-4 w-4 mr-2" />
+                    )}
+                    Vista previa
+                  </Button>
+                  <Button
                     onClick={handleSendEmail}
                     disabled={sendDocumentsMutation.isPending || selectedDocCount === 0}
                     className="flex-1"
@@ -643,6 +640,34 @@ export default function ConsultationValidationPage() {
             )}
           </CardContent>
         </Card>
+
+        <Dialog open={pdfPreviewOpen} onOpenChange={(open) => {
+          setPdfPreviewOpen(open);
+          if (!open && pdfPreviewUrl) {
+            URL.revokeObjectURL(pdfPreviewUrl);
+            setPdfPreviewUrl(null);
+          }
+        }}>
+          <DialogContent className="max-w-4xl h-[85vh]">
+            <DialogHeader>
+              <DialogTitle>Vista previa de documentos</DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 min-h-0 h-full">
+              {pdfPreviewLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : pdfPreviewUrl ? (
+                <iframe
+                  src={pdfPreviewUrl}
+                  className="w-full h-full rounded-md border"
+                  title="Vista previa PDF"
+                  data-testid="pdf-preview-iframe"
+                />
+              ) : null}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
@@ -669,19 +694,25 @@ export default function ConsultationValidationPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {hasTranscription && (
+          {isValidated && hasAnyDocuments && (
             <Button
               variant="outline"
-              onClick={() => generateSuggestionsMutation.mutate()}
-              disabled={generateSuggestionsMutation.isPending}
-              data-testid="button-generate-suggestions"
+              onClick={() => {
+                const types: string[] = [];
+                if (hasMedications) types.push("prescription");
+                if (hasInstructionItems) types.push("instructions");
+                if (hasExamItems) types.push("exams");
+                handlePdfPreview(types);
+              }}
+              disabled={pdfPreviewLoading}
+              data-testid="button-preview-pdf"
             >
-              {generateSuggestionsMutation.isPending ? (
+              {pdfPreviewLoading ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
-                <Sparkles className="h-4 w-4 mr-2" />
+                <Eye className="h-4 w-4 mr-2" />
               )}
-              Generar sugerencias IA
+              Vista previa PDF
             </Button>
           )}
           <Button
@@ -711,6 +742,34 @@ export default function ConsultationValidationPage() {
         confirmText="Sí, terminar"
         cancelText="No, revisar"
       />
+
+      <Dialog open={pdfPreviewOpen} onOpenChange={(open) => {
+        setPdfPreviewOpen(open);
+        if (!open && pdfPreviewUrl) {
+          URL.revokeObjectURL(pdfPreviewUrl);
+          setPdfPreviewUrl(null);
+        }
+      }}>
+        <DialogContent className="max-w-4xl h-[85vh]">
+          <DialogHeader>
+            <DialogTitle>Vista previa de documentos</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 h-full">
+            {pdfPreviewLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : pdfPreviewUrl ? (
+              <iframe
+                src={pdfPreviewUrl}
+                className="w-full h-full rounded-md border"
+                title="Vista previa PDF"
+                data-testid="pdf-preview-iframe"
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
@@ -831,7 +890,7 @@ export default function ConsultationValidationPage() {
                     <div className="text-center py-8 text-muted-foreground" data-testid="prescription-empty">
                       <Pill className="h-8 w-8 mx-auto mb-2 opacity-50" />
                       <p className="text-sm">No hay medicamentos en la receta</p>
-                      <p className="text-xs mt-1">Agrega medicamentos manualmente o genera sugerencias con IA</p>
+                      <p className="text-xs mt-1">Agrega medicamentos manualmente</p>
                     </div>
                   ) : (
                     <>
@@ -904,17 +963,6 @@ export default function ConsultationValidationPage() {
                             </div>
                         </div>
                       ))}
-                      <div>
-                        <Label htmlFor="prescriptionInstructions">Instrucciones generales</Label>
-                        <Textarea
-                          id="prescriptionInstructions"
-                          value={prescriptionInstructions}
-                          onChange={(e) => setPrescriptionInstructions(e.target.value)}
-                          placeholder="Instrucciones generales para el paciente..."
-                          className="mt-1.5"
-                          data-testid="input-prescription-instructions"
-                        />
-                      </div>
                     </>
                   )}
                 </CardContent>
@@ -938,7 +986,7 @@ export default function ConsultationValidationPage() {
                     <div className="text-center py-8 text-muted-foreground" data-testid="instructions-empty">
                       <ClipboardList className="h-8 w-8 mx-auto mb-2 opacity-50" />
                       <p className="text-sm">No hay indicaciones médicas</p>
-                      <p className="text-xs mt-1">Agrega indicaciones manualmente o genera sugerencias con IA</p>
+                      <p className="text-xs mt-1">Agrega indicaciones manualmente</p>
                     </div>
                   ) : (
                     instructions.map((inst, index) => (
@@ -1067,28 +1115,17 @@ export default function ConsultationValidationPage() {
                             />
                           </div>
                           <div>
-                            <Label>Instrucciones para el paciente</Label>
+                            <Label>Justificación clínica</Label>
                             <Input
-                              value={exam.instructions || ""}
-                              onChange={(e) => updateExam(index, "instructions", e.target.value)}
-                              placeholder="Ej: Ayuno de 12 horas"
+                              value={exam.justification || ""}
+                              onChange={(e) => updateExam(index, "justification", e.target.value)}
+                              placeholder="Ej: Sospecha de anemia ferropénica"
                               className="mt-1"
-                              data-testid={`input-exam-instructions-${index}`}
+                              data-testid={`input-exam-justification-${index}`}
                             />
                           </div>
                         </div>
                       ))}
-                      <div>
-                        <Label htmlFor="clinicalJustification">Justificación clínica</Label>
-                        <Textarea
-                          id="clinicalJustification"
-                          value={clinicalJustification}
-                          onChange={(e) => setClinicalJustification(e.target.value)}
-                          placeholder="Justificación clínica para los exámenes solicitados..."
-                          className="mt-1.5"
-                          data-testid="input-clinical-justification"
-                        />
-                      </div>
                     </>
                   )}
                 </CardContent>
@@ -1107,14 +1144,43 @@ export default function ConsultationValidationPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               <p className="font-medium" data-testid="text-patient-name">{validationData.patient.name}</p>
-              {validationData.patient.gender && (
-                <p className="text-sm text-muted-foreground">
-                  Género: {validationData.patient.gender}
+              {validationData.patient.rut && (
+                <p className="text-sm text-muted-foreground" data-testid="text-patient-rut">
+                  RUT: {validationData.patient.rut}
                 </p>
               )}
-              {validationData.patient.bloodType && (
-                <p className="text-sm text-muted-foreground">
-                  Tipo de sangre: {validationData.patient.bloodType}
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                {validationData.patient.dateOfBirth && (
+                  <p className="text-sm text-muted-foreground" data-testid="text-patient-age">
+                    Edad: {(() => {
+                      const birth = new Date(validationData.patient.dateOfBirth!);
+                      const today = new Date();
+                      let age = today.getFullYear() - birth.getFullYear();
+                      const m = today.getMonth() - birth.getMonth();
+                      if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+                      return `${age} años`;
+                    })()}
+                  </p>
+                )}
+                {validationData.patient.gender && (
+                  <p className="text-sm text-muted-foreground" data-testid="text-patient-gender">
+                    Sexo: {validationData.patient.gender === "male" ? "Masculino" : validationData.patient.gender === "female" ? "Femenino" : validationData.patient.gender === "other" ? "Otro" : validationData.patient.gender}
+                  </p>
+                )}
+                {validationData.patient.bloodType && (
+                  <p className="text-sm text-muted-foreground" data-testid="text-patient-blood">
+                    Grupo: {validationData.patient.bloodType}
+                  </p>
+                )}
+              </div>
+              {validationData.patient.email && (
+                <p className="text-sm text-muted-foreground" data-testid="text-patient-email">
+                  Email: {validationData.patient.email}
+                </p>
+              )}
+              {validationData.patient.whatsapp && (
+                <p className="text-sm text-muted-foreground" data-testid="text-patient-whatsapp">
+                  WhatsApp: {validationData.patient.whatsapp}
                 </p>
               )}
               {validationData.patient.allergies && validationData.patient.allergies.length > 0 && (
@@ -1130,6 +1196,20 @@ export default function ConsultationValidationPage() {
                       </Badge>
                     ))}
                   </div>
+                </div>
+              )}
+              {validationData.patient.medicalHistory && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Antecedentes</p>
+                  <p className="text-xs text-muted-foreground">{validationData.patient.medicalHistory}</p>
+                </div>
+              )}
+              {validationData.patient.emergencyContact && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Contacto de emergencia</p>
+                  <p className="text-xs text-muted-foreground">
+                    {validationData.patient.emergencyContact}{validationData.patient.emergencyPhone ? ` - ${validationData.patient.emergencyPhone}` : ""}
+                  </p>
                 </div>
               )}
             </CardContent>
@@ -1376,8 +1456,6 @@ export default function ConsultationValidationPage() {
             </CardContent>
           </Card>
 
-          <WearableInsightsCard patientId={validationData.patient.id} />
-
           <Card>
             <CardContent className="pt-4 space-y-2">
               <p className="text-xs text-muted-foreground">
@@ -1403,22 +1481,6 @@ export default function ConsultationValidationPage() {
           </Card>
 
           <div className="flex flex-col gap-2">
-            {hasTranscription && (
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => generateSuggestionsMutation.mutate()}
-                disabled={generateSuggestionsMutation.isPending}
-                data-testid="button-generate-suggestions-sidebar"
-              >
-                {generateSuggestionsMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4 mr-2" />
-                )}
-                Sugerencias IA
-              </Button>
-            )}
             <Button
               className="w-full"
               onClick={() => setIsConfirmOpen(true)}
@@ -1439,120 +1501,3 @@ export default function ConsultationValidationPage() {
   );
 }
 
-interface MetricSummary {
-  metricType: string;
-  avg: number;
-  min: number;
-  max: number;
-  count: number;
-  latestValue: string;
-  unit: string;
-}
-
-const METRIC_LABELS: Record<string, string> = {
-  heart_rate: "FC",
-  steps: "Pasos",
-  sleep_duration: "Sueño",
-  spo2: "SpO₂",
-  bp_systolic: "PA Sist.",
-  bp_diastolic: "PA Diast.",
-  weight: "Peso",
-  temperature: "Temp.",
-  calories: "Calorías",
-};
-
-function WearableInsightsCard({ patientId }: { patientId: number }) {
-  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
-
-  const { data: summary, isLoading } = useQuery<MetricSummary[]>({
-    queryKey: [`/api/doctor/patients/${patientId}/wearable-metrics/summary`],
-  });
-
-  const aiMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/doctor/patients/${patientId}/wearable-metrics/ai-analysis`);
-      return res.json();
-    },
-    onSuccess: (data: { analysis: string }) => {
-      setAiAnalysis(data.analysis);
-    },
-    onError: () => {
-      setAiAnalysis("Error al generar análisis");
-    },
-  });
-
-  if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Activity className="h-4 w-4" />
-            Datos Wearable
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-20" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (!summary || summary.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Activity className="h-4 w-4" />
-            Datos Wearable
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-xs text-muted-foreground text-center py-2">Sin datos de dispositivos</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base flex items-center gap-2">
-          <Activity className="h-4 w-4" />
-          Datos Wearable
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="space-y-1.5">
-          {summary.map(s => (
-            <div key={s.metricType} className="flex items-center justify-between text-sm" data-testid={`wearable-summary-${s.metricType}`}>
-              <span className="text-muted-foreground">{METRIC_LABELS[s.metricType] || s.metricType}</span>
-              <span className="font-medium">{s.latestValue} {s.unit}</span>
-            </div>
-          ))}
-        </div>
-
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full"
-          onClick={() => aiMutation.mutate()}
-          disabled={aiMutation.isPending}
-          data-testid="button-ai-wearable-analysis"
-        >
-          {aiMutation.isPending ? (
-            <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
-          ) : (
-            <Heart className="h-3 w-3 mr-1.5" />
-          )}
-          Análisis IA
-        </Button>
-
-        {aiAnalysis && (
-          <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded-md whitespace-pre-wrap" data-testid="text-ai-wearable-analysis">
-            {aiAnalysis}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}

@@ -64,9 +64,8 @@ export interface PdfDocumentData {
   examOrders?: {
     exams: Array<{
       name: string;
-      instructions?: string;
+      justification?: string;
     }>;
-    clinicalJustification?: string | null;
   } | null;
   documentTypes: ('prescription' | 'instructions' | 'exams')[];
 }
@@ -257,7 +256,7 @@ function drawExamOrdersSection(doc: PDFKit.PDFDocument, data: PdfDocumentData) {
   data.examOrders.exams.forEach((exam) => {
     checkPageBreak(doc, 35);
     const startY = doc.y;
-    const boxHeight = exam.instructions ? 38 : 25;
+    const boxHeight = exam.justification ? 38 : 25;
 
     doc.rect(leftX, startY, pageWidth, boxHeight).lineWidth(0.5)
       .fillAndStroke(COLORS.lightGray, '#e4e4e7');
@@ -266,25 +265,13 @@ function drawExamOrdersSection(doc: PDFKit.PDFDocument, data: PdfDocumentData) {
     doc.fontSize(10).fillColor(COLORS.dark).font('Helvetica-Bold')
       .text(exam.name, leftX + 10, startY + 6, { width: pageWidth - 20 });
 
-    if (exam.instructions) {
+    if (exam.justification) {
       doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica-Oblique')
-        .text(`Preparación: ${exam.instructions}`, leftX + 10, startY + 22, { width: pageWidth - 20 });
+        .text(`Justificación: ${exam.justification}`, leftX + 10, startY + 22, { width: pageWidth - 20 });
     }
 
     doc.y = startY + boxHeight + 5;
   });
-
-  if (data.examOrders.clinicalJustification) {
-    checkPageBreak(doc, 35);
-    doc.y += 3;
-    doc.rect(leftX, doc.y, pageWidth, 30).lineWidth(0.5)
-      .fillAndStroke('#f0fdfa', COLORS.secondary);
-    doc.rect(leftX, doc.y, 3, 30).fill(COLORS.secondary);
-    doc.fontSize(9).fillColor(COLORS.dark).font('Helvetica-Bold')
-      .text('Justificación clínica: ', leftX + 10, doc.y + 8, { continued: true });
-    doc.font('Helvetica').text(data.examOrders.clinicalJustification);
-    doc.y += 35;
-  }
 }
 
 function drawFooter(doc: PDFKit.PDFDocument) {

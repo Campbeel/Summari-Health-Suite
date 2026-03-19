@@ -37,8 +37,9 @@ Preferred communication style: Simple, everyday language.
 - **AI Integration**: OpenAI Whisper for audio transcription, GPT-4o for generating clinical summaries, prescriptions, medical instructions, exam orders, and structured medical reports (informe médico) from transcripts. Raw transcription is stored in DB but hidden from UI; a structured medical report is displayed instead.
 - **Payment Gateway**: Flow (Chilean payment gateway) for consultation fees, HMAC-SHA256 webhook verification.
 - **Wearable Health Data**: Tracking system for various metrics (heart rate, steps, etc.), support for manual entry, CSV import, and Fitbit OAuth2 integration with scheduled sync.
-- **Post-Consultation Workflow**: Doctor validation page for AI-generated data, clinical alerts system (prescription error detection, dosage warnings, health risk analysis), patient feedback system, PDF document generation for clinical records, and email delivery of documents (prescriptions, instructions, exam orders) via Resend.
+- **Post-Consultation Workflow**: Doctor validation page with clinical alerts system (prescription error detection, dosage warnings, health risk analysis), patient feedback system, PDF document generation with in-app preview modal, and email delivery of documents (prescriptions, instructions, exam orders) via Resend. Exam orders use per-exam justification (not global). No AI suggestion button on validation page.
 - **Document Management**: Patient-facing pages for medical instructions and exam orders, with PDF download and preview.
+- **Patient Card**: Validation page shows patient name, RUT, age (calculated), gender (Spanish), blood type, email, WhatsApp, allergies, medical history, and emergency contact.
 
 ## External Dependencies
 
