@@ -500,3 +500,119 @@ Responde siempre en español. Devuelve SOLO el JSON sin texto adicional.`
     return null;
   }
 }
+
+export interface ClinicalAlert {
+  type: "error" | "warning" | "info";
+  category: string;
+  title: string;
+  description: string;
+  probability: number;
+  severity: number;
+}
+
+export async function generateClinicalAlerts(data: {
+  diagnosis?: string;
+  symptoms?: string[];
+  notes?: string;
+  transcription?: string;
+  medications?: Array<{ name: string; dosage: string; frequency: string; duration: string; instructions?: string }>;
+  medicalInstructions?: Array<{ title: string; description: string; category: string }>;
+  examOrders?: Array<{ name: string; type: string; clinicalJustification?: string }>;
+  patientAllergies?: string[];
+  medicalReport?: any;
+}): Promise<ClinicalAlert[]> {
+  try {
+    const medicationsList = data.medications?.map(m => `${m.name} - ${m.dosage} cada ${m.frequency} por ${m.duration}`).join("\n") || "Sin medicamentos";
+    const instructionsList = data.medicalInstructions?.map(i => `${i.title}: ${i.description}`).join("\n") || "Sin indicaciones";
+    const examsList = data.examOrders?.map(e => `${e.name} (${e.type})`).join(", ") || "Sin exámenes";
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `Eres un sistema experto de alertas clínicas y farmacológicas para médicos.
+Tu trabajo es analizar TODA la información de una consulta médica y detectar:
+
+1. **ERRORES DE PRESCRIPCIÓN** (type: "error"):
+   - Dosis incorrectas o peligrosas (ej: 1 kg en lugar de 1 g, 1000 mg en lugar de 100 mg)
+   - Dosis fuera de rango terapéutico estándar
+   - Frecuencias inadecuadas para el medicamento
+   - Duraciones excesivas o insuficientes
+   - Interacciones medicamentosas graves
+   - Contraindicaciones con alergias del paciente
+   - Medicamentos duplicados o redundantes
+
+2. **ADVERTENCIAS CLÍNICAS** (type: "warning"):
+   - Riesgos de salud futuros basados en diagnóstico y síntomas
+   - Señales de alarma que requieren seguimiento
+   - Posibles complicaciones del tratamiento
+   - Inconsistencias entre diagnóstico y tratamiento prescrito
+   - Falta de exámenes importantes para confirmar diagnóstico
+   - Indicaciones que podrían ser contraproducentes
+
+3. **INFORMACIÓN RELEVANTE** (type: "info"):
+   - Recomendaciones adicionales de buenas prácticas
+   - Alternativas terapéuticas a considerar
+   - Recordatorios de protocolos clínicos
+
+Para cada alerta, proporciona:
+- "type": "error" | "warning" | "info"
+- "category": categoría breve (ej: "Dosificación", "Interacción", "Riesgo futuro", "Protocolo")
+- "title": título corto y claro
+- "description": explicación detallada incluyendo qué está mal, por qué es un problema, y qué debería hacerse
+- "probability": número 0-1 indicando probabilidad del riesgo (1.0 para errores de prescripción evidentes)
+- "severity": número 0-1 indicando gravedad (1.0 = potencialmente mortal)
+
+Prioriza errores de prescripción sobre advertencias generales. Sé específico y concreto.
+Si no detectas ningún problema, devuelve un array vacío.
+Responde SOLO en JSON: { "alerts": [...] }
+Responde siempre en español.`
+        },
+        {
+          role: "user",
+          content: `Analiza esta consulta médica y detecta alertas clínicas:
+
+DIAGNÓSTICO: ${data.diagnosis || "No especificado"}
+SÍNTOMAS: ${data.symptoms?.join(", ") || "No especificados"}
+NOTAS CLÍNICAS: ${data.notes || "Sin notas"}
+ALERGIAS DEL PACIENTE: ${data.patientAllergies?.join(", ") || "Sin alergias conocidas"}
+
+MEDICAMENTOS PRESCRITOS:
+${medicationsList}
+
+INDICACIONES MÉDICAS:
+${instructionsList}
+
+EXÁMENES SOLICITADOS:
+${examsList}
+
+${data.transcription ? `CONTEXTO DE LA CONSULTA (transcripción): ${data.transcription.substring(0, 2000)}` : ""}
+${data.medicalReport?.diagnosticImpression ? `IMPRESIÓN DIAGNÓSTICA: ${data.medicalReport.diagnosticImpression}` : ""}`
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.2,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) return [];
+
+    const parsed = JSON.parse(content);
+    const alerts = Array.isArray(parsed.alerts) ? parsed.alerts : [];
+
+    return alerts
+      .filter((a: any) => a.title && a.description && a.type)
+      .map((a: any) => ({
+        type: ["error", "warning", "info"].includes(a.type) ? a.type : "info",
+        category: a.category || "General",
+        title: a.title,
+        description: a.description,
+        probability: typeof a.probability === "number" ? Math.min(1, Math.max(0, a.probability)) : 0.5,
+        severity: typeof a.severity === "number" ? Math.min(1, Math.max(0, a.severity)) : 0.5,
+      })) as ClinicalAlert[];
+  } catch (error) {
+    console.error("Error generating clinical alerts:", error);
+    throw new Error("Failed to generate clinical alerts");
+  }
+}

@@ -30,6 +30,7 @@ import {
   Trash2,
   Loader2,
   AlertCircle,
+  AlertTriangle,
   ArrowLeft,
   User,
   Mic,
@@ -40,6 +41,9 @@ import {
   Mail,
   Send,
   CheckCircle,
+  ShieldAlert,
+  Info,
+  RefreshCw,
 } from "lucide-react";
 
 interface Medication {
@@ -204,6 +208,16 @@ export default function ConsultationValidationPage() {
   const [emailSent, setEmailSent] = useState(false);
 
   const [isInitialized, setIsInitialized] = useState(false);
+  
+  interface ClinicalAlert {
+    type: "error" | "warning" | "info";
+    category: string;
+    title: string;
+    description: string;
+    probability: number;
+    severity: number;
+  }
+  const [clinicalAlerts, setClinicalAlerts] = useState<ClinicalAlert[]>([]);
 
   const { data: validationData, isLoading } = useQuery<ValidationData>({
     queryKey: ["/api/consultations", id, "validation"],
@@ -334,6 +348,43 @@ export default function ConsultationValidationPage() {
       toast({
         title: "Error al enviar",
         description: error.message || "No se pudieron enviar los documentos por correo",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const alertsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/consultations/${id}/alerts`, {
+        medications,
+        medicalInstructions: instructions.map(i => ({
+          title: i.title,
+          description: i.description,
+          category: i.category,
+        })),
+        examOrders: exams.map(e => ({
+          name: e.name,
+          type: "general",
+          clinicalJustification: clinicalJustification,
+        })),
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      const sorted = (data.alerts || []).sort((a: ClinicalAlert, b: ClinicalAlert) => {
+        const typeOrder = { error: 0, warning: 1, info: 2 };
+        const aOrder = typeOrder[a.type] ?? 2;
+        const bOrder = typeOrder[b.type] ?? 2;
+        if (aOrder !== bOrder) return aOrder - bOrder;
+        return b.severity - a.severity;
+      });
+      setClinicalAlerts(sorted);
+    },
+    onError: () => {
+      setClinicalAlerts([]);
+      toast({
+        title: "Error en el análisis",
+        description: "No se pudieron generar las alertas clínicas. Intente nuevamente.",
         variant: "destructive",
       });
     },
@@ -1189,6 +1240,137 @@ export default function ConsultationValidationPage() {
                   <FileText className="h-6 w-6 mx-auto mb-1 opacity-50" />
                   <p className="text-sm">No hay informe médico disponible</p>
                   <p className="text-xs mt-1">El informe se genera automáticamente a partir de la grabación de la consulta</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <ShieldAlert className="h-4 w-4" />
+                  Alertas Clínicas
+                </CardTitle>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => alertsMutation.mutate()}
+                  disabled={alertsMutation.isPending}
+                  data-testid="button-generate-alerts"
+                >
+                  {alertsMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {alertsMutation.isPending ? (
+                <div className="flex items-center justify-center py-6 gap-2 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm">Analizando consulta...</span>
+                </div>
+              ) : clinicalAlerts.length > 0 ? (
+                <ScrollArea className="max-h-[400px]">
+                  <div className="space-y-2" data-testid="clinical-alerts-list">
+                    {clinicalAlerts.map((alert, i) => (
+                      <div
+                        key={i}
+                        className={`rounded-lg border p-3 text-xs ${
+                          alert.type === "error"
+                            ? "border-destructive/50 bg-destructive/5"
+                            : alert.type === "warning"
+                            ? "border-orange-500/50 bg-orange-500/5"
+                            : "border-blue-500/50 bg-blue-500/5"
+                        }`}
+                        data-testid={`alert-${alert.type}-${i}`}
+                      >
+                        <div className="flex items-start gap-2">
+                          {alert.type === "error" ? (
+                            <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
+                          ) : alert.type === "warning" ? (
+                            <AlertTriangle className="h-4 w-4 text-orange-500 flex-shrink-0 mt-0.5" />
+                          ) : (
+                            <Info className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-semibold text-xs">{alert.title}</span>
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] px-1.5 py-0 ${
+                                  alert.type === "error"
+                                    ? "border-destructive/50 text-destructive"
+                                    : alert.type === "warning"
+                                    ? "border-orange-500/50 text-orange-500"
+                                    : "border-blue-500/50 text-blue-500"
+                                }`}
+                              >
+                                {alert.category}
+                              </Badge>
+                            </div>
+                            <p className="text-muted-foreground leading-relaxed">{alert.description}</p>
+                            {(alert.severity >= 0.7 || alert.probability >= 0.7) && (
+                              <div className="flex items-center gap-3 mt-1.5">
+                                {alert.severity >= 0.7 && (
+                                  <span className="text-[10px] text-destructive font-medium">
+                                    Severidad: {Math.round(alert.severity * 100)}%
+                                  </span>
+                                )}
+                                {alert.probability >= 0.7 && (
+                                  <span className="text-[10px] text-orange-500 font-medium">
+                                    Probabilidad: {Math.round(alert.probability * 100)}%
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              ) : (
+                <div className="text-center py-4">
+                  {alertsMutation.isSuccess ? (
+                    <>
+                      <CheckCircle className="h-6 w-6 mx-auto mb-1 text-green-500" />
+                      <p className="text-sm text-muted-foreground">No se detectaron alertas</p>
+                    </>
+                  ) : alertsMutation.isError ? (
+                    <>
+                      <AlertCircle className="h-6 w-6 mx-auto mb-1 text-destructive" />
+                      <p className="text-sm text-muted-foreground">Error al analizar. Intente nuevamente.</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                        onClick={() => alertsMutation.mutate()}
+                        data-testid="button-retry-alerts"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                        Reintentar
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldAlert className="h-6 w-6 mx-auto mb-1 opacity-50 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">Analiza la consulta para detectar alertas</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                        onClick={() => alertsMutation.mutate()}
+                        data-testid="button-run-alerts"
+                      >
+                        <ShieldAlert className="h-3.5 w-3.5 mr-1.5" />
+                        Analizar
+                      </Button>
+                    </>
+                  )}
                 </div>
               )}
             </CardContent>

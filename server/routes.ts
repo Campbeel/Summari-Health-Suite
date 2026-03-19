@@ -8,7 +8,7 @@ import fs from "fs";
 import { storage } from "./storage";
 import { isAuthenticated, registerAuthRoutes } from "./auth";
 import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText, verifyFlowSignature } from "./flow";
-import { transcribeAudio, transcribeAudioChunked, generatePrescriptionFromTranscript, generateFullConsultationSuggestions, generateMedicalReport } from "./openai";
+import { transcribeAudio, transcribeAudioChunked, generatePrescriptionFromTranscript, generateFullConsultationSuggestions, generateMedicalReport, generateClinicalAlerts } from "./openai";
 import { sendConsultationDocuments } from "./email";
 import { generateConsultationPdf, type PdfDocumentData } from "./pdf-generator";
 import { getFitbitAuthUrl, getAndRemovePendingState, exchangeCodeForTokens, refreshFitbitTokens, fetchFitbitData } from "./fitbit";
@@ -1638,6 +1638,45 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error generating suggestions:", error);
       res.status(500).json({ error: "Error al generar sugerencias" });
+    }
+  });
+
+  app.post("/api/consultations/:id/alerts", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const userId = req.userId;
+
+      const doctor = await storage.getDoctorByUserId(userId);
+      if (!doctor) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment || appointment.doctorId !== doctor.id) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+
+      const clinicalRecord = await storage.getClinicalRecordByAppointmentId(appointmentId);
+      const patient = await storage.getPatient(appointment.patientId);
+
+      const { medications, medicalInstructions, examOrders } = req.body;
+
+      const alerts = await generateClinicalAlerts({
+        diagnosis: clinicalRecord?.diagnosis || undefined,
+        symptoms: clinicalRecord?.symptoms || undefined,
+        notes: clinicalRecord?.notes || undefined,
+        transcription: clinicalRecord?.transcription || undefined,
+        medications: medications || [],
+        medicalInstructions: medicalInstructions || [],
+        examOrders: examOrders || [],
+        patientAllergies: patient?.allergies || [],
+        medicalReport: clinicalRecord?.medicalReport || undefined,
+      });
+
+      res.json({ alerts });
+    } catch (error) {
+      console.error("Error generating clinical alerts:", error);
+      res.status(500).json({ error: "Error al generar alertas clínicas" });
     }
   });
 
