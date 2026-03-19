@@ -1399,10 +1399,10 @@ export async function registerRoutes(
 
       const medicationSchema = z.object({
         name: z.string().min(1, "Nombre del medicamento requerido"),
-        dosage: z.string().min(1, "Dosis requerida"),
-        frequency: z.string().min(1, "Frecuencia requerida"),
-        duration: z.string().min(1, "Duración requerida"),
-        instructions: z.string().optional(),
+        dosage: z.string().nullable().optional().transform(v => v || ""),
+        frequency: z.string().nullable().optional().transform(v => v || ""),
+        duration: z.string().nullable().optional().transform(v => v || ""),
+        instructions: z.string().nullable().optional(),
       });
 
       const prescriptionSchema = z.object({
@@ -1480,7 +1480,7 @@ export async function registerRoutes(
         const examOrderSchema = z.object({
           exams: z.array(z.object({
             name: z.string().min(1, "Nombre del examen requerido"),
-            justification: z.string().optional(),
+            justification: z.string().nullable().optional(),
           })).min(1),
         });
 
