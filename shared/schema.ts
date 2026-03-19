@@ -76,6 +76,54 @@ export const clinicalRecords = pgTable("clinical_records", {
   }>(),
   notes: text("notes"),
   transcription: text("transcription"),
+  medicalReport: jsonb("medical_report").$type<{
+    patientData: {
+      fullName: string;
+      age: number | null;
+      sex: string;
+      maritalStatus: string;
+      occupation: string;
+      location: string;
+    };
+    consultationData: {
+      reason: string;
+      currentIllness: {
+        description: string;
+        onset: string;
+        duration: string;
+        associatedSymptoms: string;
+        modifyingFactors: string;
+        previousTreatments: string;
+      };
+    };
+    medicalHistory: {
+      medical: string;
+      surgical: string;
+      allergies: string;
+      medications: string;
+      toxicological: string;
+      gynecological: string | null;
+      socioeconomic: string;
+      pets: string;
+    };
+    familyHistory: string;
+    habits: {
+      diet: string;
+      physicalActivity: string;
+      sleep: string;
+      substanceUse: string;
+    };
+    systemsReview: string;
+    physicalExam: {
+      systemsExploration: string;
+    };
+    diagnosticImpression: string;
+    treatmentPlan: {
+      tests: string[];
+      treatment: string;
+      instructions: string[];
+    };
+  }>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

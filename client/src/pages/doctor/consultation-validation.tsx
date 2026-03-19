@@ -84,10 +84,58 @@ interface ValidationData {
     id: number;
     chiefComplaint?: string;
     symptoms?: string[];
-    clinicalDiagnosis?: string; // Corrected field name if needed, or stick to diagnosis
+    clinicalDiagnosis?: string;
     diagnosis?: string;
     notes?: string;
-    transcription?: string;
+    medicalReport?: {
+      patientData: {
+        fullName: string;
+        age: number | null;
+        sex: string;
+        maritalStatus: string;
+        occupation: string;
+        location: string;
+      };
+      consultationData: {
+        reason: string;
+        currentIllness: {
+          description: string;
+          onset: string;
+          duration: string;
+          associatedSymptoms: string;
+          modifyingFactors: string;
+          previousTreatments: string;
+        };
+      };
+      medicalHistory: {
+        medical: string;
+        surgical: string;
+        allergies: string;
+        medications: string;
+        toxicological: string;
+        gynecological: string | null;
+        socioeconomic: string;
+        pets: string;
+      };
+      familyHistory: string;
+      habits: {
+        diet: string;
+        physicalActivity: string;
+        sleep: string;
+        substanceUse: string;
+      };
+      systemsReview: string;
+      physicalExam: {
+        systemsExploration: string;
+      };
+      diagnosticImpression: string;
+      treatmentPlan: {
+        tests: string[];
+        treatment: string;
+        instructions: string[];
+      };
+    } | null;
+    hasTranscription?: boolean;
   };
   prescription: {
     medications: Medication[];
@@ -383,7 +431,8 @@ export default function ConsultationValidationPage() {
     );
   }
 
-  const hasTranscription = !!validationData.clinicalRecord.transcription;
+  const hasMedicalReport = !!validationData.clinicalRecord.medicalReport;
+  const hasTranscription = !!validationData.clinicalRecord.hasTranscription;
 
   const hasMedications = medications.length > 0;
   const hasInstructionItems = instructions.length > 0;
@@ -1038,21 +1087,108 @@ export default function ConsultationValidationPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
-                <Mic className="h-4 w-4" />
-                Transcripción
+                <FileText className="h-4 w-4" />
+                Informe Médico
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {validationData.clinicalRecord.transcription ? (
-                <ScrollArea className="max-h-64">
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap" data-testid="text-transcription">
-                    {validationData.clinicalRecord.transcription}
-                  </p>
+              {validationData.clinicalRecord.medicalReport ? (
+                <ScrollArea className="max-h-[500px]">
+                  <div className="space-y-4 text-sm" data-testid="medical-report">
+                    {(() => {
+                      const r = validationData.clinicalRecord.medicalReport;
+                      return (
+                        <>
+                          <div>
+                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Datos del Paciente</h4>
+                            <div className="grid grid-cols-2 gap-1 text-xs">
+                              <span>Nombre: {r.patientData.fullName}</span>
+                              <span>Edad: {r.patientData.age ?? "No mencionada"}</span>
+                              <span>Sexo: {r.patientData.sex}</span>
+                              <span>Ocupación: {r.patientData.occupation}</span>
+                            </div>
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Motivo de Consulta</h4>
+                            <p className="text-xs">{r.consultationData.reason}</p>
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Enfermedad Actual</h4>
+                            <div className="space-y-1 text-xs">
+                              <p><strong>Descripción:</strong> {r.consultationData.currentIllness.description}</p>
+                              <p><strong>Inicio:</strong> {r.consultationData.currentIllness.onset}</p>
+                              <p><strong>Duración:</strong> {r.consultationData.currentIllness.duration}</p>
+                              <p><strong>Síntomas asociados:</strong> {r.consultationData.currentIllness.associatedSymptoms}</p>
+                              <p><strong>Factores modificadores:</strong> {r.consultationData.currentIllness.modifyingFactors}</p>
+                              <p><strong>Tratamientos previos:</strong> {r.consultationData.currentIllness.previousTreatments}</p>
+                            </div>
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Antecedentes</h4>
+                            <div className="space-y-1 text-xs">
+                              <p><strong>Médicos:</strong> {r.medicalHistory.medical}</p>
+                              <p><strong>Quirúrgicos:</strong> {r.medicalHistory.surgical}</p>
+                              <p><strong>Alergias:</strong> {r.medicalHistory.allergies}</p>
+                              <p><strong>Medicamentos:</strong> {r.medicalHistory.medications}</p>
+                            </div>
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Antecedentes Familiares</h4>
+                            <p className="text-xs">{r.familyHistory}</p>
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Hábitos</h4>
+                            <div className="space-y-1 text-xs">
+                              <p><strong>Alimentación:</strong> {r.habits.diet}</p>
+                              <p><strong>Actividad física:</strong> {r.habits.physicalActivity}</p>
+                              <p><strong>Sueño:</strong> {r.habits.sleep}</p>
+                              <p><strong>Sustancias:</strong> {r.habits.substanceUse}</p>
+                            </div>
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Revisión por Sistemas</h4>
+                            <p className="text-xs">{r.systemsReview}</p>
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Examen Físico</h4>
+                            <p className="text-xs">{r.physicalExam.systemsExploration}</p>
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Impresión Diagnóstica</h4>
+                            <p className="text-xs font-medium">{r.diagnosticImpression}</p>
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Plan de Tratamiento</h4>
+                            <div className="space-y-1 text-xs">
+                              <p><strong>Tratamiento:</strong> {r.treatmentPlan.treatment}</p>
+                              {r.treatmentPlan.tests.length > 0 && (
+                                <div>
+                                  <strong>Exámenes:</strong>
+                                  <ul className="list-disc list-inside ml-2">
+                                    {r.treatmentPlan.tests.map((t, i) => <li key={i}>{t}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+                              {r.treatmentPlan.instructions.length > 0 && (
+                                <div>
+                                  <strong>Indicaciones:</strong>
+                                  <ul className="list-disc list-inside ml-2">
+                                    {r.treatmentPlan.instructions.map((inst, i) => <li key={i}>{inst}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
                 </ScrollArea>
               ) : (
-                <div className="text-center py-4 text-muted-foreground" data-testid="transcription-empty">
-                  <Mic className="h-6 w-6 mx-auto mb-1 opacity-50" />
-                  <p className="text-sm">No hay transcripción disponible</p>
+                <div className="text-center py-4 text-muted-foreground" data-testid="medical-report-empty">
+                  <FileText className="h-6 w-6 mx-auto mb-1 opacity-50" />
+                  <p className="text-sm">No hay informe médico disponible</p>
+                  <p className="text-xs mt-1">El informe se genera automáticamente a partir de la grabación de la consulta</p>
                 </div>
               )}
             </CardContent>

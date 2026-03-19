@@ -298,3 +298,205 @@ Devuelve un objeto JSON con las cuatro secciones. Responde siempre en español.`
     return { clinicalSummary: null, prescription: null, medicalInstructions: [] };
   }
 }
+
+export interface MedicalReport {
+  patientData: {
+    fullName: string;
+    age: number | null;
+    sex: string;
+    maritalStatus: string;
+    occupation: string;
+    location: string;
+  };
+  consultationData: {
+    reason: string;
+    currentIllness: {
+      description: string;
+      onset: string;
+      duration: string;
+      associatedSymptoms: string;
+      modifyingFactors: string;
+      previousTreatments: string;
+    };
+  };
+  medicalHistory: {
+    medical: string;
+    surgical: string;
+    allergies: string;
+    medications: string;
+    toxicological: string;
+    gynecological: string | null;
+    socioeconomic: string;
+    pets: string;
+  };
+  familyHistory: string;
+  habits: {
+    diet: string;
+    physicalActivity: string;
+    sleep: string;
+    substanceUse: string;
+  };
+  systemsReview: string;
+  physicalExam: {
+    systemsExploration: string;
+  };
+  diagnosticImpression: string;
+  treatmentPlan: {
+    tests: string[];
+    treatment: string;
+    instructions: string[];
+  };
+}
+
+export async function generateMedicalReport(transcript: string): Promise<MedicalReport | null> {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `Eres un asistente médico experto que genera informes médicos detallados y estructurados.
+Analiza la transcripción de la consulta y genera un informe estructurado.
+IMPORTANTE: NO incluyas información sensible o privada que no sea relevante para el registro médico. Omite comentarios personales, conversaciones casuales, o información que el paciente no haya querido que quede registrada.
+
+El informe debe seguir este formato exacto en JSON:
+{
+  "patientData": {
+    "fullName": "nombre completo del paciente (string)",
+    "age": "edad del paciente (number o null si no se menciona)",
+    "sex": "sexo del paciente (string, ej: 'Masculino', 'Femenino')",
+    "maritalStatus": "estado civil (string, 'No mencionado' si no se indica)",
+    "occupation": "ocupación (string, 'No mencionada' si no se indica)",
+    "location": "ubicación/ciudad (string, 'No mencionada' si no se indica)"
+  },
+  "consultationData": {
+    "reason": "motivo de consulta (string)",
+    "currentIllness": {
+      "description": "descripción de la enfermedad actual (string)",
+      "onset": "inicio de los síntomas (string)",
+      "duration": "duración (string)",
+      "associatedSymptoms": "síntomas asociados (string)",
+      "modifyingFactors": "factores que modifican los síntomas (string)",
+      "previousTreatments": "tratamientos previos (string)"
+    }
+  },
+  "medicalHistory": {
+    "medical": "antecedentes médicos (string)",
+    "surgical": "antecedentes quirúrgicos (string)",
+    "allergies": "alergias (string)",
+    "medications": "medicamentos actuales (string)",
+    "toxicological": "antecedentes toxicológicos (string)",
+    "gynecological": "antecedentes ginecológicos (string o null si no aplica)",
+    "socioeconomic": "contexto socioeconómico (string)",
+    "pets": "mascotas (string)"
+  },
+  "familyHistory": "antecedentes familiares (string)",
+  "habits": {
+    "diet": "alimentación (string)",
+    "physicalActivity": "actividad física (string)",
+    "sleep": "sueño (string)",
+    "substanceUse": "uso de sustancias (string)"
+  },
+  "systemsReview": "revisión por sistemas (string)",
+  "physicalExam": {
+    "systemsExploration": "exploración por sistemas (string)"
+  },
+  "diagnosticImpression": "impresión diagnóstica (string)",
+  "treatmentPlan": {
+    "tests": ["array de exámenes solicitados"],
+    "treatment": "plan de tratamiento (string)",
+    "instructions": ["array de indicaciones para el paciente"]
+  }
+}
+
+Si no hay información suficiente para un campo, usa "No mencionado" o "No evaluado" según corresponda.
+Responde siempre en español. Devuelve SOLO el JSON sin texto adicional.`
+        },
+        {
+          role: "user",
+          content: `Analiza esta transcripción de consulta médica y genera el informe médico estructurado:\n\n${transcript}`
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) return null;
+
+    const parsed = JSON.parse(content);
+    
+    const defaults: MedicalReport = {
+      patientData: {
+        fullName: "No mencionado",
+        age: null,
+        sex: "No mencionado",
+        maritalStatus: "No mencionado",
+        occupation: "No mencionada",
+        location: "No mencionada",
+      },
+      consultationData: {
+        reason: "No mencionado",
+        currentIllness: {
+          description: "No mencionado",
+          onset: "No mencionado",
+          duration: "No mencionada",
+          associatedSymptoms: "No mencionados",
+          modifyingFactors: "No mencionados",
+          previousTreatments: "No mencionados",
+        },
+      },
+      medicalHistory: {
+        medical: "No mencionados",
+        surgical: "No mencionados",
+        allergies: "No mencionadas",
+        medications: "No mencionados",
+        toxicological: "No mencionado",
+        gynecological: null,
+        socioeconomic: "No mencionado",
+        pets: "No mencionado",
+      },
+      familyHistory: "No mencionados",
+      habits: {
+        diet: "No mencionada",
+        physicalActivity: "No mencionada",
+        sleep: "No mencionado",
+        substanceUse: "No mencionado",
+      },
+      systemsReview: "No evaluada",
+      physicalExam: {
+        systemsExploration: "No evaluado",
+      },
+      diagnosticImpression: "No determinada",
+      treatmentPlan: {
+        tests: [],
+        treatment: "No determinado",
+        instructions: [],
+      },
+    };
+
+    const report: MedicalReport = {
+      patientData: { ...defaults.patientData, ...(parsed.patientData || {}) },
+      consultationData: {
+        reason: parsed.consultationData?.reason || defaults.consultationData.reason,
+        currentIllness: { ...defaults.consultationData.currentIllness, ...(parsed.consultationData?.currentIllness || {}) },
+      },
+      medicalHistory: { ...defaults.medicalHistory, ...(parsed.medicalHistory || {}) },
+      familyHistory: parsed.familyHistory || defaults.familyHistory,
+      habits: { ...defaults.habits, ...(parsed.habits || {}) },
+      systemsReview: parsed.systemsReview || defaults.systemsReview,
+      physicalExam: { ...defaults.physicalExam, ...(parsed.physicalExam || {}) },
+      diagnosticImpression: parsed.diagnosticImpression || defaults.diagnosticImpression,
+      treatmentPlan: {
+        tests: Array.isArray(parsed.treatmentPlan?.tests) ? parsed.treatmentPlan.tests : defaults.treatmentPlan.tests,
+        treatment: parsed.treatmentPlan?.treatment || defaults.treatmentPlan.treatment,
+        instructions: Array.isArray(parsed.treatmentPlan?.instructions) ? parsed.treatmentPlan.instructions : defaults.treatmentPlan.instructions,
+      },
+    };
+
+    return report;
+  } catch (error) {
+    console.error("Error generating medical report:", error);
+    return null;
+  }
+}

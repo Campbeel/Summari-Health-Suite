@@ -33,8 +33,8 @@ Preferred communication style: Simple, everyday language.
 
 ### Core Features
 - **User Authentication**: JWT-based, RUT (Chilean ID) as primary identifier, password hashing (bcryptjs), localStorage for JWT storage.
-- **Consultations**: WebRTC video/audio, appointment-based authorization, audio processing (WebM/Opus), continuous audio recording during consultations, server-side transcription post-consultation.
-- **AI Integration**: OpenAI Whisper for audio transcription, GPT-4o for generating clinical summaries, prescriptions, medical instructions, and exam orders from transcripts.
+- **Consultations**: WebRTC video/audio with tooltips on call controls (mute, camera, record, end call), appointment-based authorization, audio processing (WebM/Opus), continuous audio recording during consultations, server-side transcription post-consultation.
+- **AI Integration**: OpenAI Whisper for audio transcription, GPT-4o for generating clinical summaries, prescriptions, medical instructions, exam orders, and structured medical reports (informe médico) from transcripts. Raw transcription is stored in DB but hidden from UI; a structured medical report is displayed instead.
 - **Payment Gateway**: Flow (Chilean payment gateway) for consultation fees, HMAC-SHA256 webhook verification.
 - **Wearable Health Data**: Tracking system for various metrics (heart rate, steps, etc.), support for manual entry, CSV import, and Fitbit OAuth2 integration with scheduled sync.
 - **Post-Consultation Workflow**: Doctor validation page for AI-generated data, patient feedback system, PDF document generation for clinical records, and email delivery of documents (prescriptions, instructions, exam orders) via Resend.

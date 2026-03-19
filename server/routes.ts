@@ -8,7 +8,7 @@ import fs from "fs";
 import { storage } from "./storage";
 import { isAuthenticated, registerAuthRoutes } from "./auth";
 import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText, verifyFlowSignature } from "./flow";
-import { transcribeAudio, transcribeAudioChunked, generatePrescriptionFromTranscript, generateFullConsultationSuggestions } from "./openai";
+import { transcribeAudio, transcribeAudioChunked, generatePrescriptionFromTranscript, generateFullConsultationSuggestions, generateMedicalReport } from "./openai";
 import { sendConsultationDocuments } from "./email";
 import { generateConsultationPdf, type PdfDocumentData } from "./pdf-generator";
 import { getFitbitAuthUrl, getAndRemovePendingState, exchangeCodeForTokens, refreshFitbitTokens, fetchFitbitData } from "./fitbit";
@@ -1137,6 +1137,19 @@ export async function registerRoutes(
         }
       }
       
+      if (transcription) {
+        try {
+          console.log(`[AI] Generating medical report for appointment ${appointmentId}...`);
+          const medicalReport = await generateMedicalReport(transcription);
+          if (medicalReport) {
+            await storage.updateClinicalRecord(record.id, { medicalReport });
+            console.log(`[AI] Medical report generated and saved`);
+          }
+        } catch (e) {
+          console.error("[AI] Error generating medical report:", e);
+        }
+      }
+
       res.json({ success: true, recordId: record.id, appointmentId, aiSuggestions });
     } catch (error) {
       console.error("Error ending consultation:", error);
@@ -1194,7 +1207,8 @@ export async function registerRoutes(
           symptoms: clinicalRecord.symptoms,
           diagnosis: clinicalRecord.diagnosis,
           notes: clinicalRecord.notes,
-          transcription: clinicalRecord.transcription,
+          medicalReport: clinicalRecord.medicalReport || null,
+          hasTranscription: !!clinicalRecord.transcription,
         },
         prescription: existingPrescription || null,
         medicalInstructions: existingInstructions || [],

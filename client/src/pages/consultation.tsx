@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -785,54 +786,87 @@ export default function ConsultationPage() {
 
         {/* Controls */}
         <div className="flex items-center justify-center gap-3 sm:gap-4 py-2 sm:py-4">
-          <Button
-            variant={isMuted ? "destructive" : "outline"}
-            size="icon"
-            className="h-10 w-10 sm:h-12 sm:w-12 rounded-full"
-            onClick={toggleMute}
-            disabled={!hasJoinedCall || isWaiting}
-            data-testid="button-mute"
-          >
-            {isMuted ? <MicOff className="h-4 w-4 sm:h-5 sm:w-5" /> : <Mic className="h-4 w-4 sm:h-5 sm:w-5" />}
-          </Button>
-          <Button
-            variant={!isVideoEnabled ? "destructive" : "outline"}
-            size="icon"
-            className="h-10 w-10 sm:h-12 sm:w-12 rounded-full"
-            onClick={toggleVideo}
-            disabled={!hasJoinedCall || isWaiting}
-            data-testid="button-video"
-          >
-            {isVideoEnabled ? <Video className="h-4 w-4 sm:h-5 sm:w-5" /> : <VideoOff className="h-4 w-4 sm:h-5 sm:w-5" />}
-          </Button>
-          {isDoctor && (
-            <Button
-              variant={isRecording ? "default" : "outline"}
-              size="icon"
-              className="h-10 w-10 sm:h-12 sm:w-12 rounded-full"
-              onClick={handleToggleRecording}
-              data-testid="button-record"
-            >
-              <Activity className={`h-4 w-4 sm:h-5 sm:w-5 ${isRecording ? "animate-pulse" : ""}`} />
-            </Button>
-          )}
-          <Button
-            variant="destructive"
-            size="icon"
-            className="h-10 w-10 sm:h-12 sm:w-12 rounded-full"
-            onClick={handleEndCall}
-            disabled={!hasJoinedCall || isWaiting}
-            data-testid="button-end-call"
-          >
-            <PhoneOff className="h-4 w-4 sm:h-5 sm:w-5" />
-          </Button>
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={isMuted ? "destructive" : "outline"}
+                  size="icon"
+                  className="h-10 w-10 sm:h-12 sm:w-12 rounded-full"
+                  onClick={toggleMute}
+                  disabled={!hasJoinedCall || isWaiting}
+                  data-testid="button-mute"
+                >
+                  {isMuted ? <MicOff className="h-4 w-4 sm:h-5 sm:w-5" /> : <Mic className="h-4 w-4 sm:h-5 sm:w-5" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {isMuted ? "Activar micrófono" : "Silenciar micrófono"}
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={!isVideoEnabled ? "destructive" : "outline"}
+                  size="icon"
+                  className="h-10 w-10 sm:h-12 sm:w-12 rounded-full"
+                  onClick={toggleVideo}
+                  disabled={!hasJoinedCall || isWaiting}
+                  data-testid="button-video"
+                >
+                  {isVideoEnabled ? <Video className="h-4 w-4 sm:h-5 sm:w-5" /> : <VideoOff className="h-4 w-4 sm:h-5 sm:w-5" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {isVideoEnabled ? "Desactivar cámara" : "Activar cámara"}
+              </TooltipContent>
+            </Tooltip>
+
+            {isDoctor && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={isRecording ? "default" : "outline"}
+                    size="icon"
+                    className="h-10 w-10 sm:h-12 sm:w-12 rounded-full"
+                    onClick={handleToggleRecording}
+                    data-testid="button-record"
+                  >
+                    <Activity className={`h-4 w-4 sm:h-5 sm:w-5 ${isRecording ? "animate-pulse" : ""}`} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {isRecording ? "Detener grabación" : "Iniciar grabación"}
+                </TooltipContent>
+              </Tooltip>
+            )}
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="destructive"
+                  size="icon"
+                  className="h-10 w-10 sm:h-12 sm:w-12 rounded-full"
+                  onClick={handleEndCall}
+                  disabled={!hasJoinedCall || isWaiting}
+                  data-testid="button-end-call"
+                >
+                  <PhoneOff className="h-4 w-4 sm:h-5 sm:w-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                Terminar consulta
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
 
       {/* Sidebar - Clinical Information */}
       <div className="w-full lg:w-96 flex flex-col min-h-[300px] lg:min-h-0">
         <Tabs defaultValue="chat" className="flex-1 flex flex-col min-h-0">
-          <TabsList className={`grid ${isDoctor ? 'grid-cols-4' : 'grid-cols-2'}`}>
+          <TabsList className={`grid ${isDoctor ? 'grid-cols-3' : 'grid-cols-2'}`}>
             <TabsTrigger value="chat" data-testid="tab-chat">
               <MessageCircle className="h-4 w-4 mr-1" />
               Chat
@@ -849,15 +883,10 @@ export default function ConsultationPage() {
                 Notas
               </TabsTrigger>
             )}
-            {!isDoctor ? (
+            {!isDoctor && (
               <TabsTrigger value="info" data-testid="tab-info">
                 <User className="h-4 w-4 mr-1" />
                 Médico
-              </TabsTrigger>
-            ) : (
-              <TabsTrigger value="transcript" data-testid="tab-transcript">
-                <Mic className="h-4 w-4 mr-1" />
-                Grabación
               </TabsTrigger>
             )}
           </TabsList>
@@ -1093,43 +1122,6 @@ export default function ConsultationPage() {
             </TabsContent>
           )}
 
-          {/* Recording Tab (Doctor only) */}
-          {isDoctor && (
-            <TabsContent value="transcript" className="flex-1 mt-4 min-h-0">
-              <Card className="h-full">
-                <CardHeader className="pb-2 flex flex-row items-center justify-between gap-2">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    Grabación
-                    {isRecording && (
-                      <Badge variant="outline" className="text-xs">
-                        <span className="w-1.5 h-1.5 bg-destructive rounded-full mr-1 animate-pulse" />
-                        Grabando
-                      </Badge>
-                    )}
-                  </CardTitle>
-                </CardHeader>
-                <ScrollArea className="h-[calc(100%-4rem)]">
-                  <CardContent className="p-4">
-                    <div className="text-center py-8 text-muted-foreground" data-testid="transcription-empty-state">
-                      <Mic className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">
-                        {isRecording
-                          ? "Grabando audio de la consulta. La transcripción se generará al finalizar."
-                          : "La grabación se inicia automáticamente al unirse a la consulta"}
-                      </p>
-                      {isRecording && (
-                        <p className="text-xs mt-2 text-muted-foreground">
-                          {audioChunksRef.current.length > 0 
-                            ? `${audioChunksRef.current.length} fragmentos grabados`
-                            : "Esperando audio..."}
-                        </p>
-                      )}
-                    </div>
-                  </CardContent>
-                </ScrollArea>
-              </Card>
-            </TabsContent>
-          )}
         </Tabs>
       </div>
     </div>
