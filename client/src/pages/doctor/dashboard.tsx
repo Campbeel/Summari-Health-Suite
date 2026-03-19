@@ -9,7 +9,6 @@ import { Link, useLocation } from "wouter";
 import {
   Calendar,
   Clock,
-  FileText,
   ChevronRight,
   ChevronLeft,
   CheckCircle,
@@ -185,12 +184,6 @@ export default function DoctorDashboard() {
             <Link href="/doctor/appointments">
               <Calendar className="h-4 w-4 mr-2" />
               Todas las citas
-            </Link>
-          </Button>
-          <Button variant="outline" asChild data-testid="button-view-records">
-            <Link href="/records">
-              <FileText className="h-4 w-4 mr-2" />
-              Expedientes
             </Link>
           </Button>
         </div>
