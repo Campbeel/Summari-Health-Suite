@@ -27,14 +27,15 @@ Preferred communication style: Simple, everyday language.
 
 ### Data & Persistence
 - **Database**: PostgreSQL with Drizzle ORM
-- **Schema**: `shared/schema.ts` (users, sessions, doctors, patients, appointments, clinical_records, prescriptions, medical_instructions, wearable_metrics, consultation_messages, consultation_ratings, exam_orders, reimbursement_requests)
+- **Schema**: `shared/schema.ts` (users, sessions, doctors, patients, appointments, clinical_records, prescriptions, medical_instructions, wearable_metrics, consultation_messages, consultation_ratings, exam_orders, reimbursement_requests, ges)
 - **Migrations**: Drizzle-kit
 - **File Storage**: `uploads/chat/` for chat attachments.
 
 ### Core Features
 - **User Authentication**: JWT-based, RUT (Chilean ID) as primary identifier, password hashing (bcryptjs), localStorage for JWT storage.
 - **Consultations**: WebRTC video/audio with tooltips on call controls (mute, camera, record, end call), appointment-based authorization, audio processing (WebM/Opus), continuous audio recording during consultations, server-side transcription post-consultation.
-- **AI Integration**: OpenAI Whisper for audio transcription, GPT-4o for generating clinical summaries, prescriptions, medical instructions, exam orders, and structured medical reports (informe médico) from transcripts. Raw transcription is stored in DB but hidden from UI; a structured medical report is displayed instead. AI Clinical Assistant chatbot available during consultations (doctor sidebar) and on validation page (right panel) - provides context-aware clinical support with patient summary on load.
+- **AI Integration**: OpenAI Whisper for audio transcription, GPT-4o for generating clinical summaries, prescriptions, medical instructions, exam orders, and structured medical reports (informe médico) from transcripts. Raw transcription is stored in DB but hidden from UI; a structured medical report is displayed instead. AI Clinical Assistant chatbot available during consultations (doctor sidebar) and on validation page (right panel) - provides context-aware clinical support with patient summary on load. AI-generated diagnosis auto-matches against GES database.
+- **GES (Garantías Explícitas en Salud) Integration**: Read-only `ges` table with 87 unique health problems and ~6,178 CIE-10 descriptors. Uses `pg_trgm` extension for fuzzy search. When AI generates a diagnosis, it auto-matches against GES entries and stores them in `clinical_records.ges_diagnosis` (JSONB). Doctors can manually search/add GES diagnoses on the validation page via a search panel. Each GES entry has `idProblema`, `problemaDeSalud`, `codigoCie10`, `descriptor`. APIs: `GET /api/ges/search?q=`, `GET /api/ges/problems?q=`, `GET /api/ges/problems/:id/descriptors`, `POST /api/ges/match`.
 - **Payment Gateway**: Flow (Chilean payment gateway) for consultation fees, HMAC-SHA256 webhook verification. Payment receipt email sent automatically via SMTP on successful payment.
 - **Appointment Rescheduling**: Patients can reschedule scheduled/confirmed appointments via dialog with date/time picker that respects doctor availability. API: `POST /api/appointments/:id/reschedule`.
 - **Reimbursement Requests**: Patients can request reimbursement for paid appointments. Schema: `reimbursement_requests` table. APIs: `POST /api/appointments/:id/reimbursement`, `GET /api/appointments/:id/reimbursement`, `GET /api/reimbursements`.

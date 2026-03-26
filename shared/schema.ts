@@ -75,6 +75,7 @@ export const clinicalRecords = pgTable("clinical_records", {
     height?: number;
   }>(),
   notes: text("notes"),
+  gesDiagnosis: jsonb("ges_diagnosis").$type<GesDiagnosis[]>(),
   transcription: text("transcription"),
   medicalReport: jsonb("medical_report").$type<{
     patientData: {
@@ -414,6 +415,23 @@ export const insertConsultationRatingSchema = createInsertSchema(consultationRat
   id: true,
   createdAt: true,
 });
+
+// GES (Garantías Explícitas en Salud) table - read-only reference data
+export const ges = pgTable("ges", {
+  idProblema: integer("id_problema"),
+  problemaDeSalud: text("problema_de_salud"),
+  codigoCie10: text("código_cie-10"),
+  descriptor: text("descriptor"),
+});
+
+export type GesEntry = typeof ges.$inferSelect;
+
+export interface GesDiagnosis {
+  idProblema: number;
+  problemaDeSalud: string;
+  codigoCie10: string;
+  descriptor: string;
+}
 
 // Types
 export type ConsultationRating = typeof consultationRatings.$inferSelect;

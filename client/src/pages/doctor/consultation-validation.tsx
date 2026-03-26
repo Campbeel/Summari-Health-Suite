@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   FileText,
   Pill,
@@ -50,6 +51,9 @@ import {
   Bot,
   Heart,
   Phone,
+  Search,
+  X,
+  Shield,
 } from "lucide-react";
 import { ClinicalAssistant } from "@/components/clinical-assistant";
 
@@ -72,6 +76,13 @@ interface MedicalInstructionDraft {
 interface Exam {
   name: string;
   justification: string;
+}
+
+interface GesDiagnosis {
+  idProblema: number;
+  problemaDeSalud: string;
+  codigoCie10: string;
+  descriptor: string;
 }
 
 interface ValidationData {
@@ -104,6 +115,7 @@ interface ValidationData {
     clinicalDiagnosis?: string;
     diagnosis?: string;
     notes?: string;
+    gesDiagnosis?: GesDiagnosis[] | null;
     medicalReport?: {
       patientData: {
         fullName: string;
@@ -191,6 +203,11 @@ export default function ConsultationValidationPage() {
   const [medications, setMedications] = useState<Medication[]>([]);
   const [instructions, setInstructions] = useState<MedicalInstructionDraft[]>([]);
   
+  const [gesDiagnoses, setGesDiagnoses] = useState<GesDiagnosis[]>([]);
+  const [gesSearchQuery, setGesSearchQuery] = useState("");
+  const [gesSearchResults, setGesSearchResults] = useState<GesDiagnosis[]>([]);
+  const [gesSearching, setGesSearching] = useState(false);
+  const [showGesSearch, setShowGesSearch] = useState(false);
   const [exams, setExams] = useState<Exam[]>([]);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isValidated, setIsValidated] = useState(false);
@@ -246,9 +263,37 @@ export default function ConsultationValidationPage() {
         })));
       }
 
+      if (validationData.clinicalRecord.gesDiagnosis) {
+        setGesDiagnoses(validationData.clinicalRecord.gesDiagnosis);
+      }
+
       setIsInitialized(true);
     }
   }, [validationData, isInitialized]);
+
+  useEffect(() => {
+    if (!gesSearchQuery || gesSearchQuery.length < 2) {
+      setGesSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setGesSearching(true);
+      try {
+        const res = await fetch(`/api/ges/search?q=${encodeURIComponent(gesSearchQuery)}`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setGesSearchResults(data);
+        }
+      } catch (e) {
+        console.error("GES search error:", e);
+      } finally {
+        setGesSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [gesSearchQuery]);
 
   const validateMutation = useMutation({
     mutationFn: async () => {
@@ -258,6 +303,7 @@ export default function ConsultationValidationPage() {
           symptoms,
           diagnosis,
           notes: clinicalNotes,
+          gesDiagnosis: gesDiagnoses.length > 0 ? gesDiagnoses : null,
         },
         prescription: medications.length > 0 ? {
           medications,
@@ -940,6 +986,131 @@ export default function ConsultationValidationPage() {
                       className="mt-1.5"
                       data-testid="input-diagnosis"
                     />
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Shield className="h-4 w-4 text-blue-600" />
+                        <Label className="font-medium">Diagnóstico GES</Label>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowGesSearch(!showGesSearch)}
+                        data-testid="toggle-ges-search"
+                      >
+                        <Search className="h-3.5 w-3.5 mr-1" />
+                        {showGesSearch ? "Ocultar búsqueda" : "Buscar patología GES"}
+                      </Button>
+                    </div>
+
+                    {gesDiagnoses.length > 0 && (
+                      <div className="space-y-2" data-testid="ges-selected-list">
+                        {gesDiagnoses.map((g, idx) => (
+                          <div key={`${g.codigoCie10}-${idx}`} className="flex items-start gap-2 p-2.5 rounded-lg border bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 text-xs shrink-0">
+                                  GES #{g.idProblema}
+                                </Badge>
+                                <Badge variant="outline" className="text-xs shrink-0">
+                                  {g.codigoCie10}
+                                </Badge>
+                              </div>
+                              <p className="text-sm font-medium mt-1 leading-tight">{g.problemaDeSalud}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5 leading-tight">{g.descriptor}</p>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 shrink-0 text-muted-foreground hover:text-destructive"
+                              onClick={() => setGesDiagnoses(prev => prev.filter((_, i) => i !== idx))}
+                              data-testid={`ges-remove-${idx}`}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {showGesSearch && (
+                      <div className="space-y-2 p-3 rounded-lg border bg-muted/30" data-testid="ges-search-panel">
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            value={gesSearchQuery}
+                            onChange={(e) => setGesSearchQuery(e.target.value)}
+                            placeholder="Buscar por patología, descriptor o código CIE-10..."
+                            className="pl-9"
+                            data-testid="ges-search-input"
+                          />
+                          {gesSearching && (
+                            <Loader2 className="absolute right-2.5 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />
+                          )}
+                        </div>
+                        {gesSearchResults.length > 0 && (
+                          <ScrollArea className="max-h-60">
+                            <div className="space-y-1">
+                              {gesSearchResults.map((r, idx) => {
+                                const isSelected = gesDiagnoses.some(
+                                  g => g.codigoCie10 === r.codigoCie10 && g.idProblema === r.idProblema
+                                );
+                                return (
+                                  <button
+                                    key={`${r.codigoCie10}-${idx}`}
+                                    className={`w-full text-left p-2 rounded-md text-sm transition-colors ${
+                                      isSelected
+                                        ? "bg-blue-100 dark:bg-blue-900/40 border border-blue-300 dark:border-blue-700"
+                                        : "hover:bg-muted border border-transparent"
+                                    }`}
+                                    onClick={() => {
+                                      if (isSelected) {
+                                        setGesDiagnoses(prev =>
+                                          prev.filter(g => !(g.codigoCie10 === r.codigoCie10 && g.idProblema === r.idProblema))
+                                        );
+                                      } else {
+                                        setGesDiagnoses(prev => [...prev, r]);
+                                      }
+                                    }}
+                                    data-testid={`ges-result-${idx}`}
+                                  >
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                                        GES #{r.idProblema}
+                                      </Badge>
+                                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                        {r.codigoCie10}
+                                      </Badge>
+                                      {isSelected && <Check className="h-3 w-3 text-blue-600 ml-auto" />}
+                                    </div>
+                                    <p className="font-medium text-xs mt-1 leading-tight">{r.problemaDeSalud}</p>
+                                    <p className="text-xs text-muted-foreground leading-tight">{r.descriptor}</p>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </ScrollArea>
+                        )}
+                        {gesSearchQuery.length >= 2 && !gesSearching && gesSearchResults.length === 0 && (
+                          <p className="text-xs text-muted-foreground text-center py-3">
+                            No se encontraron resultados para "{gesSearchQuery}"
+                          </p>
+                        )}
+                        {gesSearchQuery.length < 2 && (
+                          <p className="text-xs text-muted-foreground text-center py-2">
+                            Escriba al menos 2 caracteres para buscar
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {gesDiagnoses.length === 0 && !showGesSearch && (
+                      <p className="text-xs text-muted-foreground">
+                        Sin diagnóstico GES asociado. Use el botón de búsqueda para agregar uno.
+                      </p>
+                    )}
                   </div>
 
                   <div>

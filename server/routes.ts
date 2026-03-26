@@ -1075,6 +1075,60 @@ export async function registerRoutes(
     }
   });
 
+  // GES (Garantías Explícitas en Salud) search routes
+  app.get("/api/ges/search", isAuthenticated, async (req: any, res) => {
+    try {
+      const query = (req.query.q as string || "").trim();
+      if (query.length < 2) {
+        return res.json([]);
+      }
+      const results = await storage.searchGes(query, 20);
+      res.json(results);
+    } catch (error) {
+      console.error("Error searching GES:", error);
+      res.status(500).json({ error: "Error al buscar en base GES" });
+    }
+  });
+
+  app.get("/api/ges/problems", isAuthenticated, async (req: any, res) => {
+    try {
+      const query = (req.query.q as string || "").trim();
+      if (query.length < 2) {
+        return res.json([]);
+      }
+      const results = await storage.searchGesProblems(query);
+      res.json(results);
+    } catch (error) {
+      console.error("Error searching GES problems:", error);
+      res.status(500).json({ error: "Error al buscar problemas GES" });
+    }
+  });
+
+  app.get("/api/ges/problems/:id/descriptors", isAuthenticated, async (req: any, res) => {
+    try {
+      const idProblema = parseInt(req.params.id);
+      const results = await storage.getGesDescriptorsByProblem(idProblema);
+      res.json(results);
+    } catch (error) {
+      console.error("Error fetching GES descriptors:", error);
+      res.status(500).json({ error: "Error al obtener descriptores GES" });
+    }
+  });
+
+  app.post("/api/ges/match", isAuthenticated, async (req: any, res) => {
+    try {
+      const { diagnosis } = req.body;
+      if (!diagnosis || typeof diagnosis !== "string" || diagnosis.trim().length < 3) {
+        return res.json([]);
+      }
+      const results = await storage.matchGesFromDiagnosis(diagnosis.trim());
+      res.json(results);
+    } catch (error) {
+      console.error("Error matching GES diagnosis:", error);
+      res.status(500).json({ error: "Error al buscar diagnóstico GES" });
+    }
+  });
+
   // Clinical Records routes
   app.get("/api/clinical-records", isAuthenticated, async (req: any, res) => {
     try {
@@ -1420,6 +1474,17 @@ export async function registerRoutes(
               if (aiSuggestions.clinicalSummary.diagnosis) updateData.diagnosis = aiSuggestions.clinicalSummary.diagnosis;
               if (aiSuggestions.clinicalSummary.notes) updateData.notes = aiSuggestions.clinicalSummary.notes;
             }
+            if (aiSuggestions.clinicalSummary?.diagnosis) {
+              try {
+                const gesMatches = await storage.matchGesFromDiagnosis(aiSuggestions.clinicalSummary.diagnosis);
+                if (gesMatches.length > 0) {
+                  updateData.gesDiagnosis = gesMatches;
+                  console.log(`[AI] Auto-matched ${gesMatches.length} GES diagnosis(es) for: ${aiSuggestions.clinicalSummary.diagnosis}`);
+                }
+              } catch (e) {
+                console.error("[AI] Error matching GES diagnosis:", e);
+              }
+            }
             if (Object.keys(updateData).length > 0) {
               await storage.updateClinicalRecord(record.id, updateData);
             }
@@ -1552,6 +1617,7 @@ export async function registerRoutes(
           symptoms: clinicalRecord.symptoms,
           diagnosis: clinicalRecord.diagnosis,
           notes: clinicalRecord.notes,
+          gesDiagnosis: clinicalRecord.gesDiagnosis || null,
           medicalReport: clinicalRecord.medicalReport || null,
           hasTranscription: !!clinicalRecord.transcription,
         },
@@ -1595,11 +1661,19 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Registro clínico no encontrado" });
       }
 
+      const gesDiagnosisSchema = z.object({
+        idProblema: z.number(),
+        problemaDeSalud: z.string(),
+        codigoCie10: z.string(),
+        descriptor: z.string(),
+      });
+
       const clinicalSchema = z.object({
         chiefComplaint: z.string().optional().nullable(),
         symptoms: z.array(z.string()).optional(),
         diagnosis: z.string().optional().nullable(),
         notes: z.string().optional().nullable(),
+        gesDiagnosis: z.array(gesDiagnosisSchema).optional().nullable(),
       });
 
       const medicationSchema = z.object({
@@ -1633,6 +1707,7 @@ export async function registerRoutes(
           symptoms: parsed.data.symptoms || [],
           diagnosis: parsed.data.diagnosis || null,
           notes: parsed.data.notes || null,
+          gesDiagnosis: parsed.data.gesDiagnosis || null,
         });
       }
 

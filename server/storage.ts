@@ -38,7 +38,9 @@ import {
   type InsertConsultationRating,
   reimbursementRequests,
   type ReimbursementRequest,
-  type InsertReimbursementRequest
+  type InsertReimbursementRequest,
+  ges,
+  type GesDiagnosis,
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, sql, notInArray } from "drizzle-orm";
 
@@ -1266,6 +1268,85 @@ export class DatabaseStorage implements IStorage {
       .where(eq(reimbursementRequests.id, id))
       .returning();
     return result;
+  }
+
+  async searchGes(query: string, limit: number = 20): Promise<GesDiagnosis[]> {
+    const results = await db.execute(sql`
+      SELECT DISTINCT ON (id_problema, "código_cie-10")
+        id_problema, problema_de_salud, "código_cie-10", descriptor,
+        similarity(descriptor, ${query}) AS sim_desc,
+        similarity(problema_de_salud, ${query}) AS sim_prob
+      FROM ges
+      WHERE descriptor % ${query}
+         OR problema_de_salud % ${query}
+         OR descriptor ILIKE ${'%' + query + '%'}
+         OR problema_de_salud ILIKE ${'%' + query + '%'}
+         OR "código_cie-10" ILIKE ${'%' + query + '%'}
+      ORDER BY id_problema, "código_cie-10",
+        GREATEST(similarity(descriptor, ${query}), similarity(problema_de_salud, ${query})) DESC
+      LIMIT ${limit}
+    `);
+    return (results.rows as any[]).map(r => ({
+      idProblema: r.id_problema,
+      problemaDeSalud: r.problema_de_salud,
+      codigoCie10: r["código_cie-10"],
+      descriptor: r.descriptor,
+    }));
+  }
+
+  async searchGesProblems(query: string): Promise<{ idProblema: number; problemaDeSalud: string }[]> {
+    const results = await db.execute(sql`
+      SELECT DISTINCT id_problema, problema_de_salud
+      FROM ges
+      WHERE problema_de_salud % ${query}
+         OR problema_de_salud ILIKE ${'%' + query + '%'}
+      ORDER BY similarity(problema_de_salud, ${query}) DESC
+      LIMIT 15
+    `);
+    return (results.rows as any[]).map(r => ({
+      idProblema: r.id_problema,
+      problemaDeSalud: r.problema_de_salud,
+    }));
+  }
+
+  async getGesDescriptorsByProblem(idProblema: number): Promise<GesDiagnosis[]> {
+    const results = await db.execute(sql`
+      SELECT id_problema, problema_de_salud, "código_cie-10", descriptor
+      FROM ges
+      WHERE id_problema = ${idProblema}
+      ORDER BY descriptor ASC
+    `);
+    return (results.rows as any[]).map(r => ({
+      idProblema: r.id_problema,
+      problemaDeSalud: r.problema_de_salud,
+      codigoCie10: r["código_cie-10"],
+      descriptor: r.descriptor,
+    }));
+  }
+
+  async matchGesFromDiagnosis(diagnosisText: string): Promise<GesDiagnosis[]> {
+    const results = await db.execute(sql`
+      SELECT DISTINCT ON ("código_cie-10")
+        id_problema, problema_de_salud, "código_cie-10", descriptor,
+        GREATEST(
+          similarity(descriptor, ${diagnosisText}),
+          similarity(problema_de_salud, ${diagnosisText})
+        ) AS score
+      FROM ges
+      WHERE descriptor % ${diagnosisText}
+         OR problema_de_salud % ${diagnosisText}
+         OR descriptor ILIKE ${'%' + diagnosisText + '%'}
+         OR problema_de_salud ILIKE ${'%' + diagnosisText + '%'}
+      ORDER BY "código_cie-10",
+        GREATEST(similarity(descriptor, ${diagnosisText}), similarity(problema_de_salud, ${diagnosisText})) DESC
+      LIMIT 5
+    `);
+    return (results.rows as any[]).map(r => ({
+      idProblema: r.id_problema,
+      problemaDeSalud: r.problema_de_salud,
+      codigoCie10: r["código_cie-10"],
+      descriptor: r.descriptor,
+    }));
   }
 }
 
