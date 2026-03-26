@@ -320,3 +320,111 @@ export async function sendConsultationDocuments(data: ConsultationDocumentsEmail
 
   return { sent: true, documentTypes: data.documentTypes };
 }
+
+interface PaymentReceiptEmailData {
+  patientName: string;
+  patientEmail: string;
+  doctorName: string;
+  doctorSpecialty: string;
+  consultationDate: string;
+  consultationTime: string;
+  amount: number;
+  commerceOrderId: string;
+}
+
+export async function sendPaymentReceiptEmail(data: PaymentReceiptEmailData) {
+  const transporter = getTransporter();
+  const fromEmail = process.env.SMTP_USER!;
+
+  const formattedAmount = data.amount.toLocaleString('es-CL');
+  const receiptDate = new Date().toLocaleDateString('es-CL', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  await transporter.sendMail({
+    from: `Summari <${fromEmail}>`,
+    to: data.patientEmail,
+    subject: `Comprobante de pago - Consulta médica #${data.commerceOrderId} - Summari`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      </head>
+      <body style="font-family: Arial, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; background-color: #f4f4f5;">
+        <div style="max-width: 520px; margin: 40px auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+          <div style="background: #3473a8; padding: 24px; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 24px;">Summari</h1>
+            <p style="color: rgba(255,255,255,0.8); margin: 4px 0 0; font-size: 14px;">Comprobante de Pago</p>
+          </div>
+          <div style="padding: 32px 24px;">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <div style="width: 48px; height: 48px; background: #dcfce7; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 8px;">
+                <span style="font-size: 24px;">&#10003;</span>
+              </div>
+              <h2 style="color: #18181b; font-size: 18px; margin: 0;">Pago confirmado</h2>
+              <p style="color: #71717a; font-size: 13px; margin: 4px 0 0;">Tu consulta ha sido agendada exitosamente</p>
+            </div>
+
+            <div style="background: #f4f4f5; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
+              <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                <tr>
+                  <td style="padding: 6px 0; color: #71717a;">N° Orden</td>
+                  <td style="padding: 6px 0; color: #18181b; text-align: right; font-weight: 600;">${escapeHtml(data.commerceOrderId)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #71717a;">Fecha de pago</td>
+                  <td style="padding: 6px 0; color: #18181b; text-align: right;">${escapeHtml(receiptDate)}</td>
+                </tr>
+                <tr>
+                  <td colspan="2" style="padding: 8px 0;"><hr style="border: none; border-top: 1px solid #e4e4e7; margin: 0;"></td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #71717a;">Doctor</td>
+                  <td style="padding: 6px 0; color: #18181b; text-align: right;">${escapeHtml(data.doctorName)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #71717a;">Especialidad</td>
+                  <td style="padding: 6px 0; color: #18181b; text-align: right;">${escapeHtml(data.doctorSpecialty)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #71717a;">Fecha consulta</td>
+                  <td style="padding: 6px 0; color: #18181b; text-align: right;">${escapeHtml(data.consultationDate)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #71717a;">Hora</td>
+                  <td style="padding: 6px 0; color: #18181b; text-align: right;">${escapeHtml(data.consultationTime)}</td>
+                </tr>
+                <tr>
+                  <td colspan="2" style="padding: 8px 0;"><hr style="border: none; border-top: 1px solid #e4e4e7; margin: 0;"></td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #18181b; font-weight: 600; font-size: 16px;">Total pagado</td>
+                  <td style="padding: 6px 0; color: #3473a8; text-align: right; font-weight: 700; font-size: 18px;">$${formattedAmount} CLP</td>
+                </tr>
+              </table>
+            </div>
+
+            <p style="color: #71717a; font-size: 13px; line-height: 1.5; margin: 0 0 16px; text-align: center;">
+              Guarda este correo como comprobante de pago.
+              Si necesitas solicitar un reembolso, puedes hacerlo desde la sección "Mis Consultas" en la plataforma.
+            </p>
+
+            <hr style="border: none; border-top: 1px solid #e4e4e7; margin: 24px 0;">
+            <p style="color: #a1a1aa; font-size: 11px; margin: 0; line-height: 1.5; text-align: center;">
+              Summari Telemedicina &middot; Este comprobante fue generado automáticamente.
+            </p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  });
+
+  return { sent: true };
+}

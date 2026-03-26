@@ -9,7 +9,7 @@ import { storage } from "./storage";
 import { isAuthenticated, registerAuthRoutes } from "./auth";
 import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText, verifyFlowSignature } from "./flow";
 import { transcribeAudio, transcribeAudioChunked, generatePrescriptionFromTranscript, generateFullConsultationSuggestions, generateMedicalReport, generateClinicalAlerts, generateAssistantWelcome, chatWithAssistant, type AssistantContext } from "./openai";
-import { sendConsultationDocuments } from "./email";
+import { sendConsultationDocuments, sendPaymentReceiptEmail } from "./email";
 import { generateConsultationPdf, type PdfDocumentData } from "./pdf-generator";
 import { getFitbitAuthUrl, getAndRemovePendingState, exchangeCodeForTokens, refreshFitbitTokens, fetchFitbitData } from "./fitbit";
 import {
@@ -792,6 +792,33 @@ export async function registerRoutes(
         status: isPaymentSuccessful(paymentStatus.status) ? "confirmed" : "scheduled",
       });
       
+      if (isPaymentSuccessful(paymentStatus.status)) {
+        try {
+          const fullAppointment = await storage.getAppointment(appointmentId);
+          if (fullAppointment) {
+            const patient = await storage.getPatient(fullAppointment.patientId);
+            const patientUser = patient ? await storage.getUser(patient.userId) : null;
+            const doctor = await storage.getDoctor(fullAppointment.doctorId);
+            const doctorUser = doctor ? await storage.getUser(doctor.userId) : null;
+            if (patientUser?.email && doctorUser && doctor) {
+              await sendPaymentReceiptEmail({
+                patientName: `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() || 'Paciente',
+                patientEmail: patientUser.email,
+                doctorName: `Dr. ${doctorUser.firstName || ''} ${doctorUser.lastName || ''}`.trim(),
+                doctorSpecialty: doctor.specialty,
+                consultationDate: fullAppointment.scheduledDate,
+                consultationTime: fullAppointment.scheduledTime?.slice(0, 5) || '',
+                amount: paymentStatus.amount || doctor.consultationFee,
+                commerceOrderId: appointment.flowCommerceOrderId || `APT-${appointmentId}`,
+              });
+              console.log(`Payment receipt email sent for appointment ${appointmentId}`);
+            }
+          }
+        } catch (emailError) {
+          console.error("Failed to send payment receipt email:", emailError);
+        }
+      }
+      
       console.log(`Flow payment confirmed for appointment ${appointmentId}: ${newStatus}`);
       res.json({ message: "Payment status updated", status: newStatus });
     } catch (error) {
@@ -867,6 +894,184 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching payments:", error);
       res.status(500).json({ error: "Failed to fetch payments" });
+    }
+  });
+
+  // Reschedule appointment
+  app.post("/api/appointments/:id/reschedule", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const userId = req.userId;
+      const { scheduledDate, scheduledTime } = req.body;
+
+      if (!scheduledDate || !scheduledTime) {
+        return res.status(400).json({ error: "Fecha y hora son requeridas" });
+      }
+
+      const patient = await storage.getPatientByUserId(userId);
+      if (!patient) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment || appointment.patientId !== patient.id) {
+        return res.status(404).json({ error: "Cita no encontrada" });
+      }
+
+      if (!["scheduled", "confirmed"].includes(appointment.status)) {
+        return res.status(400).json({ error: "Solo se pueden reagendar citas programadas o confirmadas" });
+      }
+
+      const hasConflict = await storage.hasConflictingAppointment(
+        appointment.doctorId,
+        scheduledDate,
+        scheduledTime
+      );
+      if (hasConflict) {
+        return res.status(409).json({ error: "El horario seleccionado no está disponible" });
+      }
+
+      const updated = await storage.updateAppointment(appointmentId, {
+        scheduledDate,
+        scheduledTime,
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error rescheduling appointment:", error);
+      res.status(500).json({ error: "Error al reagendar la cita" });
+    }
+  });
+
+  // Reimbursement request endpoints
+  app.post("/api/appointments/:id/reimbursement", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const userId = req.userId;
+      const { reason } = req.body;
+
+      if (!reason || reason.trim().length < 10) {
+        return res.status(400).json({ error: "El motivo debe tener al menos 10 caracteres" });
+      }
+
+      const patient = await storage.getPatientByUserId(userId);
+      if (!patient) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment || appointment.patientId !== patient.id) {
+        return res.status(404).json({ error: "Cita no encontrada" });
+      }
+
+      if (appointment.paymentStatus !== "paid") {
+        return res.status(400).json({ error: "Solo se puede solicitar reembolso para citas pagadas" });
+      }
+
+      const existing = await storage.getReimbursementRequestByAppointment(appointmentId);
+      if (existing) {
+        return res.status(409).json({ error: "Ya existe una solicitud de reembolso para esta cita" });
+      }
+
+      const doctor = await storage.getDoctor(appointment.doctorId);
+      const amount = doctor?.consultationFee || 25000;
+
+      const request = await storage.createReimbursementRequest({
+        appointmentId,
+        patientId: patient.id,
+        reason: reason.trim(),
+        status: "pending",
+        amount,
+      });
+
+      res.json(request);
+    } catch (error) {
+      console.error("Error creating reimbursement request:", error);
+      res.status(500).json({ error: "Error al crear solicitud de reembolso" });
+    }
+  });
+
+  app.get("/api/reimbursements", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const patient = await storage.getPatientByUserId(userId);
+      if (!patient) {
+        return res.json([]);
+      }
+      const requests = await storage.getReimbursementRequestsByPatient(patient.id);
+      res.json(requests);
+    } catch (error) {
+      console.error("Error fetching reimbursements:", error);
+      res.status(500).json({ error: "Error al obtener reembolsos" });
+    }
+  });
+
+  app.get("/api/appointments/:id/reimbursement", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const userId = req.userId;
+
+      const patient = await storage.getPatientByUserId(userId);
+      if (!patient) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment || appointment.patientId !== patient.id) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+
+      const existing = await storage.getReimbursementRequestByAppointment(appointmentId);
+      res.json(existing || null);
+    } catch (error) {
+      console.error("Error fetching reimbursement:", error);
+      res.status(500).json({ error: "Error al obtener reembolso" });
+    }
+  });
+
+  // Online presence check for consultations
+  app.get("/api/appointments/:id/presence", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const userId = req.userId;
+
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment) {
+        return res.status(404).json({ error: "Cita no encontrada" });
+      }
+
+      const patient = await storage.getPatientByUserId(userId);
+      const doctor = await storage.getDoctorByUserId(userId);
+      const isPatientOwner = patient && appointment.patientId === patient.id;
+      const isDoctorOwner = doctor && appointment.doctorId === doctor.id;
+
+      if (!isPatientOwner && !isDoctorOwner) {
+        return res.status(403).json({ error: "No autorizado" });
+      }
+
+      const roomId = `consultation-${appointmentId}`;
+      const room = signalingRooms.get(roomId);
+
+      const result = {
+        doctorOnline: false,
+        patientOnline: false,
+        patientWaiting: false,
+      };
+
+      if (room) {
+        if (isDoctorOwner) {
+          result.patientWaiting = room.waitingPatients.size > 0;
+          result.patientOnline = room.participants.size > 1 || room.waitingPatients.size > 0;
+        }
+        if (isPatientOwner) {
+          result.doctorOnline = !!(room.doctorUserId && room.participants.has(room.doctorUserId));
+        }
+      }
+
+      res.json(result);
+    } catch (error) {
+      console.error("Error checking presence:", error);
+      res.status(500).json({ error: "Error al verificar presencia" });
     }
   });
 

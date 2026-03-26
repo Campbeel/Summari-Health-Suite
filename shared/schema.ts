@@ -376,6 +376,28 @@ export const insertExamOrderSchema = createInsertSchema(examOrders).omit({
   issuedAt: true,
 });
 
+// Reimbursement Requests
+export const reimbursementRequests = pgTable("reimbursement_requests", {
+  id: serial("id").primaryKey(),
+  appointmentId: integer("appointment_id").references(() => appointments.id).notNull(),
+  patientId: integer("patient_id").references(() => patients.id).notNull(),
+  reason: text("reason").notNull(),
+  status: text("status").notNull().default("pending"),
+  amount: integer("amount").notNull(),
+  adminNotes: text("admin_notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertReimbursementRequestSchema = createInsertSchema(reimbursementRequests).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type ReimbursementRequest = typeof reimbursementRequests.$inferSelect;
+export type InsertReimbursementRequest = z.infer<typeof insertReimbursementRequestSchema>;
+
 // Consultation Ratings
 export const consultationRatings = pgTable("consultation_ratings", {
   id: serial("id").primaryKey(),

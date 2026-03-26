@@ -39,6 +39,33 @@ interface AppointmentWithPatient {
   patientImage?: string;
 }
 
+function PatientPresenceDot({ appointmentId }: { appointmentId: number }) {
+  const { data } = useQuery<{ patientOnline: boolean; patientWaiting: boolean }>({
+    queryKey: ["/api/appointments", appointmentId, "presence"],
+    queryFn: async () => {
+      const res = await fetch(`/api/appointments/${appointmentId}/presence`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
+      });
+      return res.json();
+    },
+    refetchInterval: 15000,
+  });
+
+  if (!data?.patientOnline && !data?.patientWaiting) return null;
+
+  return (
+    <span className="flex items-center gap-1" data-testid={`presence-patient-${appointmentId}`}>
+      <span className="relative flex h-2 w-2">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+      </span>
+      <span className="text-[10px] text-green-600 dark:text-green-400 font-normal">
+        {data?.patientWaiting ? "Esperando" : "En línea"}
+      </span>
+    </span>
+  );
+}
+
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; darkBg: string; barColor: string }> = {
   scheduled: {
     label: "Programada",
@@ -342,8 +369,11 @@ export default function DoctorDashboard() {
                                   <Phone className="h-3 w-3 text-muted-foreground" />
                                 )}
                               </div>
-                              <p className="font-semibold text-sm truncate" data-testid={`text-patient-name-${appt.id}`}>
+                              <p className="font-semibold text-sm truncate flex items-center gap-1.5" data-testid={`text-patient-name-${appt.id}`}>
                                 {appt.patientName}
+                                {(appt.status === "confirmed" || appt.status === "in_progress") && (
+                                  <PatientPresenceDot appointmentId={appt.id} />
+                                )}
                               </p>
                               {appt.notes && (
                                 <p className="text-[11px] text-muted-foreground truncate mt-0.5">

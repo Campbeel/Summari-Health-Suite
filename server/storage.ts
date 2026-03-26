@@ -35,7 +35,10 @@ import {
   type InsertConsultationMessage,
   consultationRatings,
   type ConsultationRating,
-  type InsertConsultationRating
+  type InsertConsultationRating,
+  reimbursementRequests,
+  type ReimbursementRequest,
+  type InsertReimbursementRequest
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, sql, notInArray } from "drizzle-orm";
 
@@ -67,6 +70,7 @@ type AppointmentWithDoctor = {
   doctorSpecialty: string | null;
   doctorImage: string;
   consultationFee: number;
+  doctorId: number;
 };
 
 type AppointmentWithDoctorFull = {
@@ -341,6 +345,12 @@ export interface IStorage {
   getPatientFullProfile(patientId: number): Promise<PatientFullProfile | undefined>;
   getPatientAppointmentHistory(patientId: number): Promise<PatientAppointmentHistory[]>;
   doctorHasPatientRelationship(doctorId: number, patientId: number): Promise<boolean>;
+
+  // Reimbursement Requests
+  createReimbursementRequest(request: InsertReimbursementRequest): Promise<ReimbursementRequest>;
+  getReimbursementRequestsByPatient(patientId: number): Promise<ReimbursementRequest[]>;
+  getReimbursementRequestByAppointment(appointmentId: number): Promise<ReimbursementRequest | undefined>;
+  updateReimbursementRequest(id: number, data: Partial<InsertReimbursementRequest>): Promise<ReimbursementRequest>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -555,6 +565,7 @@ export class DatabaseStorage implements IStorage {
         doctorSpecialty: doctors.specialty,
         doctorImage: sql<string>`u.profile_image_url`.as('doctorImage'),
         consultationFee: sql<number>`COALESCE(${doctors.consultationFee}, 25000)`.as('consultationFee'),
+        doctorId: appointments.doctorId,
       })
       .from(appointments)
       .leftJoin(doctors, eq(appointments.doctorId, doctors.id))
@@ -582,6 +593,7 @@ export class DatabaseStorage implements IStorage {
         doctorSpecialty: doctors.specialty,
         doctorImage: sql<string>`u.profile_image_url`.as('doctorImage'),
         consultationFee: sql<number>`COALESCE(${doctors.consultationFee}, 25000)`.as('consultationFee'),
+        doctorId: appointments.doctorId,
       })
       .from(appointments)
       .leftJoin(doctors, eq(appointments.doctorId, doctors.id))
@@ -1229,6 +1241,31 @@ export class DatabaseStorage implements IStorage {
       .from(appointments)
       .where(and(eq(appointments.doctorId, doctorId), eq(appointments.patientId, patientId)));
     return (result?.count || 0) > 0;
+  }
+
+  async createReimbursementRequest(request: InsertReimbursementRequest): Promise<ReimbursementRequest> {
+    const [result] = await db.insert(reimbursementRequests).values(request).returning();
+    return result;
+  }
+
+  async getReimbursementRequestsByPatient(patientId: number): Promise<ReimbursementRequest[]> {
+    return await db.select().from(reimbursementRequests)
+      .where(eq(reimbursementRequests.patientId, patientId))
+      .orderBy(desc(reimbursementRequests.createdAt));
+  }
+
+  async getReimbursementRequestByAppointment(appointmentId: number): Promise<ReimbursementRequest | undefined> {
+    const [result] = await db.select().from(reimbursementRequests)
+      .where(eq(reimbursementRequests.appointmentId, appointmentId));
+    return result;
+  }
+
+  async updateReimbursementRequest(id: number, data: Partial<InsertReimbursementRequest>): Promise<ReimbursementRequest> {
+    const [result] = await db.update(reimbursementRequests)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(reimbursementRequests.id, id))
+      .returning();
+    return result;
   }
 }
 

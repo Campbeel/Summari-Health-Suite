@@ -1362,8 +1362,8 @@ export default function ConsultationValidationPage() {
                   <span className="text-sm">Analizando consulta...</span>
                 </div>
               ) : clinicalAlerts.length > 0 ? (
-                <ScrollArea className="max-h-[400px]">
-                  <div className="space-y-2" data-testid="clinical-alerts-list">
+                <ScrollArea className="h-[400px]">
+                  <div className="space-y-2 pr-3" data-testid="clinical-alerts-list">
                     {clinicalAlerts.map((alert, i) => (
                       <div
                         key={i}

@@ -27,7 +27,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Data & Persistence
 - **Database**: PostgreSQL with Drizzle ORM
-- **Schema**: `shared/schema.ts` (users, sessions, doctors, patients, appointments, clinical_records, prescriptions, medical_instructions, wearable_metrics, consultation_messages, consultation_ratings, exam_orders)
+- **Schema**: `shared/schema.ts` (users, sessions, doctors, patients, appointments, clinical_records, prescriptions, medical_instructions, wearable_metrics, consultation_messages, consultation_ratings, exam_orders, reimbursement_requests)
 - **Migrations**: Drizzle-kit
 - **File Storage**: `uploads/chat/` for chat attachments.
 
@@ -35,7 +35,11 @@ Preferred communication style: Simple, everyday language.
 - **User Authentication**: JWT-based, RUT (Chilean ID) as primary identifier, password hashing (bcryptjs), localStorage for JWT storage.
 - **Consultations**: WebRTC video/audio with tooltips on call controls (mute, camera, record, end call), appointment-based authorization, audio processing (WebM/Opus), continuous audio recording during consultations, server-side transcription post-consultation.
 - **AI Integration**: OpenAI Whisper for audio transcription, GPT-4o for generating clinical summaries, prescriptions, medical instructions, exam orders, and structured medical reports (informe médico) from transcripts. Raw transcription is stored in DB but hidden from UI; a structured medical report is displayed instead. AI Clinical Assistant chatbot available during consultations (doctor sidebar) and on validation page (right panel) - provides context-aware clinical support with patient summary on load.
-- **Payment Gateway**: Flow (Chilean payment gateway) for consultation fees, HMAC-SHA256 webhook verification.
+- **Payment Gateway**: Flow (Chilean payment gateway) for consultation fees, HMAC-SHA256 webhook verification. Payment receipt email sent automatically via SMTP on successful payment.
+- **Appointment Rescheduling**: Patients can reschedule scheduled/confirmed appointments via dialog with date/time picker that respects doctor availability. API: `POST /api/appointments/:id/reschedule`.
+- **Reimbursement Requests**: Patients can request reimbursement for paid appointments. Schema: `reimbursement_requests` table. APIs: `POST /api/appointments/:id/reimbursement`, `GET /api/appointments/:id/reimbursement`, `GET /api/reimbursements`.
+- **Online Presence Indicators**: Real-time presence detection using WebSocket signaling rooms. Doctor dashboard shows patient online/waiting status. Patient waiting room shows doctor online indicator. API: `GET /api/appointments/:id/presence`.
+- **Specialty Filtering**: Booking page includes dropdown filter to narrow doctors by specialty.
 - **Wearable Health Data**: Tracking system for various metrics (heart rate, steps, etc.), support for manual entry, CSV import, and Fitbit OAuth2 integration with scheduled sync.
 - **Post-Consultation Workflow**: Doctor validation page with clinical alerts system (prescription error detection, dosage warnings, health risk analysis), patient feedback system, PDF document generation with in-app preview modal, and email delivery of documents (prescriptions, instructions, exam orders) via Resend. Exam orders use per-exam justification (not global). No AI suggestion button on validation page.
 - **Document Management**: Patient-facing pages for medical instructions and exam orders, with PDF download and preview.

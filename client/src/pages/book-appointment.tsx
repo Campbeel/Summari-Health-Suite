@@ -10,6 +10,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { 
@@ -59,6 +60,7 @@ export default function BookAppointmentPage() {
   const [consultationType, setConsultationType] = useState<"video" | "audio">("video");
   const [notes, setNotes] = useState("");
   const [stepError, setStepError] = useState("");
+  const [specialtyFilter, setSpecialtyFilter] = useState<string>("all");
 
   const { data: doctors, isLoading: loadingDoctors } = useQuery<Doctor[]>({
     queryKey: ["/api/doctors"],
@@ -235,6 +237,25 @@ export default function BookAppointmentPage() {
           {/* Step 0: Select Doctor */}
           {currentStep === 0 && (
             <div className="space-y-4">
+              {(() => {
+                const specialties = [...new Set(doctors?.map(d => d.specialty) || [])].sort();
+                return specialties.length > 1 ? (
+                  <div className="flex items-center gap-3">
+                    <Label className="text-sm font-medium whitespace-nowrap">Filtrar por especialidad:</Label>
+                    <Select value={specialtyFilter} onValueChange={(val) => { setSpecialtyFilter(val); setSelectedDoctor(null); }}>
+                      <SelectTrigger className="w-[250px]" data-testid="select-specialty-filter">
+                        <SelectValue placeholder="Todas las especialidades" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas las especialidades</SelectItem>
+                        {specialties.map(s => (
+                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null;
+              })()}
               {loadingDoctors ? (
                 <>
                   {[1, 2, 3].map((i) => (
@@ -248,7 +269,7 @@ export default function BookAppointmentPage() {
                   ))}
                 </>
               ) : doctors && doctors.length > 0 ? (
-                doctors.map((doctor) => (
+                (specialtyFilter === "all" ? doctors : doctors.filter(d => d.specialty === specialtyFilter)).map((doctor) => (
                   <div
                     key={doctor.id}
                     onClick={() => { setSelectedDoctor(doctor); setStepError(""); }}

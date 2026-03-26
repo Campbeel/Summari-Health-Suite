@@ -6,11 +6,15 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Link, useLocation } from "wouter";
-import { Calendar, Clock, Plus, Video, Phone, MapPin, CreditCard, Loader2 } from "lucide-react";
+import { Calendar, Clock, Plus, Video, Phone, CreditCard, Loader2, CalendarClock, RotateCcw, CircleDot } from "lucide-react";
 import { format, parseISO, isAfter, isBefore } from "date-fns";
 import { es } from "date-fns/locale";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { ConsultationSummaryDialog } from "@/components/consultation-summary-dialog";
 
@@ -27,7 +31,16 @@ interface AppointmentWithDetails {
   doctorSpecialty: string;
   doctorImage?: string;
   consultationFee?: number;
+  doctorId?: number;
 }
+
+const TIME_SLOTS = [
+  "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
+  "12:00", "12:30", "13:00", "13:30", "14:00", "14:30",
+  "15:00", "15:30", "16:00", "16:30", "17:00", "17:30",
+  "18:00", "18:30", "19:00", "19:30", "20:00", "20:30",
+  "21:00", "21:30", "22:00"
+];
 
 function getStatusBadge(status: string) {
   const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -42,15 +55,46 @@ function getStatusBadge(status: string) {
 }
 
 
-function AppointmentCard({ appointment, onOpenSummary }: { appointment: AppointmentWithDetails; onOpenSummary: (id: number) => void }) {
+function AppointmentCard({ 
+  appointment, 
+  onOpenSummary,
+  onReschedule,
+  onReimbursement,
+}: { 
+  appointment: AppointmentWithDetails; 
+  onOpenSummary: (id: number) => void;
+  onReschedule: (appt: AppointmentWithDetails) => void;
+  onReimbursement: (appt: AppointmentWithDetails) => void;
+}) {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const isUpcoming = isAfter(parseISO(appointment.scheduledDate), new Date()) || 
     (format(new Date(), "yyyy-MM-dd") === appointment.scheduledDate);
   const canJoin = appointment.status === "confirmed" || appointment.status === "in_progress";
   const isSummaryView = appointment.status === "completed" || appointment.status === "pending_validation";
+  const canReschedule = ["scheduled", "confirmed"].includes(appointment.status);
+  const canRequestReimbursement = appointment.paymentStatus === "paid";
 
   const detailsUrl = `/consultation/${appointment.id}`;
+
+  const { data: presenceData } = useQuery<{ doctorOnline: boolean; patientOnline: boolean }>({
+    queryKey: ["/api/appointments", appointment.id, "presence"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/appointments/${appointment.id}/presence`);
+      return res.json();
+    },
+    enabled: canJoin,
+    refetchInterval: canJoin ? 10000 : false,
+  });
+
+  const { data: reimbursementData } = useQuery({
+    queryKey: ["/api/appointments", appointment.id, "reimbursement"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/appointments/${appointment.id}/reimbursement`);
+      return res.json();
+    },
+    enabled: canRequestReimbursement,
+  });
 
   const payMutation = useMutation({
     mutationFn: async () => {
@@ -89,7 +133,18 @@ function AppointmentCard({ appointment, onOpenSummary }: { appointment: Appointm
           <div className="flex-1 min-w-0 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
               <div>
-                <h3 className="font-semibold text-lg">{appointment.doctorName}</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-lg">{appointment.doctorName}</h3>
+                  {canJoin && presenceData?.doctorOnline && (
+                    <span className="flex items-center gap-1" data-testid={`presence-doctor-${appointment.id}`}>
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                      </span>
+                      <span className="text-xs text-green-600 dark:text-green-400">En línea</span>
+                    </span>
+                  )}
+                </div>
                 <p className="text-muted-foreground">{appointment.doctorSpecialty}</p>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
@@ -102,6 +157,11 @@ function AppointmentCard({ appointment, onOpenSummary }: { appointment: Appointm
                 {appointment.paymentStatus === "rejected" && (
                   <Badge variant="destructive">
                     Pago rechazado
+                  </Badge>
+                )}
+                {reimbursementData && (
+                  <Badge variant="outline" className="text-blue-600 border-blue-400 dark:text-blue-400 dark:border-blue-600">
+                    Reembolso: {reimbursementData.status === "pending" ? "Pendiente" : reimbursementData.status === "approved" ? "Aprobado" : "Rechazado"}
                   </Badge>
                 )}
               </div>
@@ -156,6 +216,26 @@ function AppointmentCard({ appointment, onOpenSummary }: { appointment: Appointm
                   Pagar consulta
                 </Button>
               )}
+              {canReschedule && (
+                <Button 
+                  variant="outline" 
+                  onClick={() => onReschedule(appointment)}
+                  data-testid={`reschedule-appointment-${appointment.id}`}
+                >
+                  <CalendarClock className="h-4 w-4 mr-2" />
+                  Reagendar
+                </Button>
+              )}
+              {canRequestReimbursement && !reimbursementData && (
+                <Button 
+                  variant="outline" 
+                  onClick={() => onReimbursement(appointment)}
+                  data-testid={`reimbursement-appointment-${appointment.id}`}
+                >
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Solicitar reembolso
+                </Button>
+              )}
               <Button 
                 variant="outline" 
                 onClick={() => isSummaryView ? onOpenSummary(appointment.id) : navigate(detailsUrl)}
@@ -173,9 +253,96 @@ function AppointmentCard({ appointment, onOpenSummary }: { appointment: Appointm
 
 export default function AppointmentsPage() {
   const [summaryId, setSummaryId] = useState<number | null>(null);
+  const [rescheduleAppt, setRescheduleAppt] = useState<AppointmentWithDetails | null>(null);
+  const [reimbursementAppt, setReimbursementAppt] = useState<AppointmentWithDetails | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState<Date | undefined>();
+  const [rescheduleTime, setRescheduleTime] = useState<string>("");
+  const [reimbursementReason, setReimbursementReason] = useState("");
+  const { toast } = useToast();
+
   const { data: appointments, isLoading } = useQuery<AppointmentWithDetails[]>({
     queryKey: ["/api/appointments"],
   });
+
+  const rescheduleFormattedDate = rescheduleDate ? format(rescheduleDate, "yyyy-MM-dd") : null;
+
+  const { data: bookedSlots = [] } = useQuery<string[]>({
+    queryKey: ["/api/appointments/booked-slots", rescheduleAppt?.doctorId, rescheduleFormattedDate],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/appointments/booked-slots?doctorId=${rescheduleAppt!.doctorId}&date=${rescheduleFormattedDate}`);
+      return res.json();
+    },
+    enabled: !!rescheduleAppt?.doctorId && !!rescheduleFormattedDate,
+  });
+
+  const rescheduleMutation = useMutation({
+    mutationFn: async () => {
+      if (!rescheduleAppt || !rescheduleDate || !rescheduleTime) return;
+      const res = await apiRequest("POST", `/api/appointments/${rescheduleAppt.id}/reschedule`, {
+        scheduledDate: format(rescheduleDate, "yyyy-MM-dd"),
+        scheduledTime: rescheduleTime,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
+      setRescheduleAppt(null);
+      setRescheduleDate(undefined);
+      setRescheduleTime("");
+      toast({ title: "Cita reagendada exitosamente" });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error al reagendar",
+        description: error.message || "Intenta nuevamente",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const reimbursementMutation = useMutation({
+    mutationFn: async () => {
+      if (!reimbursementAppt) return;
+      const res = await apiRequest("POST", `/api/appointments/${reimbursementAppt.id}/reimbursement`, {
+        reason: reimbursementReason,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
+      if (reimbursementAppt) {
+        queryClient.invalidateQueries({ queryKey: ["/api/appointments", reimbursementAppt.id, "reimbursement"] });
+      }
+      setReimbursementAppt(null);
+      setReimbursementReason("");
+      toast({ title: "Solicitud de reembolso enviada" });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error al solicitar reembolso",
+        description: error.message || "Intenta nuevamente",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const getChileanNow = () => {
+    const now = new Date();
+    return new Date(now.toLocaleString("en-US", { timeZone: "America/Santiago" }));
+  };
+
+  const isSlotAvailable = (time: string) => {
+    if (!rescheduleDate) return false;
+    const chileanNow = getChileanNow();
+    const todayStr = format(chileanNow, "yyyy-MM-dd");
+    const selectedStr = format(rescheduleDate, "yyyy-MM-dd");
+    if (selectedStr === todayStr) {
+      const [hours, minutes] = time.split(":").map(Number);
+      if (hours < chileanNow.getHours() || (hours === chileanNow.getHours() && minutes <= chileanNow.getMinutes())) return false;
+    }
+    if (bookedSlots.includes(time)) return false;
+    return true;
+  };
 
   const today = new Date();
   const upcoming = appointments?.filter(a => 
@@ -192,6 +359,105 @@ export default function AppointmentsPage() {
         open={summaryId !== null}
         onOpenChange={(open) => { if (!open) setSummaryId(null); }}
       />
+
+      {/* Reschedule Dialog */}
+      <Dialog open={!!rescheduleAppt} onOpenChange={(open) => { if (!open) { setRescheduleAppt(null); setRescheduleDate(undefined); setRescheduleTime(""); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Reagendar consulta</DialogTitle>
+            <DialogDescription>
+              Selecciona una nueva fecha y hora para tu consulta con {rescheduleAppt?.doctorName}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium mb-2 block">Fecha</Label>
+              <CalendarComponent
+                mode="single"
+                selected={rescheduleDate}
+                onSelect={(d) => { setRescheduleDate(d); setRescheduleTime(""); }}
+                disabled={(date) => date < new Date() || date.getDay() === 0}
+                locale={es}
+                className="rounded-md border mx-auto"
+              />
+            </div>
+            {rescheduleDate && (
+              <div>
+                <Label className="text-sm font-medium mb-2 block">Hora disponible</Label>
+                <div className="grid grid-cols-4 gap-2 max-h-[200px] overflow-y-auto">
+                  {TIME_SLOTS.map((time) => {
+                    const available = isSlotAvailable(time);
+                    return (
+                      <Button
+                        key={time}
+                        variant={rescheduleTime === time ? "default" : "outline"}
+                        size="sm"
+                        disabled={!available}
+                        onClick={() => setRescheduleTime(time)}
+                        data-testid={`reschedule-time-${time}`}
+                      >
+                        {time}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRescheduleAppt(null)}>Cancelar</Button>
+            <Button 
+              onClick={() => rescheduleMutation.mutate()} 
+              disabled={!rescheduleDate || !rescheduleTime || rescheduleMutation.isPending}
+              data-testid="button-confirm-reschedule"
+            >
+              {rescheduleMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CalendarClock className="h-4 w-4 mr-2" />}
+              Confirmar reagendamiento
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reimbursement Dialog */}
+      <Dialog open={!!reimbursementAppt} onOpenChange={(open) => { if (!open) { setReimbursementAppt(null); setReimbursementReason(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Solicitar reembolso</DialogTitle>
+            <DialogDescription>
+              Solicita un reembolso para tu consulta con {reimbursementAppt?.doctorName}
+              {reimbursementAppt?.consultationFee && ` ($${reimbursementAppt.consultationFee.toLocaleString()} CLP)`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="reimbursement-reason" className="text-sm font-medium">Motivo del reembolso</Label>
+              <Textarea
+                id="reimbursement-reason"
+                value={reimbursementReason}
+                onChange={(e) => setReimbursementReason(e.target.value)}
+                placeholder="Describe el motivo de tu solicitud de reembolso (mínimo 10 caracteres)..."
+                rows={4}
+                data-testid="input-reimbursement-reason"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                {reimbursementReason.length}/10 caracteres mínimos
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReimbursementAppt(null)}>Cancelar</Button>
+            <Button 
+              onClick={() => reimbursementMutation.mutate()} 
+              disabled={reimbursementReason.trim().length < 10 || reimbursementMutation.isPending}
+              data-testid="button-confirm-reimbursement"
+            >
+              {reimbursementMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RotateCcw className="h-4 w-4 mr-2" />}
+              Enviar solicitud
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold">Mis Consultas</h1>
@@ -237,7 +503,13 @@ export default function AppointmentsPage() {
             </>
           ) : upcoming.length > 0 ? (
             upcoming.map((appointment) => (
-              <AppointmentCard key={appointment.id} appointment={appointment} onOpenSummary={setSummaryId} />
+              <AppointmentCard 
+                key={appointment.id} 
+                appointment={appointment} 
+                onOpenSummary={setSummaryId}
+                onReschedule={setRescheduleAppt}
+                onReimbursement={setReimbursementAppt}
+              />
             ))
           ) : (
             <Card>
@@ -255,7 +527,13 @@ export default function AppointmentsPage() {
         <TabsContent value="past" className="space-y-4">
           {past.length > 0 ? (
             past.map((appointment) => (
-              <AppointmentCard key={appointment.id} appointment={appointment} onOpenSummary={setSummaryId} />
+              <AppointmentCard 
+                key={appointment.id} 
+                appointment={appointment} 
+                onOpenSummary={setSummaryId}
+                onReschedule={setRescheduleAppt}
+                onReimbursement={setReimbursementAppt}
+              />
             ))
           ) : (
             <Card>

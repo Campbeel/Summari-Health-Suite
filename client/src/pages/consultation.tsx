@@ -95,6 +95,42 @@ interface ChatMessage {
   createdAt: string;
 }
 
+function DoctorPresenceIndicator({ appointmentId }: { appointmentId: number }) {
+  const { data } = useQuery<{ doctorOnline: boolean }>({
+    queryKey: ["/api/appointments", appointmentId, "presence"],
+    queryFn: async () => {
+      const res = await fetch(`/api/appointments/${appointmentId}/presence`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
+      });
+      return res.json();
+    },
+    refetchInterval: 10000,
+  });
+
+  const isOnline = data?.doctorOnline ?? false;
+
+  return (
+    <div className="flex items-center gap-2" data-testid="doctor-presence-indicator">
+      {isOnline ? (
+        <>
+          <span className="relative flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+          </span>
+          <span className="text-sm text-green-600 dark:text-green-400 font-medium">Doctor en línea</span>
+        </>
+      ) : (
+        <>
+          <span className="relative flex h-3 w-3">
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-gray-400"></span>
+          </span>
+          <span className="text-sm text-muted-foreground font-medium">Doctor desconectado</span>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function ConsultationPage() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
@@ -630,9 +666,12 @@ export default function ConsultationPage() {
                 <p className="text-sm sm:text-base text-muted-foreground mb-4 sm:mb-6" data-testid="text-waiting-room-message">
                   Estás en la sala de espera. El Dr. {doctor.userName} debe autorizar tu ingreso a la consulta.
                 </p>
-                <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="text-sm">Esperando autorización...</span>
+                <div className="flex flex-col items-center gap-3">
+                  <DoctorPresenceIndicator appointmentId={parseInt(id)} />
+                  <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm">Esperando autorización...</span>
+                  </div>
                 </div>
               </div>
             </div>
