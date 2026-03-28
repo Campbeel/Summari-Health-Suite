@@ -43,7 +43,9 @@ import {
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ClinicalAssistant } from "@/components/clinical-assistant";
-import { Bot } from "lucide-react";
+import { LiveAssistPanel } from "@/components/live-assist-panel";
+import { Bot, Zap } from "lucide-react";
+import type { LiveAssistSuggestion, LiveTranscriptDelta, LiveAssistStatus } from "@shared/models/live-assist";
 
 interface ConsultationData {
   appointment: {
@@ -148,6 +150,12 @@ export default function ConsultationPage() {
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [liveAssistSuggestions, setLiveAssistSuggestions] = useState<LiveAssistSuggestion[]>([]);
+  const [liveTranscript, setLiveTranscript] = useState("");
+  const [liveAssistStatus, setLiveAssistStatus] = useState<"active" | "paused" | "error" | "stopped" | "idle">("idle");
+  const liveChunkIndexRef = useRef(0);
+  const liveAssistStartedRef = useRef(false);
+
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -179,7 +187,8 @@ export default function ConsultationPage() {
     toggleMute,
     toggleVideo,
     admitPatient,
-    denyPatient
+    denyPatient,
+    sendMessage: sendWsMessage
   } = useWebRTC({
     roomId,
     userId,
@@ -224,7 +233,19 @@ export default function ConsultationPage() {
           navigate(`/consultation/${id}/feedback`);
         }, 2000);
       }
-    }
+    },
+    onLiveAssistMessage: useCallback((message: any) => {
+      if (message.type === 'live_transcript_delta') {
+        const delta = message as LiveTranscriptDelta;
+        setLiveTranscript(delta.cumulativeText);
+      } else if (message.type === 'live_assist_suggestion') {
+        const suggestion = message as LiveAssistSuggestion;
+        setLiveAssistSuggestions(prev => [...prev, suggestion]);
+      } else if (message.type === 'live_assist_status') {
+        const status = message as LiveAssistStatus;
+        setLiveAssistStatus(status.status);
+      }
+    }, [])
   });
 
   useEffect(() => {
@@ -408,17 +429,47 @@ export default function ConsultationPage() {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
           console.log(`[Recording] Chunk received: ${event.data.size} bytes, total chunks: ${audioChunksRef.current.length}`);
+
+          if (isDoctor && id) {
+            const chunkIdx = liveChunkIndexRef.current++;
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const base64 = (reader.result as string).split(",")[1];
+              if (base64) {
+                sendWsMessage({
+                  type: "live_audio_chunk",
+                  appointmentId: Number(id),
+                  chunkIndex: chunkIdx,
+                  audioData: base64,
+                  mimeType: "audio/webm;codecs=opus",
+                  timestamp: Date.now(),
+                });
+              }
+            };
+            reader.readAsDataURL(event.data);
+          }
         }
       };
 
       mediaRecorder.start(5000);
       setIsRecording(true);
+
+      if (isDoctor && id && !liveAssistStartedRef.current) {
+        liveAssistStartedRef.current = true;
+        liveChunkIndexRef.current = 0;
+        sendWsMessage({
+          type: "live_assist_start",
+          appointmentId: Number(id),
+        });
+        setLiveAssistStatus("active");
+      }
+
       console.log(`[Recording] Recording started (preserveChunks=${preserveChunks}, existing chunks: ${audioChunksRef.current.length})`);
 
     } catch (error) {
       console.error("Error starting recording:", error);
     }
-  }, [createMixedAudioStream]);
+  }, [createMixedAudioStream, isDoctor, id, sendWsMessage]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -430,7 +481,16 @@ export default function ConsultationPage() {
     }
     mixedStreamRef.current = null;
     setIsRecording(false);
-  }, []);
+
+    if (isDoctor && id && liveAssistStartedRef.current) {
+      sendWsMessage({
+        type: "live_assist_stop",
+        appointmentId: Number(id),
+      });
+      liveAssistStartedRef.current = false;
+      setLiveAssistStatus("stopped");
+    }
+  }, [isDoctor, id, sendWsMessage]);
 
   const restartRecordingWithRemote = useCallback(() => {
     if (!isRecording || !remoteStreamRef.current || hasRestartedWithRemoteRef.current) return;
@@ -906,12 +966,23 @@ export default function ConsultationPage() {
 
       {/* Sidebar - Clinical Information */}
       <div className="w-full lg:w-96 flex flex-col min-h-[300px] lg:min-h-0">
-        <Tabs defaultValue={isDoctor ? "assistant" : "chat"} className="flex-1 flex flex-col min-h-0">
-          <TabsList className={`grid ${isDoctor ? 'grid-cols-3' : 'grid-cols-2'}`}>
+        <Tabs defaultValue={isDoctor ? "live-assist" : "chat"} className="flex-1 flex flex-col min-h-0">
+          <TabsList className={`grid ${isDoctor ? 'grid-cols-4' : 'grid-cols-2'}`}>
+            {isDoctor && (
+              <TabsTrigger value="live-assist" data-testid="tab-live-assist" className="relative">
+                <Zap className="h-4 w-4 mr-1" />
+                <span className="hidden sm:inline">En Vivo</span>
+                {liveAssistSuggestions.length > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[10px] text-white font-bold">
+                    {liveAssistSuggestions.length}
+                  </span>
+                )}
+              </TabsTrigger>
+            )}
             {isDoctor && (
               <TabsTrigger value="assistant" data-testid="tab-assistant">
                 <Bot className="h-4 w-4 mr-1" />
-                Asistente
+                <span className="hidden sm:inline">Asistente</span>
               </TabsTrigger>
             )}
             <TabsTrigger value="chat" data-testid="tab-chat">
@@ -931,6 +1002,37 @@ export default function ConsultationPage() {
               </TabsTrigger>
             )}
           </TabsList>
+
+          {/* Live Assist Tab (Doctor only) */}
+          {isDoctor && (
+            <TabsContent value="live-assist" className="flex-1 mt-4 min-h-0">
+              <Card className="h-full flex flex-col min-h-[400px]">
+                <LiveAssistPanel
+                  suggestions={liveAssistSuggestions}
+                  liveTranscript={liveTranscript}
+                  status={liveAssistStatus}
+                  onDismiss={(suggestionId) => {
+                    if (id) {
+                      sendWsMessage({
+                        type: "live_assist_dismiss",
+                        appointmentId: Number(id),
+                        suggestionId,
+                      });
+                    }
+                  }}
+                  onAcknowledge={(suggestionId) => {
+                    if (id) {
+                      sendWsMessage({
+                        type: "live_assist_acknowledge",
+                        appointmentId: Number(id),
+                        suggestionId,
+                      });
+                    }
+                  }}
+                />
+              </Card>
+            </TabsContent>
+          )}
 
           {/* Assistant Tab (Doctor only) */}
           {isDoctor && (

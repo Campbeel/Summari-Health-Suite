@@ -6,6 +6,7 @@ import { z } from "zod";
 // Re-export auth models
 export * from "./models/auth";
 export * from "./models/chat";
+export * from "./models/live-assist";
 
 // Doctors table
 export const doctors = pgTable("doctors", {

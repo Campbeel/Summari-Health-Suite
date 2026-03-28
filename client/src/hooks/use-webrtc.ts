@@ -11,6 +11,7 @@ interface UseWebRTCOptions {
   onWaitingPatient?: (patientId: string, patientName: string) => void;
   onChatMessage?: (message: any) => void;
   onDoctorDisconnected?: () => void;
+  onLiveAssistMessage?: (message: any) => void;
 }
 
 interface SignalingMessage {
@@ -54,7 +55,7 @@ const ICE_SERVERS: RTCConfiguration = {
   iceCandidatePoolSize: 10
 };
 
-export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStream, onConnectionStateChange, onError, onWaitingPatient, onChatMessage, onDoctorDisconnected }: UseWebRTCOptions) {
+export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStream, onConnectionStateChange, onError, onWaitingPatient, onChatMessage, onDoctorDisconnected, onLiveAssistMessage }: UseWebRTCOptions) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -83,6 +84,7 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
   const onWaitingPatientRef = useRef(onWaitingPatient);
   const onDoctorDisconnectedRef = useRef(onDoctorDisconnected);
   const onChatMessageRef = useRef(onChatMessage);
+  const onLiveAssistMessageRef = useRef(onLiveAssistMessage);
 
   useEffect(() => { onRemoteStreamRef.current = onRemoteStream; }, [onRemoteStream]);
   useEffect(() => { onConnectionStateChangeRef.current = onConnectionStateChange; }, [onConnectionStateChange]);
@@ -90,6 +92,7 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
   useEffect(() => { onWaitingPatientRef.current = onWaitingPatient; }, [onWaitingPatient]);
   useEffect(() => { onDoctorDisconnectedRef.current = onDoctorDisconnected; }, [onDoctorDisconnected]);
   useEffect(() => { onChatMessageRef.current = onChatMessage; }, [onChatMessage]);
+  useEffect(() => { onLiveAssistMessageRef.current = onLiveAssistMessage; }, [onLiveAssistMessage]);
 
   const sendMessage = useCallback((message: object) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -538,6 +541,12 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
               onChatMessageRef.current?.(message.message);
             }
             break;
+
+          case 'live_transcript_delta':
+          case 'live_assist_suggestion':
+          case 'live_assist_status':
+            onLiveAssistMessageRef.current?.(message);
+            break;
         }
       } catch (err) {
         console.error('[WebRTC] Error parsing message:', err);
@@ -647,6 +656,7 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
     toggleMute,
     toggleVideo,
     admitPatient,
-    denyPatient
+    denyPatient,
+    sendMessage
   };
 }

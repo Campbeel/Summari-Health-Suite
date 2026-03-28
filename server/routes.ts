@@ -12,6 +12,9 @@ import { transcribeAudio, transcribeAudioChunked, generatePrescriptionFromTransc
 import { sendConsultationDocuments, sendPaymentReceiptEmail } from "./email";
 import { generateConsultationPdf, type PdfDocumentData } from "./pdf-generator";
 import { getFitbitAuthUrl, getAndRemovePendingState, exchangeCodeForTokens, refreshFitbitTokens, fetchFitbitData } from "./fitbit";
+import { createLiveTranscriptionSession, getLiveTranscriptionSession, stopLiveTranscriptionSession } from "./live-transcription";
+import { LiveAssistOrchestrator } from "./live-assist-orchestrator";
+import type { LiveAssistSuggestion, LiveTranscriptDelta, LiveAssistStatus } from "@shared/models/live-assist";
 import {
   insertPatientSchema,
   insertAppointmentSchema,
@@ -33,6 +36,15 @@ interface SignalingRoom {
   doctorUserId?: string;
 }
 const signalingRooms = new Map<string, SignalingRoom>();
+
+const liveAssistDoctorSockets = new Map<number, WebSocket>();
+
+const liveAssistOrchestrator = new LiveAssistOrchestrator((suggestion: LiveAssistSuggestion) => {
+  const doctorWs = liveAssistDoctorSockets.get(suggestion.appointmentId);
+  if (doctorWs && doctorWs.readyState === WebSocket.OPEN) {
+    doctorWs.send(JSON.stringify(suggestion));
+  }
+});
 
 function log(message: string, source = "webrtc") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -1432,7 +1444,15 @@ export async function registerRoutes(
       await storage.updateAppointment(appointmentId, { status: "pending_validation" });
       
       let transcription = "";
-      if (audioData) {
+
+      const liveTranscript = await stopLiveTranscriptionSession(appointmentId);
+      liveAssistOrchestrator.endSession(appointmentId);
+      liveAssistDoctorSockets.delete(appointmentId);
+
+      if (liveTranscript && liveTranscript.length > 50) {
+        transcription = liveTranscript;
+        console.log(`[Transcription] Using live transcript for appointment ${appointmentId}. Length: ${transcription.length} chars`);
+      } else if (audioData) {
         try {
           const audioBuffer = Buffer.from(audioData, 'base64');
           console.log(`[Transcription] Starting server-side transcription for appointment ${appointmentId}. Audio size: ${audioBuffer.length} bytes`);
@@ -3194,6 +3214,106 @@ ${latest.map(l => `- ${l.metricType}: ${l.value} ${l.unit} (${new Date(l.recorde
             break;
           }
 
+          case 'live_assist_start': {
+            const startAppointmentId = message.appointmentId as number;
+            if (!startAppointmentId || !authenticatedUserId) break;
+
+            (async () => {
+              try {
+                const appointment = await storage.getAppointment(startAppointmentId);
+                if (!appointment) return;
+                const doctor = await storage.getDoctorByUserId(authenticatedUserId!);
+                if (!doctor || doctor.id !== appointment.doctorId) return;
+
+                liveAssistDoctorSockets.set(startAppointmentId, ws);
+
+                let patientContext: any = undefined;
+                try {
+                  const patient = await storage.getPatient(appointment.patientId);
+                  if (patient) {
+                    const patientUser = await storage.getUser(patient.userId);
+                    patientContext = {
+                      name: patientUser ? `${patientUser.firstName || ""} ${patientUser.lastName || ""}`.trim() : "Paciente",
+                      allergies: patient.allergies || [],
+                      medicalHistory: patient.medicalHistory || undefined,
+                      age: patient.dateOfBirth ? Math.floor((Date.now() - new Date(patient.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : undefined,
+                      gender: patient.gender || undefined,
+                    };
+                  }
+                } catch (e) { }
+
+                createLiveTranscriptionSession(startAppointmentId, (delta: LiveTranscriptDelta) => {
+                  if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify(delta));
+                  }
+                  liveAssistOrchestrator.evaluateTranscript(startAppointmentId, delta.cumulativeText);
+                });
+
+                liveAssistOrchestrator.initSession(startAppointmentId, patientContext);
+
+                const statusMsg: LiveAssistStatus = {
+                  type: "live_assist_status",
+                  appointmentId: startAppointmentId,
+                  status: "active",
+                  message: "Asistente en vivo activado",
+                  timestamp: Date.now(),
+                };
+                if (ws.readyState === WebSocket.OPEN) {
+                  ws.send(JSON.stringify(statusMsg));
+                }
+                log(`Live assist started for appointment ${startAppointmentId}`);
+              } catch (error) {
+                console.error("[LiveAssist] Error starting session:", error);
+              }
+            })();
+            break;
+          }
+
+          case 'live_audio_chunk': {
+            const chunkAppointmentId = message.appointmentId as number;
+            if (!chunkAppointmentId || !authenticatedUserId) break;
+
+            const chunkDoctorWs = liveAssistDoctorSockets.get(chunkAppointmentId);
+            if (chunkDoctorWs !== ws) break;
+
+            const session = getLiveTranscriptionSession(chunkAppointmentId);
+            if (session) {
+              session.processChunk(
+                message.chunkIndex,
+                message.audioData,
+                message.mimeType || "audio/webm"
+              );
+            }
+            break;
+          }
+
+          case 'live_assist_stop': {
+            const stopAppointmentId = message.appointmentId as number;
+            if (!stopAppointmentId || !authenticatedUserId) break;
+
+            const stopDoctorWs = liveAssistDoctorSockets.get(stopAppointmentId);
+            if (stopDoctorWs !== ws) break;
+
+            (async () => {
+              const transcript = await stopLiveTranscriptionSession(stopAppointmentId);
+              liveAssistOrchestrator.endSession(stopAppointmentId);
+              liveAssistDoctorSockets.delete(stopAppointmentId);
+
+              const statusMsg: LiveAssistStatus = {
+                type: "live_assist_status",
+                appointmentId: stopAppointmentId,
+                status: "stopped",
+                message: "Asistente en vivo detenido",
+                timestamp: Date.now(),
+              };
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(statusMsg));
+              }
+              log(`Live assist stopped for appointment ${stopAppointmentId}, transcript: ${transcript.length} chars`);
+            })();
+            break;
+          }
+
           case 'leave': {
             if (currentRoom && participantId) {
               const room = signalingRooms.get(currentRoom);
@@ -3234,6 +3354,19 @@ ${latest.map(l => `- ${l.metricType}: ${l.value} ${l.unit} (${new Date(l.recorde
     });
 
     ws.on('close', () => {
+      for (const [aptId, doctorWs] of liveAssistDoctorSockets.entries()) {
+        if (doctorWs === ws) {
+          (async () => {
+            try {
+              await stopLiveTranscriptionSession(aptId);
+              liveAssistOrchestrator.endSession(aptId);
+            } catch (e) {}
+          })();
+          liveAssistDoctorSockets.delete(aptId);
+          log(`Live assist cleaned up for appointment ${aptId} on WS close`);
+        }
+      }
+
       if (currentRoom && participantId) {
         const room = signalingRooms.get(currentRoom);
         if (room) {
