@@ -114,9 +114,13 @@ export default function Dashboard() {
 
   const [profileWarningDismissed, setProfileWarningDismissed] = useState(false);
 
-  const hasActiveAppointment = upcomingAppointments?.some(
-    (a) => a.status === "in_progress",
-  );
+  const hasActiveAppointment = upcomingAppointments?.some((a) => {
+    if (a.status !== "in_progress") return false;
+    try {
+      const ended = JSON.parse(localStorage.getItem("ended_consultations") || "[]");
+      return !ended.includes(a.id);
+    } catch { return true; }
+  });
 
   const showProfileWarning = !profileWarningDismissed && !loadingProfile && patientProfile && !patientProfile.dateOfBirth;
 

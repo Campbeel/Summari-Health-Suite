@@ -70,7 +70,13 @@ function AppointmentCard({
   const [, navigate] = useLocation();
   const isUpcoming = isAfter(parseISO(appointment.scheduledDate), new Date()) || 
     (format(new Date(), "yyyy-MM-dd") === appointment.scheduledDate);
-  const canJoin = appointment.status === "confirmed" || appointment.status === "in_progress";
+  const patientEndedConsultation = (() => {
+    try {
+      const ended = JSON.parse(localStorage.getItem("ended_consultations") || "[]");
+      return ended.includes(appointment.id);
+    } catch { return false; }
+  })();
+  const canJoin = (appointment.status === "confirmed" || appointment.status === "in_progress") && !patientEndedConsultation;
   const isSummaryView = appointment.status === "completed" || appointment.status === "pending_validation";
   const canReschedule = ["scheduled", "confirmed"].includes(appointment.status);
   const canRequestReimbursement = appointment.paymentStatus === "paid";

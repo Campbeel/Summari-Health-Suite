@@ -249,6 +249,17 @@ export default function ConsultationPage() {
   });
 
   useEffect(() => {
+    if (!isDoctor && id) {
+      try {
+        const ended = JSON.parse(localStorage.getItem("ended_consultations") || "[]");
+        if (ended.includes(Number(id))) {
+          navigate(`/consultation/${id}/feedback`);
+        }
+      } catch {}
+    }
+  }, [isDoctor, id, navigate]);
+
+  useEffect(() => {
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
     }
@@ -318,6 +329,13 @@ export default function ConsultationPage() {
     if (isDoctor) {
       endConsultationMutation.mutate(audioBase64);
     } else {
+      try {
+        const ended = JSON.parse(localStorage.getItem("ended_consultations") || "[]");
+        if (!ended.includes(Number(id))) {
+          ended.push(Number(id));
+          localStorage.setItem("ended_consultations", JSON.stringify(ended));
+        }
+      } catch {}
       navigate(`/consultation/${id}/feedback`);
     }
   };
