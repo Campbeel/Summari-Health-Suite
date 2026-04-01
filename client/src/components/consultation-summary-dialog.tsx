@@ -226,7 +226,7 @@ export function ConsultationSummaryDialog({ appointmentId, open, onOpenChange, i
               </div>
             )}
 
-            {data && <SummaryContent data={data} />}
+            {data && <SummaryContent data={data} isDoctor={isDoctor} />}
 
             {data && hasDocuments && (
               <Card data-testid="card-document-actions">
@@ -381,7 +381,7 @@ export function ConsultationSummaryDialog({ appointmentId, open, onOpenChange, i
   );
 }
 
-function SummaryContent({ data }: { data: SummaryData }) {
+function SummaryContent({ data, isDoctor = false }: { data: SummaryData; isDoctor?: boolean }) {
   const { appointment, doctor, patient, clinicalRecord, prescription, medicalInstructions, examOrders } = data;
   const hasPrescription = prescription && prescription.medications?.length > 0;
   const hasInstructions = medicalInstructions && medicalInstructions.length > 0;
@@ -425,7 +425,7 @@ function SummaryContent({ data }: { data: SummaryData }) {
         </CardContent>
       </Card>
 
-      {clinicalRecord && (
+      {isDoctor && clinicalRecord && (
         <Card data-testid="card-clinical-record">
           <CardHeader className="pb-2 px-4 pt-4">
             <CardTitle className="flex items-center gap-2 text-base">

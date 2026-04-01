@@ -3,11 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
-import { ArrowLeft, Calendar, Clock, Video, Phone, User, Pill, ClipboardList, FlaskConical, FileText, AlertCircle, FileDown, Loader2, ChevronDown } from "lucide-react";
+import { ArrowLeft, Calendar, Clock, Video, Phone, User, Pill, ClipboardList, FlaskConical, AlertCircle, FileDown, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 
@@ -131,7 +130,7 @@ export default function ConsultationSummaryPage() {
     );
   }
 
-  const { appointment, doctor, patient, clinicalRecord, prescription, medicalInstructions, examOrders } = data;
+  const { appointment, doctor, prescription, medicalInstructions, examOrders } = data;
   const hasPrescription = prescription && prescription.medications?.length > 0;
   const hasInstructions = medicalInstructions && medicalInstructions.length > 0;
   const hasExams = examOrders && examOrders.exams?.length > 0;
@@ -275,47 +274,6 @@ export default function ConsultationSummaryPage() {
         </CardContent>
       </Card>
 
-      {clinicalRecord && (
-        <Card data-testid="card-clinical-record">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <FileText className="h-5 w-5 text-primary" />
-              Registro Clínico
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {clinicalRecord.chiefComplaint && (
-              <div>
-                <p className="text-sm font-medium text-muted-foreground mb-1">Motivo de consulta</p>
-                <p data-testid="text-chief-complaint">{clinicalRecord.chiefComplaint}</p>
-              </div>
-            )}
-            {clinicalRecord.symptoms && clinicalRecord.symptoms.length > 0 && (
-              <div>
-                <p className="text-sm font-medium text-muted-foreground mb-1">Síntomas</p>
-                <div className="flex flex-wrap gap-2" data-testid="list-symptoms">
-                  {clinicalRecord.symptoms.map((s, i) => (
-                    <Badge key={i} variant="outline">{s}</Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-            {clinicalRecord.diagnosis && (
-              <div>
-                <p className="text-sm font-medium text-muted-foreground mb-1">Diagnóstico</p>
-                <p data-testid="text-diagnosis">{clinicalRecord.diagnosis}</p>
-              </div>
-            )}
-            {clinicalRecord.notes && (
-              <div>
-                <p className="text-sm font-medium text-muted-foreground mb-1">Notas clínicas</p>
-                <p className="text-sm" data-testid="text-clinical-notes">{clinicalRecord.notes}</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
       {hasPrescription && (
         <Card data-testid="card-prescription">
           <CardHeader className="pb-3">
@@ -407,7 +365,7 @@ export default function ConsultationSummaryPage() {
         </Card>
       )}
 
-      {!clinicalRecord && !hasPrescription && !hasInstructions && !hasExams && (
+      {!hasPrescription && !hasInstructions && !hasExams && (
         <Card data-testid="card-no-records">
           <CardContent className="p-6 text-center">
             <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
