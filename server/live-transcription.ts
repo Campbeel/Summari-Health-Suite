@@ -1,4 +1,4 @@
-import { speechToText, ensureCompatibleFormat } from "./replit_integrations/audio";
+import { speechToText } from "./replit_integrations/audio";
 import type { LiveTranscriptDelta } from "@shared/models/live-assist";
 
 interface TranscriptChunk {
@@ -38,8 +38,8 @@ export class LiveTranscriptionSession {
           return;
         }
 
-        const { buffer, format } = await ensureCompatibleFormat(audioBuffer);
-        const text = await speechToText(buffer, format);
+        const format = mimeType.includes("webm") ? "webm" : "wav";
+        const text = await speechToText(audioBuffer, format);
 
         if (!text || text.trim().length === 0) return;
 
