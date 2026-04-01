@@ -201,14 +201,15 @@ export default function ConsultationValidationPage() {
   const [clinicalNotes, setClinicalNotes] = useState("");
 
   const [medications, setMedications] = useState<Medication[]>([]);
-  const [instructions, setInstructions] = useState<MedicalInstructionDraft[]>([]);
+  const [instructionsText, setInstructionsText] = useState("");
   
   const [gesDiagnoses, setGesDiagnoses] = useState<GesDiagnosis[]>([]);
   const [gesSearchQuery, setGesSearchQuery] = useState("");
   const [gesSearchResults, setGesSearchResults] = useState<GesDiagnosis[]>([]);
   const [gesSearching, setGesSearching] = useState(false);
   const [showGesSearch, setShowGesSearch] = useState(false);
-  const [exams, setExams] = useState<Exam[]>([]);
+  const [examsText, setExamsText] = useState("");
+  const [medicalReportText, setMedicalReportText] = useState("");
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isValidated, setIsValidated] = useState(false);
   const [sendPrescription, setSendPrescription] = useState(true);
@@ -248,23 +249,84 @@ export default function ConsultationValidationPage() {
       }
 
       if (validationData.medicalInstructions?.length > 0) {
-        setInstructions(validationData.medicalInstructions.map(i => ({
-          category: i.category,
-          title: i.title,
-          description: i.description,
-          priority: i.priority,
-        })));
+        setInstructionsText(validationData.medicalInstructions.map(i => 
+          i.description ? `${i.title}: ${i.description}` : i.title
+        ).join("\n"));
       }
 
       if (validationData.examOrders) {
-        setExams((validationData.examOrders.exams || []).map(e => ({
-          name: e.name,
-          justification: e.justification || "",
-        })));
+        setExamsText((validationData.examOrders.exams || []).map(e => 
+          e.justification ? `${e.name} - ${e.justification}` : e.name
+        ).join("\n"));
       }
 
       if (validationData.clinicalRecord.gesDiagnosis) {
         setGesDiagnoses(validationData.clinicalRecord.gesDiagnosis);
+      }
+
+      if (validationData.clinicalRecord.medicalReport) {
+        const r = validationData.clinicalRecord.medicalReport as any;
+        if (r.editedText) {
+          setMedicalReportText(r.editedText);
+        } else {
+          const lines: string[] = [];
+          lines.push("DATOS DEL PACIENTE");
+          lines.push(`Nombre: ${r.patientData?.fullName || ""}`);
+          if (r.patientData?.age != null) lines.push(`Edad: ${r.patientData.age}`);
+          lines.push(`Sexo: ${r.patientData?.sex || ""}`);
+          if (r.patientData?.occupation) lines.push(`Ocupación: ${r.patientData.occupation}`);
+          lines.push("");
+          lines.push("MOTIVO DE CONSULTA");
+          lines.push(r.consultationData?.reason || "");
+          lines.push("");
+          lines.push("ENFERMEDAD ACTUAL");
+          lines.push(r.consultationData?.currentIllness?.description || "");
+          if (r.consultationData?.currentIllness?.onset) lines.push(`Inicio: ${r.consultationData.currentIllness.onset}`);
+          if (r.consultationData?.currentIllness?.duration) lines.push(`Duración: ${r.consultationData.currentIllness.duration}`);
+          if (r.consultationData?.currentIllness?.associatedSymptoms) lines.push(`Síntomas asociados: ${r.consultationData.currentIllness.associatedSymptoms}`);
+          if (r.consultationData?.currentIllness?.modifyingFactors) lines.push(`Factores modificadores: ${r.consultationData.currentIllness.modifyingFactors}`);
+          if (r.consultationData?.currentIllness?.previousTreatments) lines.push(`Tratamientos previos: ${r.consultationData.currentIllness.previousTreatments}`);
+          lines.push("");
+          lines.push("ANTECEDENTES");
+          if (r.medicalHistory?.medical) lines.push(`Médicos: ${r.medicalHistory.medical}`);
+          if (r.medicalHistory?.surgical) lines.push(`Quirúrgicos: ${r.medicalHistory.surgical}`);
+          if (r.medicalHistory?.allergies) lines.push(`Alergias: ${r.medicalHistory.allergies}`);
+          if (r.medicalHistory?.medications) lines.push(`Medicamentos: ${r.medicalHistory.medications}`);
+          lines.push("");
+          if (r.familyHistory) {
+            lines.push("ANTECEDENTES FAMILIARES");
+            lines.push(r.familyHistory);
+            lines.push("");
+          }
+          lines.push("HÁBITOS");
+          if (r.habits?.diet) lines.push(`Alimentación: ${r.habits.diet}`);
+          if (r.habits?.physicalActivity) lines.push(`Actividad física: ${r.habits.physicalActivity}`);
+          if (r.habits?.sleep) lines.push(`Sueño: ${r.habits.sleep}`);
+          if (r.habits?.substanceUse) lines.push(`Sustancias: ${r.habits.substanceUse}`);
+          lines.push("");
+          if (r.systemsReview) {
+            lines.push("REVISIÓN POR SISTEMAS");
+            lines.push(r.systemsReview);
+            lines.push("");
+          }
+          if (r.physicalExam?.systemsExploration) {
+            lines.push("EXAMEN FÍSICO");
+            lines.push(r.physicalExam.systemsExploration);
+            lines.push("");
+          }
+          lines.push("IMPRESIÓN DIAGNÓSTICA");
+          lines.push(r.diagnosticImpression || "");
+          lines.push("");
+          lines.push("PLAN DE TRATAMIENTO");
+          if (r.treatmentPlan?.treatment) lines.push(r.treatmentPlan.treatment);
+          if (r.treatmentPlan?.tests?.length > 0) {
+            lines.push(`Exámenes: ${r.treatmentPlan.tests.join(", ")}`);
+          }
+          if (r.treatmentPlan?.instructions?.length > 0) {
+            lines.push(`Indicaciones: ${r.treatmentPlan.instructions.join(", ")}`);
+          }
+          setMedicalReportText(lines.join("\n"));
+        }
       }
 
       setIsInitialized(true);
@@ -295,8 +357,28 @@ export default function ConsultationValidationPage() {
     return () => clearTimeout(timer);
   }, [gesSearchQuery]);
 
+  const parseInstructionsFromText = (text: string): MedicalInstructionDraft[] => {
+    return text.split("\n").map(line => line.trim()).filter(line => line.length > 0).map(line => {
+      const colonIdx = line.indexOf(":");
+      const title = colonIdx > 0 ? line.substring(0, colonIdx).trim() : line;
+      const description = colonIdx > 0 ? line.substring(colonIdx + 1).trim() : "";
+      return { category: "follow-up", title, description: description || title, priority: "normal" };
+    });
+  };
+
+  const parseExamsFromText = (text: string): Exam[] => {
+    return text.split("\n").map(line => line.trim()).filter(line => line.length > 0).map(line => {
+      const dashIdx = line.indexOf(" - ");
+      const name = dashIdx > 0 ? line.substring(0, dashIdx).trim() : line;
+      const justification = dashIdx > 0 ? line.substring(dashIdx + 3).trim() : "";
+      return { name, justification };
+    });
+  };
+
   const validateMutation = useMutation({
     mutationFn: async () => {
+      const parsedInstructions = parseInstructionsFromText(instructionsText);
+      const parsedExams = parseExamsFromText(examsText);
       const response = await apiRequest("POST", `/api/consultations/${id}/validate`, {
         clinicalRecord: {
           chiefComplaint,
@@ -304,13 +386,14 @@ export default function ConsultationValidationPage() {
           diagnosis,
           notes: clinicalNotes,
           gesDiagnosis: gesDiagnoses.length > 0 ? gesDiagnoses : null,
+          medicalReportText: medicalReportText || null,
         },
         prescription: medications.length > 0 ? {
           medications,
         } : null,
-        medicalInstructions: instructions,
-        examOrders: exams.length > 0 ? {
-          exams,
+        medicalInstructions: parsedInstructions,
+        examOrders: parsedExams.length > 0 ? {
+          exams: parsedExams,
         } : null,
       });
       return response.json();
@@ -361,12 +444,12 @@ export default function ConsultationValidationPage() {
     mutationFn: async () => {
       const response = await apiRequest("POST", `/api/consultations/${id}/alerts`, {
         medications,
-        medicalInstructions: instructions.map(i => ({
+        medicalInstructions: parseInstructionsFromText(instructionsText).map(i => ({
           title: i.title,
           description: i.description,
           category: i.category,
         })),
-        examOrders: exams.map(e => ({
+        examOrders: parseExamsFromText(examsText).map(e => ({
           name: e.name,
           type: "general",
           clinicalJustification: e.justification,
@@ -425,38 +508,6 @@ export default function ConsultationValidationPage() {
     setMedications(prev => prev.filter((_, i) => i !== index));
   };
 
-  const addInstruction = () => {
-    setInstructions(prev => [...prev, {
-      category: "follow-up",
-      title: "",
-      description: "",
-      priority: "normal",
-    }]);
-  };
-
-  const updateInstruction = (index: number, field: keyof MedicalInstructionDraft, value: string) => {
-    setInstructions(prev => prev.map((inst, i) =>
-      i === index ? { ...inst, [field]: value } : inst
-    ));
-  };
-
-  const removeInstruction = (index: number) => {
-    setInstructions(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const addExam = () => {
-    setExams(prev => [...prev, { name: "", justification: "" }]);
-  };
-
-  const updateExam = (index: number, field: keyof Exam, value: string) => {
-    setExams(prev => prev.map((exam, i) =>
-      i === index ? { ...exam, [field]: value } : exam
-    ));
-  };
-
-  const removeExam = (index: number) => {
-    setExams(prev => prev.filter((_, i) => i !== index));
-  };
 
   const handlePdfPreview = async (types: string[]) => {
     setPdfPreviewLoading(true);
@@ -518,8 +569,10 @@ export default function ConsultationValidationPage() {
   const hasMedicalReport = !!validationData.clinicalRecord.medicalReport;
 
   const hasMedications = medications.length > 0;
-  const hasInstructionItems = instructions.length > 0;
-  const hasExamItems = exams.length > 0;
+  const parsedInstructionsPreview = parseInstructionsFromText(instructionsText);
+  const parsedExamsPreview = parseExamsFromText(examsText);
+  const hasInstructionItems = parsedInstructionsPreview.length > 0;
+  const hasExamItems = parsedExamsPreview.length > 0;
   const hasAnyDocuments = hasMedications || hasInstructionItems || hasExamItems;
 
   const selectedDocCount = 
@@ -598,7 +651,7 @@ export default function ConsultationValidationPage() {
                       <ClipboardList className="h-4 w-4 text-green-600" />
                       <div>
                         <p className="font-medium text-sm">Indicaciones médicas</p>
-                        <p className="text-xs text-muted-foreground">{instructions.length} indicación(es)</p>
+                        <p className="text-xs text-muted-foreground">{parsedInstructionsPreview.length} indicación(es)</p>
                       </div>
                     </label>
                   )}
@@ -614,7 +667,7 @@ export default function ConsultationValidationPage() {
                       <FlaskConical className="h-4 w-4 text-purple-600" />
                       <div>
                         <p className="font-medium text-sm">Órdenes de exámenes</p>
-                        <p className="text-xs text-muted-foreground">{exams.length} examen(es)</p>
+                        <p className="text-xs text-muted-foreground">{parsedExamsPreview.length} examen(es)</p>
                       </div>
                     </label>
                   )}
@@ -907,7 +960,7 @@ export default function ConsultationValidationPage() {
             <TabsList className="grid grid-cols-4 w-full">
               <TabsTrigger value="clinical" data-testid="tab-clinical">
                 <FileText className="h-4 w-4 mr-1.5" />
-                Registro
+                Informe
               </TabsTrigger>
               <TabsTrigger value="prescription" data-testid="tab-prescription">
                 <Pill className="h-4 w-4 mr-1.5" />
@@ -928,7 +981,7 @@ export default function ConsultationValidationPage() {
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">
                     <FileText className="h-5 w-5" />
-                    Registro Clínico
+                    Informe Médico
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -1226,170 +1279,53 @@ export default function ConsultationValidationPage() {
 
             <TabsContent value="instructions" className="mt-4">
               <Card>
-                <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">
                     <ClipboardList className="h-5 w-5" />
                     Indicaciones Médicas
                   </CardTitle>
-                  <Button variant="outline" size="sm" onClick={addInstruction} data-testid="button-add-instruction">
-                    <Plus className="h-4 w-4 mr-1" />
-                    Agregar
-                  </Button>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  {instructions.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground" data-testid="instructions-empty">
-                      <ClipboardList className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">No hay indicaciones médicas</p>
-                      <p className="text-xs mt-1">Agrega indicaciones manualmente</p>
-                    </div>
-                  ) : (
-                    instructions.map((inst, index) => (
-                      <div key={index} className="border border-dashed rounded-md p-4 space-y-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <h4 className="text-sm font-medium text-muted-foreground">
-                              Indicación {index + 1}
-                            </h4>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeInstruction(index)}
-                              data-testid={`button-remove-instruction-${index}`}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                              <Label>Categoría</Label>
-                              <Select
-                                value={inst.category}
-                                onValueChange={(v) => updateInstruction(index, "category", v)}
-                              >
-                                <SelectTrigger className="mt-1" data-testid={`select-inst-category-${index}`}>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="diet">Alimentación</SelectItem>
-                                  <SelectItem value="exercise">Ejercicio</SelectItem>
-                                  <SelectItem value="lifestyle">Estilo de vida</SelectItem>
-                                  <SelectItem value="follow-up">Seguimiento</SelectItem>
-                                  <SelectItem value="tests">Exámenes</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div>
-                              <Label>Prioridad</Label>
-                              <Select
-                                value={inst.priority}
-                                onValueChange={(v) => updateInstruction(index, "priority", v)}
-                              >
-                                <SelectTrigger className="mt-1" data-testid={`select-inst-priority-${index}`}>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="low">Baja</SelectItem>
-                                  <SelectItem value="normal">Normal</SelectItem>
-                                  <SelectItem value="high">Alta</SelectItem>
-                                  <SelectItem value="urgent">Urgente</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                          <div>
-                            <Label>Título</Label>
-                            <Input
-                              value={inst.title}
-                              onChange={(e) => updateInstruction(index, "title", e.target.value)}
-                              placeholder="Título de la indicación"
-                              className="mt-1"
-                              data-testid={`input-inst-title-${index}`}
-                            />
-                          </div>
-                          <div>
-                            <Label>Descripción</Label>
-                            <Textarea
-                              value={inst.description}
-                              onChange={(e) => updateInstruction(index, "description", e.target.value)}
-                              placeholder="Descripción detallada..."
-                              className="mt-1"
-                              data-testid={`input-inst-description-${index}`}
-                            />
-                          </div>
-                      </div>
-                    ))
-                  )}
+                <CardContent>
+                  <Textarea
+                    value={instructionsText}
+                    onChange={(e) => setInstructionsText(e.target.value)}
+                    placeholder={"Escriba una indicación por línea, por ejemplo:\nReposo relativo por 5 días\nDieta blanda sin irritantes\nControl en 7 días con exámenes"}
+                    className="min-h-[200px] resize-y"
+                    data-testid="input-instructions-text"
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Cada línea será una indicación individual. Puede usar ":" para separar título y descripción.
+                  </p>
                 </CardContent>
               </Card>
             </TabsContent>
 
             <TabsContent value="exams" className="mt-4">
               <Card>
-                <CardHeader className="flex flex-row items-center justify-between gap-4">
+                <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">
                     <FlaskConical className="h-5 w-5" />
                     Órdenes de Exámenes
                   </CardTitle>
-                  <Button variant="outline" size="sm" onClick={addExam} data-testid="button-add-exam">
-                    <Plus className="h-4 w-4 mr-1" />
-                    Agregar
-                  </Button>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  {exams.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground" data-testid="exams-empty">
-                      <FlaskConical className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">No hay exámenes solicitados</p>
-                      <p className="text-xs mt-1">Agrega exámenes que el paciente debe realizarse</p>
-                    </div>
-                  ) : (
-                    <>
-                      {exams.map((exam, index) => (
-                        <div key={index} className="border border-dashed rounded-md p-4 space-y-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <h4 className="text-sm font-medium text-muted-foreground">
-                              Examen {index + 1}
-                            </h4>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeExam(index)}
-                              data-testid={`button-remove-exam-${index}`}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
-                          <div>
-                            <Label>Nombre del examen</Label>
-                            <Input
-                              value={exam.name}
-                              onChange={(e) => updateExam(index, "name", e.target.value)}
-                              placeholder="Ej: Hemograma completo, Glicemia, TSH..."
-                              className="mt-1"
-                              data-testid={`input-exam-name-${index}`}
-                            />
-                          </div>
-                          <div>
-                            <Label>Justificación clínica</Label>
-                            <Input
-                              value={exam.justification || ""}
-                              onChange={(e) => updateExam(index, "justification", e.target.value)}
-                              placeholder="Ej: Sospecha de anemia ferropénica"
-                              className="mt-1"
-                              data-testid={`input-exam-justification-${index}`}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </>
-                  )}
+                <CardContent>
+                  <Textarea
+                    value={examsText}
+                    onChange={(e) => setExamsText(e.target.value)}
+                    placeholder={"Escriba un examen por línea, por ejemplo:\nHemograma completo\nGlicemia en ayunas - Sospecha de diabetes\nTSH - Control tiroideo"}
+                    className="min-h-[200px] resize-y"
+                    data-testid="input-exams-text"
+                  />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Cada línea será un examen. Use " - " para agregar justificación clínica.
+                  </p>
                 </CardContent>
               </Card>
             </TabsContent>
           </Tabs>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
           <Card className="overflow-hidden">
             <ClinicalAssistant appointmentId={id!} className="h-[350px]" />
           </Card>
@@ -1402,98 +1338,14 @@ export default function ConsultationValidationPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {validationData.clinicalRecord.medicalReport ? (
-                <ScrollArea className="max-h-[500px]">
-                  <div className="space-y-4 text-sm" data-testid="medical-report">
-                    {(() => {
-                      const r = validationData.clinicalRecord.medicalReport;
-                      return (
-                        <>
-                          <div>
-                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Datos del Paciente</h4>
-                            <div className="grid grid-cols-2 gap-1 text-xs">
-                              <span>Nombre: {r.patientData.fullName}</span>
-                              <span>Edad: {r.patientData.age ?? "No mencionada"}</span>
-                              <span>Sexo: {r.patientData.sex}</span>
-                              <span>Ocupación: {r.patientData.occupation}</span>
-                            </div>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Motivo de Consulta</h4>
-                            <p className="text-xs">{r.consultationData.reason}</p>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Enfermedad Actual</h4>
-                            <div className="space-y-1 text-xs">
-                              <p><strong>Descripción:</strong> {r.consultationData.currentIllness.description}</p>
-                              <p><strong>Inicio:</strong> {r.consultationData.currentIllness.onset}</p>
-                              <p><strong>Duración:</strong> {r.consultationData.currentIllness.duration}</p>
-                              <p><strong>Síntomas asociados:</strong> {r.consultationData.currentIllness.associatedSymptoms}</p>
-                              <p><strong>Factores modificadores:</strong> {r.consultationData.currentIllness.modifyingFactors}</p>
-                              <p><strong>Tratamientos previos:</strong> {r.consultationData.currentIllness.previousTreatments}</p>
-                            </div>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Antecedentes</h4>
-                            <div className="space-y-1 text-xs">
-                              <p><strong>Médicos:</strong> {r.medicalHistory.medical}</p>
-                              <p><strong>Quirúrgicos:</strong> {r.medicalHistory.surgical}</p>
-                              <p><strong>Alergias:</strong> {r.medicalHistory.allergies}</p>
-                              <p><strong>Medicamentos:</strong> {r.medicalHistory.medications}</p>
-                            </div>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Antecedentes Familiares</h4>
-                            <p className="text-xs">{r.familyHistory}</p>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Hábitos</h4>
-                            <div className="space-y-1 text-xs">
-                              <p><strong>Alimentación:</strong> {r.habits.diet}</p>
-                              <p><strong>Actividad física:</strong> {r.habits.physicalActivity}</p>
-                              <p><strong>Sueño:</strong> {r.habits.sleep}</p>
-                              <p><strong>Sustancias:</strong> {r.habits.substanceUse}</p>
-                            </div>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Revisión por Sistemas</h4>
-                            <p className="text-xs">{r.systemsReview}</p>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Examen Físico</h4>
-                            <p className="text-xs">{r.physicalExam.systemsExploration}</p>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Impresión Diagnóstica</h4>
-                            <p className="text-xs font-medium">{r.diagnosticImpression}</p>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-xs uppercase text-muted-foreground mb-1">Plan de Tratamiento</h4>
-                            <div className="space-y-1 text-xs">
-                              <p><strong>Tratamiento:</strong> {r.treatmentPlan.treatment}</p>
-                              {r.treatmentPlan.tests.length > 0 && (
-                                <div>
-                                  <strong>Exámenes:</strong>
-                                  <ul className="list-disc list-inside ml-2">
-                                    {r.treatmentPlan.tests.map((t, i) => <li key={i}>{t}</li>)}
-                                  </ul>
-                                </div>
-                              )}
-                              {r.treatmentPlan.instructions.length > 0 && (
-                                <div>
-                                  <strong>Indicaciones:</strong>
-                                  <ul className="list-disc list-inside ml-2">
-                                    {r.treatmentPlan.instructions.map((inst, i) => <li key={i}>{inst}</li>)}
-                                  </ul>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </div>
-                </ScrollArea>
+              {medicalReportText || validationData.clinicalRecord.medicalReport ? (
+                <Textarea
+                  value={medicalReportText}
+                  onChange={(e) => setMedicalReportText(e.target.value)}
+                  className="min-h-[400px] max-h-[600px] text-xs font-mono resize-y overflow-y-auto"
+                  placeholder="El informe médico aparecerá aquí después de la consulta. Puede modificarlo libremente."
+                  data-testid="input-medical-report"
+                />
               ) : (
                 <div className="text-center py-4 text-muted-foreground" data-testid="medical-report-empty">
                   <FileText className="h-6 w-6 mx-auto mb-1 opacity-50" />

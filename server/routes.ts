@@ -1694,6 +1694,7 @@ export async function registerRoutes(
         diagnosis: z.string().optional().nullable(),
         notes: z.string().optional().nullable(),
         gesDiagnosis: z.array(gesDiagnosisSchema).optional().nullable(),
+        medicalReportText: z.string().optional().nullable(),
       });
 
       const medicationSchema = z.object({
@@ -1722,13 +1723,18 @@ export async function registerRoutes(
         if (!parsed.success) {
           return res.status(400).json({ error: "Datos clínicos inválidos", errors: parsed.error.flatten() });
         }
-        await storage.updateClinicalRecord(existingRecord.id, {
+        const updateData: any = {
           chiefComplaint: parsed.data.chiefComplaint || null,
           symptoms: parsed.data.symptoms || [],
           diagnosis: parsed.data.diagnosis || null,
           notes: parsed.data.notes || null,
           gesDiagnosis: parsed.data.gesDiagnosis || null,
-        });
+        };
+        if (parsed.data.medicalReportText !== undefined) {
+          const existingReport = existingRecord.medicalReport || {} as any;
+          updateData.medicalReport = { ...existingReport, editedText: parsed.data.medicalReportText };
+        }
+        await storage.updateClinicalRecord(existingRecord.id, updateData);
       }
 
       if (prescriptionData && prescriptionData.medications?.length > 0) {
@@ -2164,6 +2170,7 @@ export async function registerRoutes(
         diagnosis: clinicalRecord.diagnosis || undefined,
         notes: clinicalRecord.notes || undefined,
       } : undefined,
+      transcript: clinicalRecord?.transcription || undefined,
     };
   }
 

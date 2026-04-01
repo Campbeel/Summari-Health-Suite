@@ -216,41 +216,6 @@ export default function DoctorDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card className="border-l-4 border-l-blue-500" data-testid="stat-card-today">
-          <CardContent className="p-3 flex items-center gap-3">
-            <Calendar className="h-5 w-5 text-blue-500 flex-shrink-0" />
-            <div>
-              {loadingStats ? <Skeleton className="h-6 w-8" /> : (
-                <p className="text-xl font-bold" data-testid="text-today-count">{stats?.todayAppointments || 0}</p>
-              )}
-              <p className="text-xs text-muted-foreground">Citas hoy</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-l-4 border-l-amber-500" data-testid="stat-card-pending">
-          <CardContent className="p-3 flex items-center gap-3">
-            <Clock className="h-5 w-5 text-amber-500 flex-shrink-0" />
-            <div>
-              {loadingStats ? <Skeleton className="h-6 w-8" /> : (
-                <p className="text-xl font-bold" data-testid="text-upcoming-count">{stats?.upcomingAppointments || 0}</p>
-              )}
-              <p className="text-xs text-muted-foreground">Pendientes total</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-l-4 border-l-green-500" data-testid="stat-card-completed">
-          <CardContent className="p-3 flex items-center gap-3">
-            <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
-            <div>
-              {loadingStats ? <Skeleton className="h-6 w-8" /> : (
-                <p className="text-xl font-bold" data-testid="text-completed-count">{stats?.completedConsultations || 0}</p>
-              )}
-              <p className="text-xs text-muted-foreground">Completadas</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
 
       <Card>
         <CardHeader className="pb-3">

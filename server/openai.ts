@@ -635,6 +635,7 @@ export interface AssistantContext {
     diagnosis?: string;
     notes?: string;
   };
+  transcript?: string;
 }
 
 export async function generateAssistantWelcome(context: AssistantContext): Promise<string> {
@@ -694,7 +695,10 @@ Registro clínico actual:
 - Diagnóstico: ${context.currentClinicalRecord.diagnosis || 'Pendiente'}
 - Notas: ${context.currentClinicalRecord.notes || 'Sin notas'}
 ` : ''}
-
+${context.transcript ? `
+Transcripción de la consulta:
+${context.transcript.substring(0, 3000)}
+` : ''}
 Tu rol:
 - Responder preguntas clínicas del doctor sobre el paciente
 - Sugerir diagnósticos diferenciales cuando se te pregunte
