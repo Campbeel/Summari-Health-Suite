@@ -429,6 +429,11 @@ export default function ConsultationValidationPage() {
           if (r.treatmentPlan?.instructions?.length > 0) {
             lines.push(`Indicaciones: ${r.treatmentPlan.instructions.join(", ")}`);
           }
+          if (cr.notes) {
+            lines.push("");
+            lines.push("NOTAS CLÍNICAS");
+            lines.push(cr.notes);
+          }
           setMedicalReportText(lines.join("\n"));
         }
       }
@@ -1072,7 +1077,7 @@ export default function ConsultationValidationPage() {
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">
                     <FileText className="h-5 w-5" />
-                    Informe Médico
+                    Anamnesis
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -1088,11 +1093,11 @@ export default function ConsultationValidationPage() {
                       value={medicalReportText}
                       onChange={(e) => setMedicalReportText(e.target.value)}
                       className="min-h-[450px] text-sm font-mono resize-y overflow-y-auto"
-                      placeholder="El informe médico aparecerá aquí después de la consulta. Puede modificarlo libremente."
+                      placeholder="La anamnesis aparecerá aquí después de la consulta. Incluye el informe generado y las notas clínicas. Puede modificarlo libremente."
                       data-testid="input-medical-report"
                     />
                     <p className="text-xs text-muted-foreground mt-2">
-                      Este informe fue generado a partir de la grabación. Puede editarlo libremente antes de validar.
+                      Generado a partir de la grabación e incluye notas clínicas. Puede editarlo libremente antes de validar.
                     </p>
                   </div>
 
