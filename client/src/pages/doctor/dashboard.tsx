@@ -1,10 +1,17 @@
 import { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Link, useLocation } from "wouter";
 import {
   Calendar,
@@ -17,9 +24,15 @@ import {
   Users,
   AlertCircle,
   ClipboardCheck,
+  Play,
+  FileCheck,
+  Check,
+  X,
 } from "lucide-react";
 import { format, parseISO, isToday, addDays, subDays, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface DoctorStats {
   todayAppointments: number;
@@ -145,8 +158,10 @@ function timeToMinutes(time: string): number {
 
 export default function DoctorDashboard() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [, navigate] = useLocation();
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedAppt, setSelectedAppt] = useState<AppointmentWithPatient | null>(null);
 
   const { data: stats, isLoading: loadingStats } = useQuery<DoctorStats>({
     queryKey: ["/api/doctors/me/stats"],
@@ -154,6 +169,22 @@ export default function DoctorDashboard() {
 
   const { data: appointments, isLoading: loadingAppointments } = useQuery<AppointmentWithPatient[]>({
     queryKey: ["/api/doctors/me/appointments"],
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      const response = await apiRequest("PATCH", `/api/appointments/${id}/status`, { status });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/doctors/me/appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/doctors/me/stats"] });
+      setSelectedAppt(null);
+      toast({ title: "Estado actualizado", description: "La cita ha sido actualizada correctamente" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "No se pudo actualizar el estado", variant: "destructive" });
+    },
   });
 
   const todayAppts = useMemo(() => {
@@ -182,13 +213,7 @@ export default function DoctorDashboard() {
   const isTodaySelected = isToday(selectedDate);
 
   const handleAppointmentClick = (appt: AppointmentWithPatient) => {
-    if (appt.status === "pending_validation") {
-      navigate(`/doctor/consultation/${appt.id}/validate`);
-    } else if (appt.status === "in_progress") {
-      navigate(`/consultation/${appt.id}`);
-    } else if (appt.status === "scheduled" || appt.status === "confirmed") {
-      navigate(`/doctor/appointments`);
-    }
+    setSelectedAppt(appt);
   };
 
   const completedToday = todayAppts.filter(a => a.status === "completed" || a.status === "pending_validation").length;
@@ -310,7 +335,7 @@ export default function DoctorDashboard() {
                         const cfg = getStatusConfig(appt.status);
                         const duration = appt.durationMinutes || 30;
                         const endTime = getEndTime(appt.scheduledTime, duration);
-                        const isClickable = ["scheduled", "confirmed", "in_progress", "pending_validation"].includes(appt.status);
+                        const isClickable = ["scheduled", "confirmed", "in_progress", "pending_validation", "completed"].includes(appt.status);
                         return (
                           <div
                             key={appt.id}
@@ -389,6 +414,117 @@ export default function DoctorDashboard() {
           </span>
         ))}
       </div>
+
+      <Dialog open={selectedAppt !== null} onOpenChange={(open) => { if (!open) setSelectedAppt(null); }}>
+        <DialogContent className="max-w-md" data-testid="appointment-detail-modal">
+          <DialogHeader>
+            <DialogTitle className="text-lg">Detalle de Cita</DialogTitle>
+          </DialogHeader>
+          {selectedAppt && (() => {
+            const cfg = getStatusConfig(selectedAppt.status);
+            const canConfirm = selectedAppt.status === "scheduled";
+            const canStart = selectedAppt.status === "confirmed";
+            const canValidate = selectedAppt.status === "pending_validation";
+            const isInProgress = selectedAppt.status === "in_progress";
+            const isCompleted = selectedAppt.status === "completed";
+            return (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-12 w-12">
+                    <AvatarImage src={selectedAppt.patientImage} />
+                    <AvatarFallback className="bg-secondary/10 text-secondary">
+                      {selectedAppt.patientName?.split(" ").map(n => n[0]).join("") || "P"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-base" data-testid="modal-patient-name">{selectedAppt.patientName}</p>
+                    <Badge variant="outline" className={`text-xs ${cfg.color}`} data-testid="modal-status-badge">
+                      {cfg.label}
+                    </Badge>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-3 space-y-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <span data-testid="modal-date">
+                      {format(parseISO(selectedAppt.scheduledDate), "EEEE d 'de' MMMM, yyyy", { locale: es })}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    <span data-testid="modal-time">
+                      {selectedAppt.scheduledTime.slice(0, 5)} ({selectedAppt.durationMinutes || 30} min)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {selectedAppt.consultationType === "video" ? (
+                      <Video className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Phone className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    <span data-testid="modal-type">
+                      {selectedAppt.consultationType === "video" ? "Videollamada" : "Llamada telefónica"}
+                    </span>
+                  </div>
+                </div>
+
+                {selectedAppt.notes && (
+                  <div className="rounded-lg bg-muted/50 p-3">
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Motivo de consulta</p>
+                    <p className="text-sm" data-testid="modal-notes">{selectedAppt.notes}</p>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-2 pt-1">
+                  {canValidate && (
+                    <Button className="w-full" onClick={() => navigate(`/doctor/consultation/${selectedAppt.id}/validate`)} data-testid="modal-button-validate">
+                      <FileCheck className="h-4 w-4 mr-2" />
+                      Validar Consulta
+                    </Button>
+                  )}
+                  {(canStart || isInProgress) && (
+                    <Button className="w-full" onClick={() => navigate(`/consultation/${selectedAppt.id}`)} data-testid="modal-button-join">
+                      <Play className="h-4 w-4 mr-2" />
+                      {isInProgress ? "Unirse a Consulta" : "Iniciar Consulta"}
+                    </Button>
+                  )}
+                  {canConfirm && (
+                    <Button
+                      className="w-full"
+                      variant="outline"
+                      onClick={() => updateStatusMutation.mutate({ id: selectedAppt.id, status: "confirmed" })}
+                      disabled={updateStatusMutation.isPending}
+                      data-testid="modal-button-confirm"
+                    >
+                      <Check className="h-4 w-4 mr-2" />
+                      Confirmar Cita
+                    </Button>
+                  )}
+                  {isCompleted && (
+                    <Button className="w-full" variant="outline" onClick={() => navigate(`/doctor/appointments`)} data-testid="modal-button-history">
+                      <ClipboardCheck className="h-4 w-4 mr-2" />
+                      Ver en historial
+                    </Button>
+                  )}
+                  {(canConfirm || canStart) && (
+                    <Button
+                      variant="ghost"
+                      className="w-full text-destructive hover:text-destructive"
+                      onClick={() => updateStatusMutation.mutate({ id: selectedAppt.id, status: "cancelled" })}
+                      disabled={updateStatusMutation.isPending}
+                      data-testid="modal-button-cancel"
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Cancelar Cita
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

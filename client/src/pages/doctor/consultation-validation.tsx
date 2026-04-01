@@ -189,6 +189,111 @@ const PRIORITY_LABELS: Record<string, string> = {
   urgent: "Urgente",
 };
 
+function AlertWarningDialog({ isOpen, onOpenChange, onConfirm, alerts }: {
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  alerts: { type: string; title: string; description: string; severity: number; probability: number; category: string }[];
+}) {
+  const [countdown, setCountdown] = useState(0);
+  const highSeverityAlerts = alerts.filter(a => (a.type === "error" || a.type === "warning") && (a.severity >= 0.6 || a.probability >= 0.6));
+  const hasHighAlerts = highSeverityAlerts.length > 0;
+
+  useEffect(() => {
+    if (isOpen && hasHighAlerts) {
+      setCountdown(5);
+      const timer = setInterval(() => {
+        setCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    } else {
+      setCountdown(0);
+    }
+  }, [isOpen, hasHighAlerts]);
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {hasHighAlerts ? (
+              <>
+                <AlertTriangle className="h-5 w-5 text-orange-500" />
+                Advertencias detectadas
+              </>
+            ) : (
+              <>
+                <Check className="h-5 w-5" />
+                ¿Confirmar validación?
+              </>
+            )}
+          </DialogTitle>
+        </DialogHeader>
+        {hasHighAlerts ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Se detectaron las siguientes alertas importantes. Revísalas antes de continuar:
+            </p>
+            <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+              {highSeverityAlerts.map((alert, i) => (
+                <div
+                  key={i}
+                  className={`rounded-lg border p-3 text-xs ${
+                    alert.type === "error"
+                      ? "border-destructive/50 bg-destructive/5"
+                      : "border-orange-500/50 bg-orange-500/5"
+                  }`}
+                  data-testid={`warning-dialog-alert-${i}`}
+                >
+                  <div className="flex items-start gap-2">
+                    {alert.type === "error" ? (
+                      <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 text-orange-500 flex-shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <p className="font-semibold">{alert.title}</p>
+                      <p className="text-muted-foreground mt-0.5">{alert.description}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground italic">
+              Al continuar, confirmas que has revisado estas advertencias.
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Esta acción guardará el registro clínico, la receta y las indicaciones de forma permanente.
+          </p>
+        )}
+        <div className="flex justify-end gap-3 pt-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel-dialog">
+            No, revisar
+          </Button>
+          <Button
+            onClick={onConfirm}
+            disabled={hasHighAlerts && countdown > 0}
+            variant={hasHighAlerts ? "destructive" : "default"}
+            data-testid="button-confirm-dialog"
+          >
+            {hasHighAlerts && countdown > 0
+              ? `Espere (${countdown}s)`
+              : "Sí, terminar"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function ConsultationValidationPage() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
@@ -837,17 +942,14 @@ export default function ConsultationValidationPage() {
         </div>
       </div>
 
-      <ConfirmDialog
+      <AlertWarningDialog
         isOpen={isConfirmOpen}
         onOpenChange={setIsConfirmOpen}
         onConfirm={() => {
           setIsConfirmOpen(false);
           validateMutation.mutate();
         }}
-        title="¿Estás seguro que quieres terminar la consulta?"
-        description="Esta acción guardará el registro clínico, la receta y las indicaciones de forma permanente."
-        confirmText="Sí, terminar"
-        cancelText="No, revisar"
+        alerts={clinicalAlerts}
       />
 
       <Dialog open={pdfPreviewOpen} onOpenChange={(open) => {

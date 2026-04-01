@@ -56,115 +56,76 @@ function AppointmentCard({ appointment, onStatusChange, onOpenSummary }: {
     : `/consultation/${appointment.id}`;
 
   return (
-    <Card 
-      className="hover-elevate cursor-pointer" 
+    <div
+      className="flex items-center gap-3 px-4 py-3 rounded-lg border bg-card hover:bg-muted/50 cursor-pointer transition-colors"
       data-testid={`appointment-${appointment.id}`}
       onClick={() => isSummaryView ? onOpenSummary(appointment.id) : navigate(detailsUrl)}
     >
-      <CardContent className="p-4 sm:p-6">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <Avatar className="h-14 w-14 sm:h-16 sm:w-16 flex-shrink-0">
-            <AvatarImage src={appointment.patientImage} />
-            <AvatarFallback className="bg-secondary/10 text-secondary text-lg">
-              {appointment.patientName?.split(" ").map(n => n[0]).join("") || "P"}
-            </AvatarFallback>
-          </Avatar>
-          
-          <div className="flex-1 min-w-0 space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
-              <div>
-                <h3 className="font-semibold text-lg" data-testid={`text-patient-name-${appointment.id}`}>
-                  {appointment.patientName}
-                </h3>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                {getStatusBadge(appointment.status)}
-              </div>
-            </div>
+      <Avatar className="h-9 w-9 flex-shrink-0">
+        <AvatarImage src={appointment.patientImage} />
+        <AvatarFallback className="bg-secondary/10 text-secondary text-xs">
+          {appointment.patientName?.split(" ").map(n => n[0]).join("") || "P"}
+        </AvatarFallback>
+      </Avatar>
 
-            <div className="flex flex-wrap gap-4 text-sm">
-              <div className="flex items-center gap-1.5">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <span data-testid={`text-date-${appointment.id}`}>
-                  {format(parseISO(appointment.scheduledDate), "EEEE d 'de' MMMM, yyyy", { locale: es })}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Clock className="h-4 w-4 text-muted-foreground" />
-                <span data-testid={`text-time-${appointment.id}`}>
-                  {appointment.scheduledTime.slice(0, 5)} ({appointment.durationMinutes} min)
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                {appointment.consultationType === "video" ? (
-                  <Video className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <Phone className="h-4 w-4 text-muted-foreground" />
-                )}
-                <span data-testid={`text-type-${appointment.id}`}>
-                  {appointment.consultationType === "video" ? "Videollamada" : "Llamada"}
-                </span>
-              </div>
-            </div>
-
-            {appointment.notes && (
-              <p className="text-sm text-muted-foreground bg-muted/50 rounded-md p-2">
-                {appointment.notes}
-              </p>
-            )}
-
-            <div className="flex flex-wrap gap-2 pt-2" onClick={(e) => e.stopPropagation()}>
-              {canValidate && (
-                <Button asChild data-testid={`button-validate-${appointment.id}`}>
-                  <Link href={`/doctor/consultation/${appointment.id}/validate`}>
-                    <FileCheck className="h-4 w-4 mr-2" />
-                    Validar Consulta
-                  </Link>
-                </Button>
-              )}
-              {canStart && (
-                <Button asChild data-testid={`button-start-${appointment.id}`}>
-                  <Link href={`/consultation/${appointment.id}`}>
-                    <Play className="h-4 w-4 mr-2" />
-                    Iniciar Consulta
-                  </Link>
-                </Button>
-              )}
-              {canConfirm && (
-                <Button 
-                  variant="outline" 
-                  onClick={() => onStatusChange(appointment.id, "confirmed")}
-                  data-testid={`button-confirm-${appointment.id}`}
-                >
-                  <Check className="h-4 w-4 mr-2" />
-                  Confirmar
-                </Button>
-              )}
-              {canCancel && (
-                <Button 
-                  variant="outline" 
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => onStatusChange(appointment.id, "cancelled")}
-                  data-testid={`button-cancel-${appointment.id}`}
-                >
-                  <X className="h-4 w-4 mr-2" />
-                  Cancelar
-                </Button>
-              )}
-              {appointment.status === "completed" && (
-                <Button 
-                  variant="outline" 
-                  onClick={() => onOpenSummary(appointment.id)}
-                  data-testid={`button-summary-${appointment.id}`}
-                >
-                  Ver resumen
-                </Button>
-              )}
-            </div>
-          </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-sm truncate" data-testid={`text-patient-name-${appointment.id}`}>
+            {appointment.patientName}
+          </span>
+          {getStatusBadge(appointment.status)}
         </div>
-      </CardContent>
-    </Card>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+          <span className="flex items-center gap-1" data-testid={`text-date-${appointment.id}`}>
+            <Calendar className="h-3 w-3" />
+            {format(parseISO(appointment.scheduledDate), "d MMM yyyy", { locale: es })}
+          </span>
+          <span className="flex items-center gap-1" data-testid={`text-time-${appointment.id}`}>
+            <Clock className="h-3 w-3" />
+            {appointment.scheduledTime.slice(0, 5)}
+          </span>
+          <span className="flex items-center gap-1" data-testid={`text-type-${appointment.id}`}>
+            {appointment.consultationType === "video" ? <Video className="h-3 w-3" /> : <Phone className="h-3 w-3" />}
+            {appointment.durationMinutes} min
+          </span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+        {canValidate && (
+          <Button size="sm" asChild data-testid={`button-validate-${appointment.id}`}>
+            <Link href={`/doctor/consultation/${appointment.id}/validate`}>
+              <FileCheck className="h-3.5 w-3.5 mr-1" />
+              Validar
+            </Link>
+          </Button>
+        )}
+        {canStart && (
+          <Button size="sm" asChild data-testid={`button-start-${appointment.id}`}>
+            <Link href={`/consultation/${appointment.id}`}>
+              <Play className="h-3.5 w-3.5 mr-1" />
+              Iniciar
+            </Link>
+          </Button>
+        )}
+        {canConfirm && (
+          <Button size="sm" variant="outline" onClick={() => onStatusChange(appointment.id, "confirmed")} data-testid={`button-confirm-${appointment.id}`}>
+            <Check className="h-3.5 w-3.5 mr-1" />
+            Confirmar
+          </Button>
+        )}
+        {canCancel && (
+          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => onStatusChange(appointment.id, "cancelled")} data-testid={`button-cancel-${appointment.id}`}>
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        )}
+        {appointment.status === "completed" && (
+          <Button size="sm" variant="outline" onClick={() => onOpenSummary(appointment.id)} data-testid={`button-summary-${appointment.id}`}>
+            Ver resumen
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -218,44 +179,41 @@ export default function DoctorAppointmentsPage() {
   const renderAppointmentList = (list: AppointmentWithPatient[]) => {
     if (isLoading) {
       return (
-        <>
-          {[1, 2].map((i) => (
-            <Card key={i}>
-              <CardContent className="p-6">
-                <div className="flex gap-4">
-                  <Skeleton className="h-16 w-16 rounded-full" />
-                  <div className="flex-1 space-y-3">
-                    <Skeleton className="h-5 w-48" />
-                    <Skeleton className="h-4 w-32" />
-                    <Skeleton className="h-4 w-64" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+        <div className="space-y-2">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-lg border">
+              <Skeleton className="h-9 w-9 rounded-full" />
+              <div className="flex-1 space-y-1.5">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-3 w-56" />
+              </div>
+            </div>
           ))}
-        </>
+        </div>
       );
     }
 
     if (list.length === 0) {
       return (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">No hay citas en esta categoría</p>
-          </CardContent>
-        </Card>
+        <div className="py-8 text-center text-muted-foreground">
+          <Users className="h-10 w-10 mx-auto mb-3 opacity-50" />
+          <p className="text-sm">No hay citas en esta categoría</p>
+        </div>
       );
     }
 
-    return list.map((appointment) => (
-      <AppointmentCard 
-        key={appointment.id} 
-        appointment={appointment} 
-        onStatusChange={handleStatusChange}
-        onOpenSummary={setSummaryId}
-      />
-    ));
+    return (
+      <div className="max-h-[70vh] overflow-y-auto space-y-1.5 pr-1">
+        {list.map((appointment) => (
+          <AppointmentCard 
+            key={appointment.id} 
+            appointment={appointment} 
+            onStatusChange={handleStatusChange}
+            onOpenSummary={setSummaryId}
+          />
+        ))}
+      </div>
+    );
   };
 
   return (
