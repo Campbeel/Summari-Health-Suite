@@ -301,7 +301,6 @@ export default function ConsultationValidationPage() {
 
   const [chiefComplaint, setChiefComplaint] = useState("");
   const [symptoms, setSymptoms] = useState<string[]>([]);
-  const [symptomInput, setSymptomInput] = useState("");
   const [diagnosis, setDiagnosis] = useState("");
   const [clinicalNotes, setClinicalNotes] = useState("");
 
@@ -582,16 +581,6 @@ export default function ConsultationValidationPage() {
     },
   });
 
-  const addSymptom = () => {
-    if (symptomInput.trim()) {
-      setSymptoms(prev => [...prev, symptomInput.trim()]);
-      setSymptomInput("");
-    }
-  };
-
-  const removeSymptom = (index: number) => {
-    setSymptoms(prev => prev.filter((_, i) => i !== index));
-  };
 
   const addMedication = () => {
     setMedications(prev => [...prev, {
@@ -1087,48 +1076,24 @@ export default function ConsultationValidationPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="chiefComplaint" data-testid="label-chief-complaint">Motivo de consulta</Label>
-                    <Textarea
-                      id="chiefComplaint"
-                      value={chiefComplaint}
-                      onChange={(e) => setChiefComplaint(e.target.value)}
-                      placeholder="Describe el motivo principal de la consulta..."
-                      className="mt-1.5"
-                      data-testid="input-chief-complaint"
-                    />
-                  </div>
+                  {chiefComplaint && (
+                    <div className="rounded-lg bg-muted/50 p-3">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Motivo de consulta</p>
+                      <p className="text-sm" data-testid="text-chief-complaint">{chiefComplaint}</p>
+                    </div>
+                  )}
 
                   <div>
-                    <Label data-testid="label-symptoms">Síntomas</Label>
-                    <div className="flex gap-2 mt-1.5">
-                      <Input
-                        value={symptomInput}
-                        onChange={(e) => setSymptomInput(e.target.value)}
-                        placeholder="Agregar síntoma..."
-                        onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addSymptom())}
-                        data-testid="input-symptom"
-                      />
-                      <Button variant="outline" size="icon" onClick={addSymptom} data-testid="button-add-symptom">
-                        <Plus className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    {symptoms.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {symptoms.map((symptom, i) => (
-                          <Badge
-                            key={i}
-                            variant="secondary"
-                            className="cursor-pointer"
-                            onClick={() => removeSymptom(i)}
-                            data-testid={`badge-symptom-${i}`}
-                          >
-                            {symptom}
-                            <Trash2 className="h-3 w-3 ml-1" />
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
+                    <Textarea
+                      value={medicalReportText}
+                      onChange={(e) => setMedicalReportText(e.target.value)}
+                      className="min-h-[450px] text-sm font-mono resize-y overflow-y-auto"
+                      placeholder="El informe médico aparecerá aquí después de la consulta. Puede modificarlo libremente."
+                      data-testid="input-medical-report"
+                    />
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Este informe fue generado a partir de la grabación. Puede editarlo libremente antes de validar.
+                    </p>
                   </div>
 
                   <div>
@@ -1266,18 +1231,6 @@ export default function ConsultationValidationPage() {
                         Sin diagnóstico GES asociado. Use el botón de búsqueda para agregar uno.
                       </p>
                     )}
-                  </div>
-
-                  <div>
-                    <Label htmlFor="clinicalNotes" data-testid="label-notes">Notas clínicas</Label>
-                    <Textarea
-                      id="clinicalNotes"
-                      value={clinicalNotes}
-                      onChange={(e) => setClinicalNotes(e.target.value)}
-                      placeholder="Notas adicionales..."
-                      className="mt-1.5"
-                      data-testid="input-clinical-notes"
-                    />
                   </div>
                 </CardContent>
               </Card>
@@ -1430,32 +1383,6 @@ export default function ConsultationValidationPage() {
         <div className="space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
           <Card className="overflow-hidden">
             <ClinicalAssistant appointmentId={id!} className="h-[350px]" />
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Informe Médico
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {medicalReportText || validationData.clinicalRecord.medicalReport ? (
-                <Textarea
-                  value={medicalReportText}
-                  onChange={(e) => setMedicalReportText(e.target.value)}
-                  className="min-h-[400px] max-h-[600px] text-xs font-mono resize-y overflow-y-auto"
-                  placeholder="El informe médico aparecerá aquí después de la consulta. Puede modificarlo libremente."
-                  data-testid="input-medical-report"
-                />
-              ) : (
-                <div className="text-center py-4 text-muted-foreground" data-testid="medical-report-empty">
-                  <FileText className="h-6 w-6 mx-auto mb-1 opacity-50" />
-                  <p className="text-sm">No hay informe médico disponible</p>
-                  <p className="text-xs mt-1">El informe se genera automáticamente a partir de la grabación de la consulta</p>
-                </div>
-              )}
-            </CardContent>
           </Card>
 
           <Card>
