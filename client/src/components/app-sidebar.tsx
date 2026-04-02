@@ -1,9 +1,20 @@
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useDoctor, type UserRole } from "@/hooks/use-doctor";
 import { useAdmin } from "@/hooks/use-admin";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Sidebar,
   SidebarContent,
@@ -63,19 +74,28 @@ export function AppSidebar() {
   const { isDoctor, currentRole, switchRole } = useDoctor();
   const { isAdmin } = useAdmin();
   const [location, navigate] = useLocation();
+  const [pendingRoleSwitch, setPendingRoleSwitch] = useState<"patient" | "doctor" | null>(null);
 
   const handleRoleSwitch = (role: "patient" | "doctor") => {
-    switchRole(role);
-    if (role === "doctor") {
+    if (role === currentRole) return;
+    setPendingRoleSwitch(role);
+  };
+
+  const confirmRoleSwitch = () => {
+    if (!pendingRoleSwitch) return;
+    switchRole(pendingRoleSwitch);
+    if (pendingRoleSwitch === "doctor") {
       navigate("/doctor/dashboard");
     } else {
       navigate("/");
     }
+    setPendingRoleSwitch(null);
   };
 
   const menuItems = currentRole === "doctor" ? doctorMenuItems : patientMenuItems;
 
   return (
+    <>
     <Sidebar>
       <SidebarHeader className="p-4">
         <Link href="/" className="flex items-center gap-3" data-testid="link-sidebar-home">
@@ -215,5 +235,25 @@ export function AppSidebar() {
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
+
+    <AlertDialog open={pendingRoleSwitch !== null} onOpenChange={(open) => { if (!open) setPendingRoleSwitch(null); }}>
+      <AlertDialogContent data-testid="dialog-role-switch">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Cambiar de vista</AlertDialogTitle>
+          <AlertDialogDescription>
+            {pendingRoleSwitch === "doctor"
+              ? "Vas a cambiar a la vista de Médico. Tu navegación actual se perderá."
+              : "Vas a cambiar a la vista de Paciente. Tu navegación actual se perderá."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel data-testid="button-cancel-role-switch">Cancelar</AlertDialogCancel>
+          <AlertDialogAction onClick={confirmRoleSwitch} data-testid="button-confirm-role-switch">
+            Cambiar a {pendingRoleSwitch === "doctor" ? "Médico" : "Paciente"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }

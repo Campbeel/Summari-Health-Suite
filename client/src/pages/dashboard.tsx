@@ -282,11 +282,17 @@ export default function Dashboard() {
                   </div>
                 ))
               ) : (
-                <div className="text-center py-8">
-                  <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <div className="text-center py-8 space-y-4">
+                  <Calendar className="h-12 w-12 text-muted-foreground mx-auto" />
                   <p className="text-muted-foreground">
                     No tienes consultas programadas
                   </p>
+                  <Button asChild data-testid="button-book-empty-state">
+                    <Link href="/appointments/new">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Agendar consulta
+                    </Link>
+                  </Button>
                 </div>
               )}
             </CardContent>

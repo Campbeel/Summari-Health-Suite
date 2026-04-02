@@ -110,10 +110,10 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   },
   pending_validation: {
     label: "Pendiente validación",
-    color: "text-amber-700 dark:text-amber-300",
-    bg: "bg-amber-50 dark:bg-amber-950/50",
-    darkBg: "bg-amber-100 dark:bg-amber-900",
-    barColor: "bg-amber-500",
+    color: "text-violet-700 dark:text-violet-300",
+    bg: "bg-violet-50 dark:bg-violet-950/50",
+    darkBg: "bg-violet-100 dark:bg-violet-900",
+    barColor: "bg-violet-500",
   },
   cancelled: {
     label: "Cancelada",

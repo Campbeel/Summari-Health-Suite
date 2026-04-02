@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,6 +59,12 @@ export default function ConsultationFeedbackPage() {
   const [platformRating, setPlatformRating] = useState(0);
   const [platformComment, setPlatformComment] = useState("");
   const [submitted, setSubmitted] = useState(false);
+
+  useEffect(() => {
+    if (!submitted) return;
+    const timer = setTimeout(() => navigate("/appointments"), 15000);
+    return () => clearTimeout(timer);
+  }, [submitted, navigate]);
 
   const submitMutation = useMutation({
     mutationFn: async () => {
@@ -139,6 +145,9 @@ export default function ConsultationFeedbackPage() {
               <ArrowLeft className="h-4 w-4 mr-2" />
               Ir a mis consultas
             </Button>
+            <p className="text-xs text-muted-foreground" data-testid="text-auto-redirect">
+              Serás redirigido automáticamente en unos segundos...
+            </p>
           </div>
         </div>
       </div>

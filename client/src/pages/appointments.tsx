@@ -11,7 +11,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Link, useLocation } from "wouter";
-import { Calendar, Clock, Plus, Video, Phone, CreditCard, Loader2, CalendarClock, RotateCcw, CircleDot } from "lucide-react";
+import { Calendar, Clock, Plus, Video, Phone, CreditCard, Loader2, CalendarClock, RotateCcw, CircleDot, MoreHorizontal } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { format, parseISO, isAfter, isBefore } from "date-fns";
 import { es } from "date-fns/locale";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -48,6 +54,7 @@ function getStatusBadge(status: string) {
     confirmed: { label: "Confirmada", variant: "default" },
     in_progress: { label: "En curso", variant: "default" },
     completed: { label: "Completada", variant: "secondary" },
+    pending_validation: { label: "En proceso", variant: "outline" },
     cancelled: { label: "Cancelada", variant: "destructive" },
   };
   const s = statusMap[status] || { label: status, variant: "outline" };
@@ -222,26 +229,6 @@ function AppointmentCard({
                   Pagar consulta
                 </Button>
               )}
-              {canReschedule && (
-                <Button 
-                  variant="outline" 
-                  onClick={() => onReschedule(appointment)}
-                  data-testid={`reschedule-appointment-${appointment.id}`}
-                >
-                  <CalendarClock className="h-4 w-4 mr-2" />
-                  Reagendar
-                </Button>
-              )}
-              {canRequestReimbursement && !reimbursementData && (
-                <Button 
-                  variant="outline" 
-                  onClick={() => onReimbursement(appointment)}
-                  data-testid={`reimbursement-appointment-${appointment.id}`}
-                >
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  Solicitar reembolso
-                </Button>
-              )}
               <Button 
                 variant="outline" 
                 onClick={() => isSummaryView ? onOpenSummary(appointment.id) : navigate(detailsUrl)}
@@ -249,6 +236,35 @@ function AppointmentCard({
               >
                 Ver detalles
               </Button>
+              {(canReschedule || (canRequestReimbursement && !reimbursementData)) && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" data-testid={`more-actions-${appointment.id}`}>
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {canReschedule && (
+                      <DropdownMenuItem 
+                        onClick={() => onReschedule(appointment)}
+                        data-testid={`reschedule-appointment-${appointment.id}`}
+                      >
+                        <CalendarClock className="h-4 w-4 mr-2" />
+                        Reagendar
+                      </DropdownMenuItem>
+                    )}
+                    {canRequestReimbursement && !reimbursementData && (
+                      <DropdownMenuItem 
+                        onClick={() => onReimbursement(appointment)}
+                        data-testid={`reimbursement-appointment-${appointment.id}`}
+                      >
+                        <RotateCcw className="h-4 w-4 mr-2" />
+                        Solicitar reembolso
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           </div>
         </div>
