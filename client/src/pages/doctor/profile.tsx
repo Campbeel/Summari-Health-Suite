@@ -18,11 +18,20 @@ import {
   FormMessage,
   FormDescription,
 } from "@/components/ui/form";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Save, DollarSign, Clock, Camera } from "lucide-react";
-import { useEffect } from "react";
+import { Save, DollarSign, Clock, Camera, FileText, Plus, Pencil, Trash2, Star, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import type { ReportTemplate } from "@shared/schema";
 
 const DAYS_OF_WEEK = [
   { key: "monday", label: "Lunes" },
@@ -481,6 +490,269 @@ export default function DoctorProfilePage() {
           </div>
         </CardContent>
       </Card>
+
+      <ReportTemplatesSection />
     </div>
+  );
+}
+
+function ReportTemplatesSection() {
+  const { toast } = useToast();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<ReportTemplate | null>(null);
+  const [templateName, setTemplateName] = useState("");
+  const [templatePrompt, setTemplatePrompt] = useState("");
+  const [templateIsDefault, setTemplateIsDefault] = useState(false);
+  const [loadingDefaultPrompt, setLoadingDefaultPrompt] = useState(false);
+
+  const { data: templates, isLoading } = useQuery<ReportTemplate[]>({
+    queryKey: ["/api/doctors/me/report-templates"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/doctors/me/report-templates", {
+        name: templateName,
+        prompt: templatePrompt,
+        isDefault: templateIsDefault,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/doctors/me/report-templates"] });
+      setDialogOpen(false);
+      resetForm();
+      toast({ title: "Plantilla creada", description: "La plantilla se ha guardado exitosamente" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "No se pudo crear la plantilla", variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingTemplate) return;
+      const res = await apiRequest("PUT", `/api/doctors/me/report-templates/${editingTemplate.id}`, {
+        name: templateName,
+        prompt: templatePrompt,
+        isDefault: templateIsDefault,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/doctors/me/report-templates"] });
+      setDialogOpen(false);
+      resetForm();
+      toast({ title: "Plantilla actualizada", description: "Los cambios se han guardado" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "No se pudo actualizar la plantilla", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/doctors/me/report-templates/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/doctors/me/report-templates"] });
+      toast({ title: "Plantilla eliminada" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "No se pudo eliminar la plantilla", variant: "destructive" });
+    },
+  });
+
+  const resetForm = () => {
+    setTemplateName("");
+    setTemplatePrompt("");
+    setTemplateIsDefault(false);
+    setEditingTemplate(null);
+  };
+
+  const handleNew = async () => {
+    resetForm();
+    setLoadingDefaultPrompt(true);
+    try {
+      const res = await apiRequest("GET", "/api/doctors/me/report-templates/default-prompt");
+      const data = await res.json();
+      setTemplatePrompt(data.prompt);
+    } catch {
+      setTemplatePrompt("");
+    }
+    setLoadingDefaultPrompt(false);
+    setDialogOpen(true);
+  };
+
+  const handleEdit = (template: ReportTemplate) => {
+    setEditingTemplate(template);
+    setTemplateName(template.name);
+    setTemplatePrompt(template.prompt);
+    setTemplateIsDefault(template.isDefault);
+    setDialogOpen(true);
+  };
+
+  const handleSave = () => {
+    if (editingTemplate) {
+      updateMutation.mutate();
+    } else {
+      createMutation.mutate();
+    }
+  };
+
+  const isSaving = createMutation.isPending || updateMutation.isPending;
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Plantillas de Informe Médico
+              </CardTitle>
+              <CardDescription className="mt-1">
+                Personaliza cómo se genera el informe médico al final de cada consulta. La plantilla marcada como predeterminada se usará automáticamente.
+              </CardDescription>
+            </div>
+            <Button onClick={handleNew} size="sm" data-testid="button-new-template">
+              <Plus className="h-4 w-4 mr-1" />
+              Nueva
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </div>
+          ) : !templates?.length ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No tienes plantillas personalizadas.</p>
+              <p className="text-xs mt-1">Se usará la plantilla predeterminada del sistema.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {templates.map((template) => (
+                <div
+                  key={template.id}
+                  className="flex items-center justify-between p-3 rounded-lg border bg-card"
+                  data-testid={`template-row-${template.id}`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium truncate">{template.name}</p>
+                        {template.isDefault && (
+                          <Badge variant="secondary" className="text-[10px] shrink-0">
+                            <Star className="h-3 w-3 mr-0.5 fill-current" />
+                            Predeterminada
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">
+                        {template.prompt.substring(0, 80)}...
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 ml-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => handleEdit(template)}
+                      data-testid={`button-edit-template-${template.id}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={() => deleteMutation.mutate(template.id)}
+                      disabled={deleteMutation.isPending}
+                      data-testid={`button-delete-template-${template.id}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) { setDialogOpen(false); resetForm(); } else setDialogOpen(true); }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editingTemplate ? "Editar plantilla" : "Nueva plantilla de informe"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingTemplate
+                ? "Modifica el nombre o las instrucciones de la plantilla."
+                : "Crea una plantilla personalizada para generar informes médicos."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="text-sm font-medium">Nombre de la plantilla</label>
+              <Input
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder="Ej: Consulta general, Pediatría, Dermatología..."
+                className="mt-1.5"
+                data-testid="input-template-name"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={templateIsDefault}
+                onCheckedChange={setTemplateIsDefault}
+                data-testid="switch-template-default"
+              />
+              <label className="text-sm">Usar como plantilla predeterminada</label>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Instrucciones para la IA</label>
+              <p className="text-xs text-muted-foreground mt-0.5 mb-1.5">
+                Describe las secciones, formato y estilo que deseas en el informe. La IA seguirá estas instrucciones al procesar la transcripción de la consulta.
+              </p>
+              {loadingDefaultPrompt ? (
+                <div className="flex items-center justify-center h-[300px] border rounded-md">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <Textarea
+                  value={templatePrompt}
+                  onChange={(e) => setTemplatePrompt(e.target.value)}
+                  className="min-h-[300px] text-sm font-mono resize-y"
+                  placeholder="Instrucciones para generar el informe médico..."
+                  data-testid="input-template-prompt"
+                />
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDialogOpen(false); resetForm(); }}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!templateName.trim() || !templatePrompt.trim() || isSaving}
+              data-testid="button-save-template"
+            >
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+              {editingTemplate ? "Guardar cambios" : "Crear plantilla"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

@@ -41,6 +41,9 @@ import {
   type InsertReimbursementRequest,
   ges,
   type GesDiagnosis,
+  reportTemplates,
+  type ReportTemplate,
+  type InsertReportTemplate,
 } from "@shared/schema";
 import { eq, and, gte, lte, desc, sql, notInArray } from "drizzle-orm";
 
@@ -353,6 +356,13 @@ export interface IStorage {
   getReimbursementRequestsByPatient(patientId: number): Promise<ReimbursementRequest[]>;
   getReimbursementRequestByAppointment(appointmentId: number): Promise<ReimbursementRequest | undefined>;
   updateReimbursementRequest(id: number, data: Partial<InsertReimbursementRequest>): Promise<ReimbursementRequest>;
+
+  // Report Templates
+  getReportTemplatesByDoctor(doctorId: number): Promise<ReportTemplate[]>;
+  getReportTemplate(id: number): Promise<ReportTemplate | undefined>;
+  createReportTemplate(template: InsertReportTemplate): Promise<ReportTemplate>;
+  updateReportTemplate(id: number, data: Partial<InsertReportTemplate>): Promise<ReportTemplate>;
+  deleteReportTemplate(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1347,6 +1357,47 @@ export class DatabaseStorage implements IStorage {
       codigoCie10: r["código_cie-10"],
       descriptor: r.descriptor,
     }));
+  }
+
+  async getReportTemplatesByDoctor(doctorId: number): Promise<ReportTemplate[]> {
+    return db.select().from(reportTemplates)
+      .where(eq(reportTemplates.doctorId, doctorId))
+      .orderBy(desc(reportTemplates.isDefault), reportTemplates.name);
+  }
+
+  async getReportTemplate(id: number): Promise<ReportTemplate | undefined> {
+    const [template] = await db.select().from(reportTemplates).where(eq(reportTemplates.id, id));
+    return template;
+  }
+
+  async createReportTemplate(template: InsertReportTemplate): Promise<ReportTemplate> {
+    if (template.isDefault) {
+      await db.update(reportTemplates)
+        .set({ isDefault: false })
+        .where(eq(reportTemplates.doctorId, template.doctorId));
+    }
+    const [created] = await db.insert(reportTemplates).values(template).returning();
+    return created;
+  }
+
+  async updateReportTemplate(id: number, data: Partial<InsertReportTemplate>): Promise<ReportTemplate> {
+    if (data.isDefault) {
+      const existing = await this.getReportTemplate(id);
+      if (existing) {
+        await db.update(reportTemplates)
+          .set({ isDefault: false })
+          .where(eq(reportTemplates.doctorId, existing.doctorId));
+      }
+    }
+    const [updated] = await db.update(reportTemplates)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(reportTemplates.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteReportTemplate(id: number): Promise<void> {
+    await db.delete(reportTemplates).where(eq(reportTemplates.id, id));
   }
 }
 

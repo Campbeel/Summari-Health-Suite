@@ -383,14 +383,7 @@ export interface MedicalReport {
   };
 }
 
-export async function generateMedicalReport(transcript: string): Promise<MedicalReport | null> {
-  try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: `Eres un asistente médico experto que genera informes médicos detallados y estructurados.
+export const DEFAULT_REPORT_TEMPLATE_PROMPT = `Eres un asistente médico experto que genera informes médicos detallados y estructurados.
 Analiza la transcripción de la consulta y genera un informe estructurado.
 IMPORTANTE: NO incluyas información sensible o privada que no sea relevante para el registro médico. Omite comentarios personales, conversaciones casuales, o información que el paciente no haya querido que quede registrada.
 
@@ -445,7 +438,40 @@ El informe debe seguir este formato exacto en JSON:
 }
 
 Si no hay información suficiente para un campo, usa "No mencionado" o "No evaluado" según corresponda.
-Responde siempre en español. Devuelve SOLO el JSON sin texto adicional.`
+Responde siempre en español. Devuelve SOLO el JSON sin texto adicional.`;
+
+export async function generateMedicalReportWithTemplate(transcript: string, templatePrompt: string): Promise<string | null> {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: templatePrompt,
+        },
+        {
+          role: "user",
+          content: `Analiza esta transcripción de consulta médica y genera el informe médico:\n\n${transcript}`,
+        },
+      ],
+      temperature: 0.3,
+    });
+
+    return response.choices[0]?.message?.content || null;
+  } catch (error) {
+    console.error("Error generating medical report with template:", error);
+    return null;
+  }
+}
+
+export async function generateMedicalReport(transcript: string): Promise<MedicalReport | null> {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: DEFAULT_REPORT_TEMPLATE_PROMPT
         },
         {
           role: "user",

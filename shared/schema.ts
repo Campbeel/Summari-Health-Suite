@@ -456,3 +456,21 @@ export type ExamOrder = typeof examOrders.$inferSelect;
 export type InsertExamOrder = z.infer<typeof insertExamOrderSchema>;
 export type ConsultationMessage = typeof consultationMessages.$inferSelect;
 export type InsertConsultationMessage = z.infer<typeof insertConsultationMessageSchema>;
+
+export const reportTemplates = pgTable("report_templates", {
+  id: serial("id").primaryKey(),
+  doctorId: integer("doctor_id").notNull().references(() => doctors.id),
+  name: text("name").notNull(),
+  prompt: text("prompt").notNull(),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertReportTemplateSchema = createInsertSchema(reportTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type ReportTemplate = typeof reportTemplates.$inferSelect;
+export type InsertReportTemplate = z.infer<typeof insertReportTemplateSchema>;

@@ -8,9 +8,9 @@ import fs from "fs";
 import { storage } from "./storage";
 import { isAuthenticated, registerAuthRoutes } from "./auth";
 import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText, verifyFlowSignature } from "./flow";
-import { transcribeAudio, transcribeAudioChunked, generatePrescriptionFromTranscript, generateFullConsultationSuggestions, generateMedicalReport, generateClinicalAlerts, generateAssistantWelcome, chatWithAssistant, type AssistantContext } from "./openai";
+import { transcribeAudio, transcribeAudioChunked, generatePrescriptionFromTranscript, generateFullConsultationSuggestions, generateMedicalReport, generateMedicalReportWithTemplate, DEFAULT_REPORT_TEMPLATE_PROMPT, generateClinicalAlerts, generateAssistantWelcome, chatWithAssistant, type AssistantContext } from "./openai";
 import { sendConsultationDocuments, sendPaymentReceiptEmail } from "./email";
-import { generateConsultationPdf, type PdfDocumentData } from "./pdf-generator";
+import { generateConsultationPdf, generateSeparateConsultationPdfs, type PdfDocumentData } from "./pdf-generator";
 import { getFitbitAuthUrl, getAndRemovePendingState, exchangeCodeForTokens, refreshFitbitTokens, fetchFitbitData } from "./fitbit";
 import {
   insertPatientSchema,
@@ -377,6 +377,84 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching patient exam orders:", error);
       res.status(500).json({ error: "Failed to fetch patient exam orders" });
+    }
+  });
+
+  app.get("/api/doctors/me/report-templates", isAuthenticated, async (req: any, res) => {
+    try {
+      const doctor = await storage.getDoctorByUserId(req.userId);
+      if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
+      const templates = await storage.getReportTemplatesByDoctor(doctor.id);
+      res.json(templates);
+    } catch (error) {
+      console.error("Error fetching report templates:", error);
+      res.status(500).json({ error: "Failed to fetch report templates" });
+    }
+  });
+
+  app.get("/api/doctors/me/report-templates/default-prompt", isAuthenticated, async (req: any, res) => {
+    try {
+      const doctor = await storage.getDoctorByUserId(req.userId);
+      if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
+      res.json({ prompt: DEFAULT_REPORT_TEMPLATE_PROMPT });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get default prompt" });
+    }
+  });
+
+  app.post("/api/doctors/me/report-templates", isAuthenticated, async (req: any, res) => {
+    try {
+      const doctor = await storage.getDoctorByUserId(req.userId);
+      if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
+      const { name, prompt, isDefault } = req.body;
+      if (!name || typeof name !== "string" || !name.trim()) return res.status(400).json({ error: "Name is required" });
+      if (!prompt || typeof prompt !== "string" || !prompt.trim()) return res.status(400).json({ error: "Prompt is required" });
+      if (name.trim().length > 200) return res.status(400).json({ error: "Name is too long" });
+      const template = await storage.createReportTemplate({
+        doctorId: doctor.id,
+        name,
+        prompt,
+        isDefault: isDefault || false,
+      });
+      res.json(template);
+    } catch (error) {
+      console.error("Error creating report template:", error);
+      res.status(500).json({ error: "Failed to create report template" });
+    }
+  });
+
+  app.put("/api/doctors/me/report-templates/:templateId", isAuthenticated, async (req: any, res) => {
+    try {
+      const doctor = await storage.getDoctorByUserId(req.userId);
+      if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
+      const templateId = parseInt(req.params.templateId);
+      const existing = await storage.getReportTemplate(templateId);
+      if (!existing || existing.doctorId !== doctor.id) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      const { name, prompt, isDefault } = req.body;
+      const updated = await storage.updateReportTemplate(templateId, { name, prompt, isDefault });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating report template:", error);
+      res.status(500).json({ error: "Failed to update report template" });
+    }
+  });
+
+  app.delete("/api/doctors/me/report-templates/:templateId", isAuthenticated, async (req: any, res) => {
+    try {
+      const doctor = await storage.getDoctorByUserId(req.userId);
+      if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
+      const templateId = parseInt(req.params.templateId);
+      const existing = await storage.getReportTemplate(templateId);
+      if (!existing || existing.doctorId !== doctor.id) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      await storage.deleteReportTemplate(templateId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting report template:", error);
+      res.status(500).json({ error: "Failed to delete report template" });
     }
   });
 
@@ -1543,10 +1621,21 @@ export async function registerRoutes(
       if (transcription) {
         try {
           console.log(`[AI] Generating medical report for appointment ${appointmentId}...`);
-          const medicalReport = await generateMedicalReport(transcription);
-          if (medicalReport) {
-            await storage.updateClinicalRecord(record.id, { medicalReport });
-            console.log(`[AI] Medical report generated and saved`);
+          const doctorTemplates = await storage.getReportTemplatesByDoctor(appointment.doctorId);
+          const defaultTemplate = doctorTemplates.find(t => t.isDefault);
+          
+          if (defaultTemplate) {
+            const reportText = await generateMedicalReportWithTemplate(transcription, defaultTemplate.prompt);
+            if (reportText) {
+              await storage.updateClinicalRecord(record.id, { medicalReport: { editedText: reportText, templateId: defaultTemplate.id, templateName: defaultTemplate.name } as any });
+              console.log(`[AI] Medical report generated with template "${defaultTemplate.name}" and saved`);
+            }
+          } else {
+            const medicalReport = await generateMedicalReport(transcription);
+            if (medicalReport) {
+              await storage.updateClinicalRecord(record.id, { medicalReport });
+              console.log(`[AI] Medical report generated with default format and saved`);
+            }
           }
         } catch (e) {
           console.error("[AI] Error generating medical report:", e);
@@ -1557,6 +1646,57 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error ending consultation:", error);
       res.status(500).json({ error: "Failed to end consultation" });
+    }
+  });
+
+  app.post("/api/consultations/:id/regenerate-report", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const userId = req.userId;
+      const { templateId } = req.body;
+      if (templateId != null && (typeof templateId !== "number" || isNaN(templateId) || templateId <= 0)) {
+        return res.status(400).json({ error: "Invalid template ID" });
+      }
+
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment) return res.status(404).json({ error: "Appointment not found" });
+
+      const doctor = await storage.getDoctorByUserId(userId);
+      if (!doctor || doctor.id !== appointment.doctorId) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const record = await storage.getClinicalRecordByAppointmentId(appointmentId);
+      if (!record || !record.transcription) {
+        return res.status(400).json({ error: "No transcription available for regeneration" });
+      }
+
+      let reportText: string | null = null;
+      let templateName: string | null = null;
+
+      if (templateId) {
+        const template = await storage.getReportTemplate(templateId);
+        if (!template || template.doctorId !== doctor.id) {
+          return res.status(404).json({ error: "Template not found" });
+        }
+        reportText = await generateMedicalReportWithTemplate(record.transcription, template.prompt);
+        templateName = template.name;
+      } else {
+        reportText = await generateMedicalReportWithTemplate(record.transcription, DEFAULT_REPORT_TEMPLATE_PROMPT);
+      }
+
+      if (reportText) {
+        const medicalReport = templateId
+          ? { editedText: reportText, templateId, templateName }
+          : { editedText: reportText };
+        await storage.updateClinicalRecord(record.id, { medicalReport: medicalReport as any });
+        res.json({ success: true, reportText });
+      } else {
+        res.status(500).json({ error: "Failed to generate report" });
+      }
+    } catch (error) {
+      console.error("Error regenerating report:", error);
+      res.status(500).json({ error: "Failed to regenerate report" });
     }
   });
 
@@ -1898,7 +2038,7 @@ export async function registerRoutes(
         documentTypes: requestedTypes,
       };
 
-      const pdfBuffer = await generateConsultationPdf(pdfData);
+      const pdfBuffers = await generateSeparateConsultationPdfs(pdfData);
 
       await sendConsultationDocuments({
         patientName,
@@ -1910,7 +2050,7 @@ export async function registerRoutes(
         medicalInstructions: hasInstructions ? medicalInstructionsList : undefined,
         examOrders: hasExams ? examOrdersData : null,
         documentTypes: requestedTypes,
-        pdfBuffer,
+        pdfBuffers,
       });
 
       res.json({ 

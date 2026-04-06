@@ -225,7 +225,13 @@ export default function ConsultationFeedbackPage() {
             </CardContent>
           </Card>
 
-          <div className="flex gap-3">
+          {doctorRating === 0 && (
+            <p className="text-sm text-amber-600 dark:text-amber-400 text-center" data-testid="text-rating-hint">
+              Selecciona al menos una estrella para enviar tu evaluación
+            </p>
+          )}
+
+          <div className="flex gap-3 sticky bottom-4 bg-background/95 backdrop-blur-sm p-3 -mx-3 rounded-lg shadow-lg border">
             <Button
               variant="outline"
               onClick={() => navigate("/appointments")}

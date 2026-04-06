@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,6 +56,14 @@ import {
   Shield,
 } from "lucide-react";
 import { ClinicalAssistant } from "@/components/clinical-assistant";
+import type { ReportTemplate } from "@shared/schema";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface Medication {
   name: string;
@@ -325,7 +333,30 @@ export default function ConsultationValidationPage() {
   const [pdfPreviewLoading, setPdfPreviewLoading] = useState(false);
 
   const [isInitialized, setIsInitialized] = useState(false);
-  
+  const [isRegenerating, setIsRegenerating] = useState(false);
+
+  const { data: reportTemplates } = useQuery<ReportTemplate[]>({
+    queryKey: ["/api/doctors/me/report-templates"],
+  });
+
+  const regenerateReport = useCallback(async (templateId?: number) => {
+    if (!id) return;
+    setIsRegenerating(true);
+    try {
+      const res = await apiRequest("POST", `/api/consultations/${id}/regenerate-report`, {
+        templateId: templateId || null,
+      });
+      const data = await res.json();
+      if (data.reportText) {
+        setMedicalReportText(data.reportText);
+        toast({ title: "Informe regenerado", description: templateId ? "Se aplicó la plantilla seleccionada" : "Se usó el formato predeterminado" });
+      }
+    } catch {
+      toast({ title: "Error", description: "No se pudo regenerar el informe", variant: "destructive" });
+    }
+    setIsRegenerating(false);
+  }, [id, toast]);
+
   interface ClinicalAlert {
     type: "error" | "warning" | "info";
     category: string;
@@ -1075,10 +1106,56 @@ export default function ConsultationValidationPage() {
             <TabsContent value="clinical" className="mt-4">
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <FileText className="h-5 w-5" />
-                    Anamnesis
-                  </CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <FileText className="h-5 w-5" />
+                      Anamnesis
+                    </CardTitle>
+                    {(validationData?.clinicalRecord as any)?.hasTranscription && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={isRegenerating}
+                            data-testid="button-regenerate-report"
+                          >
+                            {isRegenerating ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                            ) : (
+                              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                            )}
+                            Regenerar
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => regenerateReport()}
+                            data-testid="button-regenerate-default"
+                          >
+                            Formato predeterminado
+                          </DropdownMenuItem>
+                          {reportTemplates && reportTemplates.length > 0 && (
+                            <>
+                              <DropdownMenuSeparator />
+                              {reportTemplates.map((t) => (
+                                <DropdownMenuItem
+                                  key={t.id}
+                                  onClick={() => regenerateReport(t.id)}
+                                  data-testid={`button-regenerate-template-${t.id}`}
+                                >
+                                  {t.name}
+                                  {t.isDefault && (
+                                    <Badge variant="secondary" className="ml-2 text-[10px]">★</Badge>
+                                  )}
+                                </DropdownMenuItem>
+                              ))}
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {chiefComplaint && (

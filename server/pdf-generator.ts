@@ -284,6 +284,62 @@ function drawFooter(doc: PDFKit.PDFDocument) {
   );
 }
 
+const DOC_TITLES: Record<string, string> = {
+  prescription: 'Receta Médica',
+  instructions: 'Indicaciones Médicas',
+  exams: 'Órdenes de Exámenes',
+};
+
+function generateSinglePdf(data: PdfDocumentData, docType: 'prescription' | 'instructions' | 'exams'): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({
+      size: 'A4',
+      margins: { top: 40, bottom: 50, left: 40, right: 40 },
+      info: {
+        Title: `${DOC_TITLES[docType]} - ${data.patientName}`,
+        Author: data.doctorName,
+        Subject: DOC_TITLES[docType],
+        Creator: 'Summari Telemedicina',
+      },
+    });
+
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    drawHeader(doc, data);
+    drawDoctorPatientInfo(doc, data);
+
+    if (docType === 'prescription') drawPrescriptionSection(doc, data);
+    if (docType === 'instructions') drawInstructionsSection(doc, data);
+    if (docType === 'exams') drawExamOrdersSection(doc, data);
+
+    drawFooter(doc);
+    doc.end();
+  });
+}
+
+export async function generateSeparateConsultationPdfs(data: PdfDocumentData): Promise<{ type: string; filename: string; buffer: Buffer }[]> {
+  const results: { type: string; filename: string; buffer: Buffer }[] = [];
+  const dateSlug = data.consultationDate.replace(/\s+/g, '_');
+
+  if (data.documentTypes.includes('prescription') && data.prescription?.medications?.length) {
+    const buffer = await generateSinglePdf(data, 'prescription');
+    results.push({ type: 'prescription', filename: `receta_${dateSlug}.pdf`, buffer });
+  }
+  if (data.documentTypes.includes('instructions') && data.medicalInstructions?.length) {
+    const buffer = await generateSinglePdf(data, 'instructions');
+    results.push({ type: 'instructions', filename: `indicaciones_${dateSlug}.pdf`, buffer });
+  }
+  if (data.documentTypes.includes('exams') && data.examOrders?.exams?.length) {
+    const buffer = await generateSinglePdf(data, 'exams');
+    results.push({ type: 'exams', filename: `examenes_${dateSlug}.pdf`, buffer });
+  }
+
+  return results;
+}
+
 export function generateConsultationPdf(data: PdfDocumentData): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({

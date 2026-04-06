@@ -232,7 +232,7 @@ function buildExamOrdersSection(examOrders: ConsultationDocumentsEmailData['exam
   `;
 }
 
-export async function sendConsultationDocuments(data: ConsultationDocumentsEmailData & { pdfBuffer?: Buffer }) {
+export async function sendConsultationDocuments(data: ConsultationDocumentsEmailData & { pdfBuffers?: { type: string; filename: string; buffer: Buffer }[] }) {
   const transporter = getTransporter();
   const fromEmail = process.env.SMTP_USER!;
 
@@ -255,12 +255,14 @@ export async function sendConsultationDocuments(data: ConsultationDocumentsEmail
   const subject = `${subjectParts.join(', ')} de tu consulta - Summari`;
 
   const attachments: { filename: string; content: Buffer; contentType: string }[] = [];
-  if (data.pdfBuffer) {
-    attachments.push({
-      filename: `documentos_consulta_${data.consultationDate.replace(/\s+/g, '_')}.pdf`,
-      content: data.pdfBuffer,
-      contentType: 'application/pdf',
-    });
+  if (data.pdfBuffers?.length) {
+    for (const pdf of data.pdfBuffers) {
+      attachments.push({
+        filename: pdf.filename,
+        content: pdf.buffer,
+        contentType: 'application/pdf',
+      });
+    }
   }
 
   await transporter.sendMail({
@@ -295,13 +297,13 @@ export async function sendConsultationDocuments(data: ConsultationDocumentsEmail
 
             <div style="padding: 16px; background: #f4f4f5; border-radius: 8px; text-align: center; margin-bottom: 24px;">
               <p style="color: #3f3f46; font-size: 14px; margin: 0 0 8px;">
-                📎 <strong>Documentos adjuntos:</strong>
+                📎 <strong>Documentos adjuntos (${attachments.length} archivo${attachments.length > 1 ? 's' : ''}):</strong>
               </p>
               <p style="color: #71717a; font-size: 13px; margin: 0;">
                 ${subjectParts.join(' · ')}
               </p>
               <p style="color: #a1a1aa; font-size: 12px; margin: 8px 0 0;">
-                Abre el archivo PDF adjunto para ver tus documentos completos.
+                Cada documento viene en un archivo PDF separado para tu comodidad.
               </p>
             </div>
 
