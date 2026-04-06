@@ -33,36 +33,63 @@ export async function transcribeAudioChunked(audioBase64: string): Promise<strin
     const detected = detectAudioFormat(audioBuffer);
     const format = detected === "mp3" ? "mp3" : detected === "wav" ? "wav" : "webm";
     
-    const MAX_CHUNK_SIZE = 20 * 1024 * 1024;
-    
-    if (audioBuffer.length <= MAX_CHUNK_SIZE) {
-      console.log(`[Transcription] Sending single buffer (${audioBuffer.length} bytes, format: ${format}) to speech-to-text...`);
-      const transcript = await speechToText(audioBuffer, format);
-      console.log(`[Transcription] Single buffer result: ${transcript.length} chars`);
-      return transcript;
-    }
+    const { spawn } = await import("child_process");
+    const { writeFile, readdir, readFile, unlink, mkdir } = await import("fs/promises");
+    const { randomUUID } = await import("crypto");
+    const { tmpdir } = await import("os");
+    const { join } = await import("path");
 
-    console.log(`[Transcription] Large audio file (${audioBuffer.length} bytes), attempting chunked transcription...`);
+    const sessionId = randomUUID();
+    const inputPath = join(tmpdir(), `full-audio-${sessionId}.${format}`);
+    const speedUpPath = join(tmpdir(), `speedup-${sessionId}.webm`);
+
+    await writeFile(inputPath, audioBuffer);
 
     try {
-      const { buffer: wavBuffer } = await ensureCompatibleFormat(audioBuffer);
-      
-      const { spawn } = await import("child_process");
-      const { writeFile, readdir, readFile, unlink, mkdir } = await import("fs/promises");
-      const { randomUUID } = await import("crypto");
-      const { tmpdir } = await import("os");
-      const { join } = await import("path");
-      
-      const sessionId = randomUUID();
-      const inputPath = join(tmpdir(), `full-audio-${sessionId}.wav`);
-      const chunkDir = join(tmpdir(), `chunks-${sessionId}`);
-      
-      await writeFile(inputPath, wavBuffer);
-      await mkdir(chunkDir, { recursive: true });
-      
+      console.log(`[Transcription] Speeding up audio 2x with ffmpeg...`);
       await new Promise<void>((resolve, reject) => {
         const ffmpeg = spawn("ffmpeg", [
           "-i", inputPath,
+          "-filter:a", "atempo=2.0",
+          "-ar", "16000",
+          "-ac", "1",
+          "-c:a", "libopus",
+          "-y",
+          speedUpPath,
+        ]);
+        ffmpeg.stderr.on("data", () => {});
+        ffmpeg.on("close", (code) => {
+          if (code === 0) resolve();
+          else reject(new Error(`ffmpeg speed-up exited with code ${code}`));
+        });
+        ffmpeg.on("error", reject);
+      });
+
+      const speedUpBuffer = await readFile(speedUpPath);
+      console.log(`[Transcription] Sped-up audio size: ${speedUpBuffer.length} bytes (original: ${audioBuffer.length} bytes)`);
+
+      await unlink(inputPath).catch(() => {});
+      await unlink(speedUpPath).catch(() => {});
+
+      const MAX_CHUNK_SIZE = 20 * 1024 * 1024;
+
+      if (speedUpBuffer.length <= MAX_CHUNK_SIZE) {
+        console.log(`[Transcription] Sending sped-up buffer to speech-to-text...`);
+        const transcript = await speechToText(speedUpBuffer, "webm");
+        console.log(`[Transcription] Result: ${transcript.length} chars`);
+        return transcript;
+      }
+
+      console.log(`[Transcription] Sped-up audio still large, chunking...`);
+      const chunkDir = join(tmpdir(), `chunks-${sessionId}`);
+      await mkdir(chunkDir, { recursive: true });
+
+      const chunkInputPath = join(tmpdir(), `chunk-input-${sessionId}.webm`);
+      await writeFile(chunkInputPath, speedUpBuffer);
+
+      await new Promise<void>((resolve, reject) => {
+        const ffmpeg = spawn("ffmpeg", [
+          "-i", chunkInputPath,
           "-f", "segment",
           "-segment_time", "120",
           "-ar", "16000",
@@ -78,10 +105,10 @@ export async function transcribeAudioChunked(audioBase64: string): Promise<strin
         });
         ffmpeg.on("error", reject);
       });
-      
+
       const chunkFiles = (await readdir(chunkDir)).filter(f => f.endsWith(".wav")).sort();
-      console.log(`[Transcription] Split audio into ${chunkFiles.length} chunks for transcription`);
-      
+      console.log(`[Transcription] Split into ${chunkFiles.length} chunks for transcription`);
+
       const transcripts: string[] = [];
       for (const chunkFile of chunkFiles) {
         const chunkBuffer = await readFile(join(chunkDir, chunkFile));
@@ -91,14 +118,16 @@ export async function transcribeAudioChunked(audioBase64: string): Promise<strin
         }
         await unlink(join(chunkDir, chunkFile)).catch(() => {});
       }
-      
-      await unlink(inputPath).catch(() => {});
+
+      await unlink(chunkInputPath).catch(() => {});
       const { rm } = await import("fs/promises");
       await rm(chunkDir, { recursive: true, force: true }).catch(() => {});
-      
+
       return transcripts.join(" ");
     } catch (ffmpegError) {
-      console.warn(`[Transcription] ffmpeg chunking failed, falling back to direct transcription:`, ffmpegError);
+      console.warn(`[Transcription] ffmpeg processing failed, falling back to direct transcription:`, ffmpegError);
+      await unlink(inputPath).catch(() => {});
+      await unlink(speedUpPath).catch(() => {});
       const transcript = await speechToText(audioBuffer, format);
       return transcript;
     }
