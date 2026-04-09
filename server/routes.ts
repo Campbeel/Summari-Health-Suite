@@ -10,7 +10,7 @@ import { isAuthenticated, registerAuthRoutes } from "./auth";
 import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText, verifyFlowSignature } from "./flow";
 import { transcribeAudio, transcribeAudioChunked, generatePrescriptionFromTranscript, generateFullConsultationSuggestions, generateMedicalReport, generateMedicalReportWithTemplate, DEFAULT_REPORT_TEMPLATE_PROMPT, generateClinicalAlerts, generateAssistantWelcome, chatWithAssistant, type AssistantContext } from "./openai";
 import { sendConsultationDocuments, sendPaymentReceiptEmail } from "./email";
-import { generateConsultationPdf, generateSeparateConsultationPdfs, type PdfDocumentData } from "./pdf-generator";
+import { generateConsultationPdf, generateSeparateConsultationPdfs, generatePaymentReceiptPdf, type PdfDocumentData, type ReceiptPdfData } from "./pdf-generator";
 import { getFitbitAuthUrl, getAndRemovePendingState, exchangeCodeForTokens, refreshFitbitTokens, fetchFitbitData } from "./fitbit";
 import {
   insertPatientSchema,
@@ -872,30 +872,50 @@ export async function registerRoutes(
       });
       
       if (isPaymentSuccessful(paymentStatus.status)) {
-        try {
-          const fullAppointment = await storage.getAppointment(appointmentId);
-          if (fullAppointment) {
-            const patient = await storage.getPatient(fullAppointment.patientId);
-            const patientUser = patient ? await storage.getUser(patient.userId) : null;
-            const doctor = await storage.getDoctor(fullAppointment.doctorId);
-            const doctorUser = doctor ? await storage.getUser(doctor.userId) : null;
-            if (patientUser?.email && doctorUser && doctor) {
-              await sendPaymentReceiptEmail({
-                patientName: `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() || 'Paciente',
-                patientEmail: patientUser.email,
-                doctorName: `Dr. ${doctorUser.firstName || ''} ${doctorUser.lastName || ''}`.trim(),
-                doctorSpecialty: doctor.specialty,
-                consultationDate: fullAppointment.scheduledDate,
-                consultationTime: fullAppointment.scheduledTime?.slice(0, 5) || '',
-                amount: paymentStatus.amount || doctor.consultationFee,
-                commerceOrderId: appointment.flowCommerceOrderId || `APT-${appointmentId}`,
-              });
-              console.log(`Payment receipt email sent for appointment ${appointmentId}`);
+        (async () => {
+          try {
+            const fullAppointment = await storage.getAppointment(appointmentId);
+            if (fullAppointment) {
+              const patient = await storage.getPatient(fullAppointment.patientId);
+              const patientUser = patient ? await storage.getUser(patient.userId) : null;
+              const doctor = await storage.getDoctor(fullAppointment.doctorId);
+              const doctorUser = doctor ? await storage.getUser(doctor.userId) : null;
+              if (patientUser?.email && doctorUser && doctor) {
+                const patientName = `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() || 'Paciente';
+                const doctorName = `Dr. ${doctorUser.firstName || ''} ${doctorUser.lastName || ''}`.trim();
+                const orderId = appointment.flowCommerceOrderId || `APT-${appointmentId}`;
+                const amount = paymentStatus.amount || doctor.consultationFee;
+
+                const receiptPdfBuffer = await generatePaymentReceiptPdf({
+                  patientName,
+                  patientRut: patient?.rut || patientUser?.rut || undefined,
+                  doctorName,
+                  doctorSpecialty: doctor.specialty,
+                  consultationDate: fullAppointment.scheduledDate,
+                  consultationTime: fullAppointment.scheduledTime?.slice(0, 5) || '',
+                  amount,
+                  commerceOrderId: orderId,
+                });
+
+                await sendPaymentReceiptEmail({
+                  patientName,
+                  patientRut: patient?.rut || patientUser?.rut || undefined,
+                  patientEmail: patientUser.email,
+                  doctorName,
+                  doctorSpecialty: doctor.specialty,
+                  consultationDate: fullAppointment.scheduledDate,
+                  consultationTime: fullAppointment.scheduledTime?.slice(0, 5) || '',
+                  amount,
+                  commerceOrderId: orderId,
+                  receiptPdfBuffer,
+                });
+                console.log(`Payment receipt email with PDF sent for appointment ${appointmentId}`);
+              }
             }
+          } catch (emailError) {
+            console.error("Failed to send payment receipt email:", emailError);
           }
-        } catch (emailError) {
-          console.error("Failed to send payment receipt email:", emailError);
-        }
+        })();
       }
       
       console.log(`Flow payment confirmed for appointment ${appointmentId}: ${newStatus}`);
@@ -1019,6 +1039,57 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error rescheduling appointment:", error);
       res.status(500).json({ error: "Error al reagendar la cita" });
+    }
+  });
+
+  app.get("/api/appointments/:id/receipt", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const userId = req.userId;
+
+      const appointment = await storage.getAppointment(appointmentId);
+      if (!appointment) return res.status(404).json({ error: "Cita no encontrada" });
+
+      const patient = await storage.getPatient(appointment.patientId);
+      if (!patient) return res.status(404).json({ error: "Paciente no encontrado" });
+
+      const patientUser = await storage.getUser(patient.userId);
+      if (!patientUser || patientUser.id !== userId) {
+        const doctor = await storage.getDoctorByUserId(userId);
+        if (!doctor || doctor.id !== appointment.doctorId) {
+          return res.status(403).json({ error: "No autorizado" });
+        }
+      }
+
+      if (appointment.paymentStatus !== 'paid' && appointment.paymentStatus !== 'completed') {
+        return res.status(400).json({ error: "Esta cita no tiene un pago completado" });
+      }
+
+      const doctor = await storage.getDoctor(appointment.doctorId);
+      const doctorUser = doctor ? await storage.getUser(doctor.userId) : null;
+      if (!doctor || !doctorUser) return res.status(404).json({ error: "Doctor no encontrado" });
+
+      const patientName = `${patientUser?.firstName || ''} ${patientUser?.lastName || ''}`.trim() || 'Paciente';
+      const doctorName = `Dr. ${doctorUser.firstName || ''} ${doctorUser.lastName || ''}`.trim();
+      const orderId = appointment.flowCommerceOrderId || `APT-${appointmentId}`;
+
+      const pdfBuffer = await generatePaymentReceiptPdf({
+        patientName,
+        patientRut: patient.rut || patientUser?.rut || undefined,
+        doctorName,
+        doctorSpecialty: doctor.specialty,
+        consultationDate: appointment.scheduledDate,
+        consultationTime: appointment.scheduledTime?.slice(0, 5) || '',
+        amount: doctor.consultationFee,
+        commerceOrderId: orderId,
+      });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="Boleta_${orderId}.pdf"`);
+      res.send(pdfBuffer);
+    } catch (error) {
+      console.error("Error generating receipt PDF:", error);
+      res.status(500).json({ error: "Error al generar la boleta" });
     }
   });
 

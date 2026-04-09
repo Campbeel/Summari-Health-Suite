@@ -323,8 +323,9 @@ export async function sendConsultationDocuments(data: ConsultationDocumentsEmail
   return { sent: true, documentTypes: data.documentTypes };
 }
 
-interface PaymentReceiptEmailData {
+export interface PaymentReceiptEmailData {
   patientName: string;
+  patientRut?: string;
   patientEmail: string;
   doctorName: string;
   doctorSpecialty: string;
@@ -332,6 +333,7 @@ interface PaymentReceiptEmailData {
   consultationTime: string;
   amount: number;
   commerceOrderId: string;
+  receiptPdfBuffer?: Buffer;
 }
 
 export async function sendPaymentReceiptEmail(data: PaymentReceiptEmailData) {
@@ -347,10 +349,20 @@ export async function sendPaymentReceiptEmail(data: PaymentReceiptEmailData) {
     minute: '2-digit',
   });
 
+  const attachments: any[] = [];
+  if (data.receiptPdfBuffer) {
+    attachments.push({
+      filename: `Boleta_${data.commerceOrderId}.pdf`,
+      content: data.receiptPdfBuffer,
+      contentType: 'application/pdf',
+    });
+  }
+
   await transporter.sendMail({
     from: `Summari <${fromEmail}>`,
     to: data.patientEmail,
     subject: `Comprobante de pago - Consulta médica #${data.commerceOrderId} - Summari`,
+    attachments,
     html: `
       <!DOCTYPE html>
       <html>

@@ -375,3 +375,156 @@ export function generateConsultationPdf(data: PdfDocumentData): Promise<Buffer> 
     doc.end();
   });
 }
+
+export interface ReceiptPdfData {
+  patientName: string;
+  patientRut?: string;
+  doctorName: string;
+  doctorSpecialty: string;
+  consultationDate: string;
+  consultationTime: string;
+  amount: number;
+  commerceOrderId: string;
+  paymentDate?: string;
+}
+
+export function generatePaymentReceiptPdf(data: ReceiptPdfData): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({
+      size: 'LETTER',
+      margins: { top: 40, bottom: 40, left: 50, right: 50 },
+    });
+
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const pageW = doc.page.width;
+    const marginL = doc.page.margins.left;
+    const marginR = doc.page.margins.right;
+    const contentW = pageW - marginL - marginR;
+
+    const formattedAmount = data.amount.toLocaleString('es-CL');
+    const paymentDate = data.paymentDate || new Date().toLocaleDateString('es-CL', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+    });
+
+    doc.rect(0, 0, pageW, 100).fill(COLORS.primary);
+
+    const logoPath = getLogoPath();
+    if (logoPath) {
+      try {
+        doc.image(logoPath, marginL, 15, { height: 55 });
+      } catch {
+        doc.fontSize(24).fillColor(COLORS.white).font('Helvetica-Bold')
+          .text('SUMMARI', marginL, 25);
+      }
+    } else {
+      doc.fontSize(24).fillColor(COLORS.white).font('Helvetica-Bold')
+        .text('SUMMARI', marginL, 25);
+    }
+
+    doc.fontSize(9).fillColor('rgba(255,255,255,0.8)').font('Helvetica')
+      .text('Telemedicina', marginL, 75, { width: 200 });
+
+    doc.fontSize(14).fillColor(COLORS.white).font('Helvetica-Bold')
+      .text('BOLETA DE SERVICIOS', pageW - marginR - 200, 25, { width: 200, align: 'right' });
+    doc.fontSize(11).fillColor(COLORS.white).font('Helvetica-Bold')
+      .text(`N° ${data.commerceOrderId}`, pageW - marginR - 200, 48, { width: 200, align: 'right' });
+    doc.fontSize(9).fillColor('rgba(255,255,255,0.8)').font('Helvetica')
+      .text(`Fecha: ${paymentDate}`, pageW - marginR - 200, 68, { width: 200, align: 'right' });
+
+    let y = 115;
+
+    doc.fontSize(9).fillColor(COLORS.gray).font('Helvetica')
+      .text('SEÑOR(ES)', marginL, y);
+    doc.fontSize(10).fillColor(COLORS.dark).font('Helvetica-Bold')
+      .text(data.patientName.toUpperCase(), marginL + 80, y);
+    y += 18;
+
+    if (data.patientRut) {
+      doc.fontSize(9).fillColor(COLORS.gray).font('Helvetica')
+        .text('R.U.T.', marginL, y);
+      doc.fontSize(10).fillColor(COLORS.dark).font('Helvetica')
+        .text(data.patientRut, marginL + 80, y);
+      y += 18;
+    }
+
+    y += 10;
+    doc.moveTo(marginL, y).lineTo(pageW - marginR, y).strokeColor('#e4e4e7').lineWidth(1).stroke();
+    y += 15;
+
+    const colCode = marginL;
+    const colDesc = marginL + 80;
+    const colQty = pageW - marginR - 200;
+    const colUnit = pageW - marginR - 140;
+    const colTotal = pageW - marginR - 80;
+
+    doc.rect(marginL, y, contentW, 22).fill('#f0f0f2');
+    doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica-Bold');
+    doc.text('Código', colCode + 5, y + 6);
+    doc.text('Descripción del Servicio', colDesc + 5, y + 6);
+    doc.text('Cant.', colQty + 5, y + 6);
+    doc.text('Unidad', colUnit + 5, y + 6);
+    doc.text('Total', colTotal + 5, y + 6, { width: 75, align: 'right' });
+    y += 22;
+
+    doc.rect(marginL, y, contentW, 50).fill(COLORS.white).stroke('#e4e4e7');
+    doc.fontSize(9).fillColor(COLORS.dark).font('Helvetica');
+    doc.text('CONS-TEL', colCode + 5, y + 8);
+    doc.font('Helvetica-Bold')
+      .text(`CONSULTA MÉDICA - ${data.doctorSpecialty.toUpperCase()}`, colDesc + 5, y + 8, { width: colQty - colDesc - 15 });
+    doc.font('Helvetica')
+      .text(`${data.doctorName}`, colDesc + 5, y + 22, { width: colQty - colDesc - 15 });
+    doc.text(`Fecha: ${data.consultationDate} - Hora: ${data.consultationTime}`, colDesc + 5, y + 34, { width: colQty - colDesc - 15 });
+    doc.text('1', colQty + 5, y + 8);
+    doc.text('UN', colUnit + 5, y + 8);
+    doc.font('Helvetica-Bold')
+      .text(`$${formattedAmount}`, colTotal + 5, y + 8, { width: 75, align: 'right' });
+    y += 55;
+
+    const summaryX = pageW - marginR - 200;
+    const summaryLabelX = summaryX + 5;
+    const summaryValX = pageW - marginR - 80;
+
+    y += 10;
+    doc.moveTo(summaryX, y).lineTo(pageW - marginR, y).strokeColor('#e4e4e7').lineWidth(1).stroke();
+    y += 8;
+
+    doc.fontSize(9).fillColor(COLORS.gray).font('Helvetica');
+    doc.text('Subtotal', summaryLabelX, y);
+    doc.fillColor(COLORS.dark).text(`$${formattedAmount}`, summaryValX, y, { width: 80, align: 'right' });
+    y += 16;
+
+    doc.fillColor(COLORS.gray).text('Descuento', summaryLabelX, y);
+    doc.fillColor(COLORS.dark).text('$0', summaryValX, y, { width: 80, align: 'right' });
+    y += 16;
+
+    doc.moveTo(summaryX, y).lineTo(pageW - marginR, y).strokeColor('#e4e4e7').lineWidth(1).stroke();
+    y += 8;
+
+    doc.fontSize(12).fillColor(COLORS.dark).font('Helvetica-Bold');
+    doc.text('TOTAL', summaryLabelX, y);
+    doc.fillColor(COLORS.primary)
+      .text(`$${formattedAmount}`, summaryValX, y, { width: 80, align: 'right' });
+    y += 30;
+
+    doc.moveTo(marginL, y).lineTo(pageW - marginR, y).strokeColor('#e4e4e7').lineWidth(1).stroke();
+    y += 20;
+
+    doc.fontSize(8).fillColor(COLORS.gray).font('Helvetica')
+      .text(
+        'Este documento es un comprobante de pago por servicios de telemedicina prestados a través de la plataforma Summari. ' +
+        'Conserve este documento para sus registros. Si necesita solicitar un reembolso, puede hacerlo desde la sección "Mis Consultas" en la plataforma.',
+        marginL, y, { width: contentW, lineGap: 3 }
+      );
+
+    const footerY = doc.page.height - 50;
+    doc.moveTo(marginL, footerY - 10).lineTo(pageW - marginR, footerY - 10).strokeColor('#e4e4e7').lineWidth(0.5).stroke();
+    doc.fontSize(7).fillColor(COLORS.gray).font('Helvetica')
+      .text('Summari Telemedicina · Documento generado electrónicamente', marginL, footerY, { width: contentW, align: 'center' });
+
+    doc.end();
+  });
+}
