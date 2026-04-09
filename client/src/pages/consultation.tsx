@@ -270,8 +270,16 @@ export default function ConsultationPage() {
 
     if (isRecording && mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       await new Promise<void>((resolve) => {
-        mediaRecorderRef.current!.onstop = () => resolve();
-        mediaRecorderRef.current!.stop();
+        const recorder = mediaRecorderRef.current!;
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+            console.log(`[Recording] Final chunk received: ${event.data.size} bytes`);
+          }
+        };
+        recorder.onstop = () => resolve();
+        try { recorder.requestData(); } catch {}
+        recorder.stop();
       });
     }
 
@@ -354,12 +362,13 @@ export default function ConsultationPage() {
     }
 
     try {
-      const audioContext = new AudioContext();
+      const audioContext = new AudioContext({ sampleRate: 48000 });
       audioContextRef.current = audioContext;
 
       if (audioContext.state === 'suspended') {
         await audioContext.resume();
       }
+      console.log(`[Recording] AudioContext state: ${audioContext.state}, sampleRate: ${audioContext.sampleRate}`);
 
       const destination = audioContext.createMediaStreamDestination();
 
@@ -413,9 +422,18 @@ export default function ConsultationPage() {
       const currentRemote = remoteStreamRef.current;
       const mixedStream = await createMixedAudioStream(currentLocal, currentRemote);
 
-      const mediaRecorder = new MediaRecorder(mixedStream, {
-        mimeType: 'audio/webm;codecs=opus',
-      });
+      const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+      let selectedMime = '';
+      for (const mime of mimeTypes) {
+        if (MediaRecorder.isTypeSupported(mime)) {
+          selectedMime = mime;
+          break;
+        }
+      }
+      console.log(`[Recording] Selected MIME type: ${selectedMime || 'browser default'}`);
+
+      const recorderOptions: MediaRecorderOptions = selectedMime ? { mimeType: selectedMime } : {};
+      const mediaRecorder = new MediaRecorder(mixedStream, recorderOptions);
       
       mediaRecorderRef.current = mediaRecorder;
       if (!preserveChunks) {
@@ -429,10 +447,14 @@ export default function ConsultationPage() {
         }
       };
 
+      mediaRecorder.onerror = (event: any) => {
+        console.error("[Recording] MediaRecorder error:", event.error?.name, event.error?.message);
+      };
+
       mediaRecorder.start(5000);
       setIsRecording(true);
 
-      console.log(`[Recording] Recording started (preserveChunks=${preserveChunks}, existing chunks: ${audioChunksRef.current.length})`);
+      console.log(`[Recording] Recording started (preserveChunks=${preserveChunks}, existing chunks: ${audioChunksRef.current.length}, state: ${mediaRecorder.state})`);
 
     } catch (error) {
       console.error("Error starting recording:", error);
