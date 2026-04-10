@@ -872,48 +872,61 @@ export async function registerRoutes(
       });
       
       if (isPaymentSuccessful(paymentStatus.status)) {
+        console.log(`[Receipt] Payment successful for appointment ${appointmentId}, preparing receipt email...`);
         (async () => {
           try {
             const fullAppointment = await storage.getAppointment(appointmentId);
-            if (fullAppointment) {
-              const patient = await storage.getPatient(fullAppointment.patientId);
-              const patientUser = patient ? await storage.getUser(patient.userId) : null;
-              const doctor = await storage.getDoctor(fullAppointment.doctorId);
-              const doctorUser = doctor ? await storage.getUser(doctor.userId) : null;
-              if (patientUser?.email && doctorUser && doctor) {
-                const patientName = `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() || 'Paciente';
-                const doctorName = `Dr. ${doctorUser.firstName || ''} ${doctorUser.lastName || ''}`.trim();
-                const orderId = appointment.flowCommerceOrderId || `APT-${appointmentId}`;
-                const amount = paymentStatus.amount || doctor.consultationFee;
-
-                const receiptPdfBuffer = await generatePaymentReceiptPdf({
-                  patientName,
-                  patientRut: patient?.rut || patientUser?.rut || undefined,
-                  doctorName,
-                  doctorSpecialty: doctor.specialty,
-                  consultationDate: fullAppointment.scheduledDate,
-                  consultationTime: fullAppointment.scheduledTime?.slice(0, 5) || '',
-                  amount,
-                  commerceOrderId: orderId,
-                });
-
-                await sendPaymentReceiptEmail({
-                  patientName,
-                  patientRut: patient?.rut || patientUser?.rut || undefined,
-                  patientEmail: patientUser.email,
-                  doctorName,
-                  doctorSpecialty: doctor.specialty,
-                  consultationDate: fullAppointment.scheduledDate,
-                  consultationTime: fullAppointment.scheduledTime?.slice(0, 5) || '',
-                  amount,
-                  commerceOrderId: orderId,
-                  receiptPdfBuffer,
-                });
-                console.log(`Payment receipt email with PDF sent for appointment ${appointmentId}`);
-              }
+            if (!fullAppointment) {
+              console.error(`[Receipt] Could not find appointment ${appointmentId} for receipt email`);
+              return;
             }
-          } catch (emailError) {
-            console.error("Failed to send payment receipt email:", emailError);
+            const patient = await storage.getPatient(fullAppointment.patientId);
+            const patientUser = patient ? await storage.getUser(patient.userId) : null;
+            const doctor = await storage.getDoctor(fullAppointment.doctorId);
+            const doctorUser = doctor ? await storage.getUser(doctor.userId) : null;
+            
+            if (!patientUser?.email) {
+              console.error(`[Receipt] Patient has no email for appointment ${appointmentId}`);
+              return;
+            }
+            if (!doctorUser || !doctor) {
+              console.error(`[Receipt] Doctor not found for appointment ${appointmentId}`);
+              return;
+            }
+            
+            const patientName = `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() || 'Paciente';
+            const doctorName = `Dr. ${doctorUser.firstName || ''} ${doctorUser.lastName || ''}`.trim();
+            const orderId = appointment.flowCommerceOrderId || `APT-${appointmentId}`;
+            const amount = paymentStatus.amount || doctor.consultationFee || 0;
+
+            console.log(`[Receipt] Generating PDF for ${patientName} (${patientUser.email}), order ${orderId}, amount ${amount}`);
+            const receiptPdfBuffer = await generatePaymentReceiptPdf({
+              patientName,
+              patientRut: patient?.rut || patientUser?.rut || undefined,
+              doctorName,
+              doctorSpecialty: doctor.specialty,
+              consultationDate: fullAppointment.scheduledDate,
+              consultationTime: fullAppointment.scheduledTime?.slice(0, 5) || '',
+              amount,
+              commerceOrderId: orderId,
+            });
+            console.log(`[Receipt] PDF generated (${receiptPdfBuffer.length} bytes), sending email...`);
+
+            await sendPaymentReceiptEmail({
+              patientName,
+              patientRut: patient?.rut || patientUser?.rut || undefined,
+              patientEmail: patientUser.email,
+              doctorName,
+              doctorSpecialty: doctor.specialty,
+              consultationDate: fullAppointment.scheduledDate,
+              consultationTime: fullAppointment.scheduledTime?.slice(0, 5) || '',
+              amount,
+              commerceOrderId: orderId,
+              receiptPdfBuffer,
+            });
+            console.log(`[Receipt] Payment receipt email with PDF sent for appointment ${appointmentId} to ${patientUser.email}`);
+          } catch (emailError: any) {
+            console.error(`[Receipt] Failed to send payment receipt email for appointment ${appointmentId}:`, emailError?.message || emailError);
           }
         })();
       }
@@ -1586,14 +1599,20 @@ export async function registerRoutes(
       if (audioData) {
         try {
           const audioBuffer = Buffer.from(audioData, 'base64');
-          console.log(`[Transcription] Starting post-call transcription for appointment ${appointmentId}. Audio size: ${audioBuffer.length} bytes`);
+          console.log(`[Transcription] Starting post-call transcription for appointment ${appointmentId}. Audio base64 length: ${audioData.length}, decoded size: ${audioBuffer.length} bytes (${(audioBuffer.length / 1024).toFixed(1)} KB)`);
+          if (audioBuffer.length < 1000) {
+            console.warn(`[Transcription] WARNING: Audio data is very small (${audioBuffer.length} bytes) for appointment ${appointmentId} - transcription quality may be poor`);
+          }
           transcription = await transcribeAudioChunked(audioData);
-          console.log(`[Transcription] Completed. Length: ${transcription.length} chars`);
-        } catch (e) {
-          console.error("Error transcribing audio server-side:", e);
+          console.log(`[Transcription] Completed for appointment ${appointmentId}. Transcription length: ${transcription.length} chars`);
+          if (transcription.length === 0) {
+            console.warn(`[Transcription] WARNING: Transcription returned empty for appointment ${appointmentId} despite having ${audioBuffer.length} bytes of audio`);
+          }
+        } catch (e: any) {
+          console.error(`[Transcription] Error transcribing audio for appointment ${appointmentId}:`, e?.message || e);
         }
       } else {
-        console.log(`[Transcription] No audio data received for appointment ${appointmentId}`);
+        console.warn(`[Transcription] No audio data received for appointment ${appointmentId}. Request body keys: ${Object.keys(req.body).join(', ')}`);
       }
       
       const record = await storage.createClinicalRecord({
