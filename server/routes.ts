@@ -212,7 +212,7 @@ export async function registerRoutes(
 
   app.patch("/api/appointments/:id/status", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
       
       const statusSchema = z.object({
@@ -377,6 +377,331 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching patient exam orders:", error);
       res.status(500).json({ error: "Failed to fetch patient exam orders" });
+    }
+  });
+
+  // T001: Doctor notifications (patient online + overtime)
+  app.get("/api/doctors/me/notifications", isAuthenticated, async (req: any, res) => {
+    try {
+      const doctor = await storage.getDoctorByUserId(req.userId);
+      if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
+
+      const notifications: Array<{
+        id: string;
+        type: 'patient_online' | 'patient_overtime' | 'patient_waiting';
+        appointmentId: number;
+        patientId: number;
+        patientName: string;
+        title: string;
+        message: string;
+        timestamp: string;
+        link: string;
+      }> = [];
+
+      const upcoming = await storage.getUpcomingAppointmentsByDoctor(doctor.id);
+      const now = Date.now();
+
+      for (const apt of upcoming) {
+        const roomId = `consultation-${apt.id}`;
+        const room = signalingRooms.get(roomId);
+        if (!room) continue;
+        const patientOnline = room.waitingPatients.size > 0 || room.participants.size > 1;
+        if (!patientOnline) continue;
+
+        const patientName = apt.patientName || 'Paciente';
+        
+        const scheduledStart = new Date(`${apt.scheduledDate}T${apt.scheduledTime}`);
+        const scheduledEndMs = scheduledStart.getTime() + (apt.durationMinutes || 30) * 60000;
+        const isOvertime = apt.status === 'in_progress' && now > scheduledEndMs;
+        const isWaiting = room.waitingPatients.size > 0;
+
+        if (isOvertime) {
+          notifications.push({
+            id: `overtime-${apt.id}`,
+            type: 'patient_overtime',
+            appointmentId: apt.id,
+            patientId: apt.patientId,
+            patientName,
+            title: 'Consulta fuera de tiempo',
+            message: `La consulta con ${patientName} lleva más del tiempo estimado. Otro paciente puede estar esperándote.`,
+            timestamp: new Date().toISOString(),
+            link: `/consultation/${apt.id}`,
+          });
+        } else if (isWaiting) {
+          notifications.push({
+            id: `waiting-${apt.id}`,
+            type: 'patient_waiting',
+            appointmentId: apt.id,
+            patientId: apt.patientId,
+            patientName,
+            title: 'Paciente en sala de espera',
+            message: `${patientName} está conectado y esperando.`,
+            timestamp: new Date().toISOString(),
+            link: `/consultation/${apt.id}`,
+          });
+        } else {
+          notifications.push({
+            id: `online-${apt.id}`,
+            type: 'patient_online',
+            appointmentId: apt.id,
+            patientId: apt.patientId,
+            patientName,
+            title: 'Paciente en línea',
+            message: `${patientName} se ha conectado a la consulta.`,
+            timestamp: new Date().toISOString(),
+            link: `/consultation/${apt.id}`,
+          });
+        }
+      }
+
+      res.json(notifications);
+    } catch (error: any) {
+      console.error("Error fetching doctor notifications:", error);
+      res.status(500).json({ error: "Failed to fetch notifications" });
+    }
+  });
+
+  // T002: Chat history per patient
+  app.get("/api/doctors/me/patients/:patientId/messages", isAuthenticated, async (req: any, res) => {
+    try {
+      const doctor = await storage.getDoctorByUserId(req.userId);
+      if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
+
+      const patientId = parseInt(req.params.patientId);
+      if (isNaN(patientId) || patientId <= 0) {
+        return res.status(400).json({ error: "Invalid patient ID" });
+      }
+
+      const hasRelationship = await storage.doctorHasPatientRelationship(doctor.id, patientId);
+      if (!hasRelationship) {
+        return res.status(403).json({ error: "No authorized relationship with this patient" });
+      }
+
+      const messages = await storage.getConsultationMessagesByPatientDoctor(doctor.id, patientId);
+      res.json(messages);
+    } catch (error: any) {
+      console.error("Error fetching patient messages:", error);
+      res.status(500).json({ error: "Failed to fetch patient messages" });
+    }
+  });
+
+  // T003: Document signing workflow - unsigned PDF generation per doc type
+  async function verifyDoctorOwnsAppointment(userId: string, appointmentId: number) {
+    const doctor = await storage.getDoctorByUserId(userId);
+    if (!doctor) return { error: "User is not a doctor", status: 403 };
+    const apt = await storage.getAppointment(appointmentId);
+    if (!apt) return { error: "Appointment not found", status: 404 };
+    if (apt.doctorId !== doctor.id) return { error: "Not authorized", status: 403 };
+    return { doctor, appointment: apt };
+  }
+
+  async function buildDocPdfData(appointmentId: number, docType: 'prescription' | 'instructions' | 'exams'): Promise<PdfDocumentData | null> {
+    const appointment = await storage.getAppointment(appointmentId);
+    if (!appointment) return null;
+    const doctor = await storage.getDoctor(appointment.doctorId);
+    const doctorUser = doctor ? await storage.getUser(doctor.userId) : null;
+    const patient = await storage.getPatient(appointment.patientId);
+    const patientUser = patient ? await storage.getUser(patient.userId) : null;
+    const clinicalRecord = await storage.getClinicalRecordByAppointmentId(appointmentId);
+    if (!clinicalRecord || !doctor || !doctorUser || !patient || !patientUser) return null;
+
+    const data: PdfDocumentData = {
+      doctorName: `Dr. ${doctorUser.firstName || ''} ${doctorUser.lastName || ''}`.trim(),
+      doctorSpecialty: doctor.specialty || 'Medicina General',
+      doctorLicense: doctor.licenseNumber || undefined,
+      patientName: `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() || 'Paciente',
+      patientRut: patientUser.rut || undefined,
+      consultationDate: appointment.scheduledDate
+        ? new Date(appointment.scheduledDate).toLocaleDateString('es-CL', { year: 'numeric', month: 'long', day: 'numeric' })
+        : '',
+      diagnosis: clinicalRecord.diagnosis || undefined,
+      prescription: null,
+      examOrders: null,
+      documentTypes: [docType],
+    };
+
+    if (docType === 'prescription') {
+      const p = await storage.getPrescriptionByRecordId(clinicalRecord.id);
+      if (p && (p.medications as any[])?.length > 0) {
+        data.prescription = { medications: p.medications as any, instructions: p.instructions };
+      }
+    } else if (docType === 'instructions') {
+      const list = await storage.getInstructionsByRecordId(clinicalRecord.id);
+      if (list.length > 0) {
+        data.medicalInstructions = list.map(i => ({
+          category: i.category, title: i.title, description: i.description, priority: i.priority,
+        }));
+      }
+    } else if (docType === 'exams') {
+      const orders = await storage.getExamOrdersByRecordId(clinicalRecord.id);
+      if (orders.length > 0) {
+        data.examOrders = { exams: orders[0].exams as any };
+      }
+    }
+    return data;
+  }
+
+  // GET unsigned PDF for a document type, keyed by appointment
+  app.get("/api/consultations/:id/unsigned-pdf/:docType", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id as string);
+      const docType = req.params.docType as 'prescription' | 'instructions' | 'exams';
+      if (!['prescription', 'instructions', 'exams'].includes(docType)) {
+        return res.status(400).json({ error: "Invalid document type" });
+      }
+      const check = await verifyDoctorOwnsAppointment(req.userId, appointmentId);
+      if ('error' in check) return res.status(check.status).json({ error: check.error });
+
+      const data = await buildDocPdfData(appointmentId, docType);
+      if (!data) return res.status(404).json({ error: "Documento no disponible" });
+
+      const pdfs = await generateSeparateConsultationPdfs(data);
+      const pdf = pdfs.find(p => p.type === docType);
+      if (!pdf) return res.status(404).json({ error: "Documento no disponible para este tipo" });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${pdf.filename}"`);
+      res.send(pdf.buffer);
+    } catch (error: any) {
+      console.error("Error generating unsigned PDF:", error);
+      res.status(500).json({ error: "Error al generar el PDF" });
+    }
+  });
+
+  // POST signed PDF (base64) for a document type
+  app.post("/api/consultations/:id/signed-pdf/:docType", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id as string);
+      const docType = req.params.docType as 'prescription' | 'instructions' | 'exams';
+      const { pdfBase64 } = req.body;
+      if (!pdfBase64 || typeof pdfBase64 !== 'string') {
+        return res.status(400).json({ error: "pdfBase64 is required" });
+      }
+      if (!['prescription', 'instructions', 'exams'].includes(docType)) {
+        return res.status(400).json({ error: "Invalid document type" });
+      }
+      const check = await verifyDoctorOwnsAppointment(req.userId, appointmentId);
+      if ('error' in check) return res.status(check.status).json({ error: check.error });
+
+      const clinicalRecord = await storage.getClinicalRecordByAppointmentId(appointmentId);
+      if (!clinicalRecord) return res.status(404).json({ error: "Registro clínico no encontrado" });
+
+      const signedAt = new Date();
+      if (docType === 'prescription') {
+        const p = await storage.getPrescriptionByRecordId(clinicalRecord.id);
+        if (!p) return res.status(404).json({ error: "Receta no encontrada" });
+        await storage.updatePrescription(p.id, { signedPdfData: pdfBase64, signedAt, status: 'signed' });
+      } else if (docType === 'instructions') {
+        const list = await storage.getInstructionsByRecordId(clinicalRecord.id);
+        if (list.length === 0) return res.status(404).json({ error: "Indicaciones no encontradas" });
+        for (const i of list) {
+          await storage.updateMedicalInstruction(i.id, { signedPdfData: pdfBase64, signedAt, status: 'signed' });
+        }
+      } else if (docType === 'exams') {
+        const orders = await storage.getExamOrdersByRecordId(clinicalRecord.id);
+        if (orders.length === 0) return res.status(404).json({ error: "Órdenes de exámenes no encontradas" });
+        for (const o of orders) {
+          await storage.updateExamOrder(o.id, { signedPdfData: pdfBase64, signedAt, status: 'signed' });
+        }
+      }
+      res.json({ success: true, signedAt });
+    } catch (error: any) {
+      console.error("Error uploading signed PDF:", error);
+      res.status(500).json({ error: "Error al subir el PDF firmado" });
+    }
+  });
+
+  // GET signing status for documents in a consultation
+  app.get("/api/consultations/:id/signing-status", isAuthenticated, async (req: any, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id as string);
+      const check = await verifyDoctorOwnsAppointment(req.userId, appointmentId);
+      if ('error' in check) return res.status(check.status).json({ error: check.error });
+
+      const clinicalRecord = await storage.getClinicalRecordByAppointmentId(appointmentId);
+      if (!clinicalRecord) return res.json({ prescription: null, instructions: null, exams: null });
+
+      const prescription = await storage.getPrescriptionByRecordId(clinicalRecord.id);
+      const instructions = await storage.getInstructionsByRecordId(clinicalRecord.id);
+      const examOrdersList = await storage.getExamOrdersByRecordId(clinicalRecord.id);
+
+      res.json({
+        prescription: prescription ? {
+          exists: (prescription.medications as any[])?.length > 0,
+          signed: !!(prescription as any).signedPdfData,
+          signedAt: (prescription as any).signedAt || null,
+        } : { exists: false, signed: false, signedAt: null },
+        instructions: instructions.length > 0 ? {
+          exists: true,
+          signed: instructions.every(i => !!(i as any).signedPdfData),
+          signedAt: (instructions[0] as any).signedAt || null,
+        } : { exists: false, signed: false, signedAt: null },
+        exams: examOrdersList.length > 0 && (examOrdersList[0].exams as any[])?.length > 0 ? {
+          exists: true,
+          signed: !!(examOrdersList[0] as any).signedPdfData,
+          signedAt: (examOrdersList[0] as any).signedAt || null,
+        } : { exists: false, signed: false, signedAt: null },
+      });
+    } catch (error: any) {
+      console.error("Error fetching signing status:", error);
+      res.status(500).json({ error: "Error al consultar estado de firmas" });
+    }
+  });
+
+  // GET pending signatures across all consultations for the logged-in doctor
+  app.get("/api/doctors/me/pending-signatures", isAuthenticated, async (req: any, res) => {
+    try {
+      const doctor = await storage.getDoctorByUserId(req.userId);
+      if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
+
+      const appointmentsList = await storage.getAppointmentsByDoctorWithPatient(doctor.id);
+      const pending: Array<{
+        appointmentId: number;
+        patientName: string;
+        scheduledDate: string;
+        scheduledTime: string;
+        pendingDocs: Array<'prescription' | 'instructions' | 'exams'>;
+        link: string;
+      }> = [];
+
+      for (const apt of appointmentsList) {
+        if (!['pending_validation', 'completed'].includes(apt.status)) continue;
+        const clinicalRecord = await storage.getClinicalRecordByAppointmentId(apt.id);
+        if (!clinicalRecord) continue;
+
+        const pendingDocs: Array<'prescription' | 'instructions' | 'exams'> = [];
+
+        const prescription = await storage.getPrescriptionByRecordId(clinicalRecord.id);
+        if (prescription && (prescription.medications as any[])?.length > 0 && !(prescription as any).signedPdfData) {
+          pendingDocs.push('prescription');
+        }
+
+        const instructions = await storage.getInstructionsByRecordId(clinicalRecord.id);
+        if (instructions.length > 0 && !instructions.every((i) => !!(i as any).signedPdfData)) {
+          pendingDocs.push('instructions');
+        }
+
+        const examOrdersList = await storage.getExamOrdersByRecordId(clinicalRecord.id);
+        if (examOrdersList.length > 0 && (examOrdersList[0].exams as any[])?.length > 0 && !(examOrdersList[0] as any).signedPdfData) {
+          pendingDocs.push('exams');
+        }
+
+        if (pendingDocs.length > 0) {
+          pending.push({
+            appointmentId: apt.id,
+            patientName: apt.patientName || 'Paciente',
+            scheduledDate: apt.scheduledDate,
+            scheduledTime: apt.scheduledTime,
+            pendingDocs,
+            link: `/doctor/consultation/${apt.id}/validate`,
+          });
+        }
+      }
+
+      res.json(pending);
+    } catch (error: any) {
+      console.error("Error fetching pending signatures:", error);
+      res.status(500).json({ error: "Error al consultar documentos pendientes" });
     }
   });
 
@@ -747,7 +1072,7 @@ export async function registerRoutes(
   // Payment routes - Flow integration
   app.post("/api/appointments/:id/pay", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const appointment = await storage.getAppointment(appointmentId);
       
       if (!appointment) {
@@ -1012,7 +1337,7 @@ export async function registerRoutes(
   // Reschedule appointment
   app.post("/api/appointments/:id/reschedule", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
       const { scheduledDate, scheduledTime } = req.body;
 
@@ -1057,7 +1382,7 @@ export async function registerRoutes(
 
   app.get("/api/appointments/:id/receipt", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
 
       const appointment = await storage.getAppointment(appointmentId);
@@ -1109,7 +1434,7 @@ export async function registerRoutes(
   // Reimbursement request endpoints
   app.post("/api/appointments/:id/reimbursement", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
       const { reason } = req.body;
 
@@ -1171,7 +1496,7 @@ export async function registerRoutes(
 
   app.get("/api/appointments/:id/reimbursement", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
 
       const patient = await storage.getPatientByUserId(userId);
@@ -1195,7 +1520,7 @@ export async function registerRoutes(
   // Online presence check for consultations
   app.get("/api/appointments/:id/presence", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
 
       const appointment = await storage.getAppointment(appointmentId);
@@ -1456,7 +1781,7 @@ export async function registerRoutes(
   // Consultation routes
   app.get("/api/consultations/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
 
       const appointment = await storage.getAppointment(appointmentId);
@@ -1515,7 +1840,7 @@ export async function registerRoutes(
 
   app.get("/api/consultations/:id/summary", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
 
       const appointment = await storage.getAppointment(appointmentId);
@@ -1584,7 +1909,7 @@ export async function registerRoutes(
 
   app.post("/api/consultations/:id/end", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const { audioData, notes, diagnosis, symptoms } = req.body;
       
       const appointment = await storage.getAppointment(appointmentId);
@@ -1741,7 +2066,7 @@ export async function registerRoutes(
 
   app.post("/api/consultations/:id/regenerate-report", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
       const { templateId } = req.body;
       if (templateId != null && (typeof templateId !== "number" || isNaN(templateId) || templateId <= 0)) {
@@ -1792,7 +2117,7 @@ export async function registerRoutes(
 
   app.get("/api/consultations/:id/validation", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
 
       const appointment = await storage.getAppointment(appointmentId);
@@ -1862,7 +2187,7 @@ export async function registerRoutes(
 
   app.post("/api/consultations/:id/validate", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
       const { 
         clinicalRecord: clinicalData, 
@@ -2025,7 +2350,7 @@ export async function registerRoutes(
 
   app.post("/api/consultations/:id/send-documents", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
       const { documentTypes } = req.body;
 
@@ -2130,6 +2455,44 @@ export async function registerRoutes(
 
       const pdfBuffers = await generateSeparateConsultationPdfs(pdfData);
 
+      // Refetch full DB rows to access signing fields reliably
+      const fullPrescription = requestedTypes.includes('prescription')
+        ? await storage.getPrescriptionByRecordId(clinicalRecord.id)
+        : undefined;
+      const fullInstructions = requestedTypes.includes('instructions')
+        ? await storage.getInstructionsByRecordId(clinicalRecord.id)
+        : [];
+      const fullExamOrders = requestedTypes.includes('exams')
+        ? await storage.getExamOrdersByRecordId(clinicalRecord.id)
+        : [];
+
+      // Swap in signed PDFs when available
+      for (const entry of pdfBuffers) {
+        let signedB64: string | null = null;
+        if (entry.type === 'prescription') signedB64 = (fullPrescription as any)?.signedPdfData || null;
+        else if (entry.type === 'instructions') signedB64 = (fullInstructions[0] as any)?.signedPdfData || null;
+        else if (entry.type === 'exams') signedB64 = (fullExamOrders[0] as any)?.signedPdfData || null;
+        if (signedB64) {
+          entry.buffer = Buffer.from(signedB64, 'base64');
+          entry.filename = entry.filename.replace(/\.pdf$/, '_firmado.pdf');
+        }
+      }
+
+      // Mark signed documents as sent
+      if (fullPrescription && (fullPrescription as any).signedPdfData && requestedTypes.includes('prescription')) {
+        await storage.updatePrescription((fullPrescription as any).id, { status: 'sent' } as any);
+      }
+      if (fullInstructions.length > 0 && (fullInstructions[0] as any).signedPdfData && requestedTypes.includes('instructions')) {
+        for (const i of fullInstructions) {
+          await storage.updateMedicalInstruction(i.id, { status: 'sent' } as any);
+        }
+      }
+      if (fullExamOrders.length > 0 && (fullExamOrders[0] as any).signedPdfData && requestedTypes.includes('exams')) {
+        for (const o of fullExamOrders) {
+          await storage.updateExamOrder(o.id, { status: 'sent' } as any);
+        }
+      }
+
       await sendConsultationDocuments({
         patientName,
         patientEmail: patientUser.email,
@@ -2161,7 +2524,7 @@ export async function registerRoutes(
 
   app.get("/api/consultations/:id/documents/pdf", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
 
       const appointment = await storage.getAppointment(appointmentId);
@@ -2268,7 +2631,7 @@ export async function registerRoutes(
 
   app.post("/api/consultations/:id/generate-suggestions", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
 
       const appointment = await storage.getAppointment(appointmentId);
@@ -2296,7 +2659,7 @@ export async function registerRoutes(
 
   app.post("/api/consultations/:id/alerts", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
 
       const doctor = await storage.getDoctorByUserId(userId);
@@ -2385,7 +2748,7 @@ export async function registerRoutes(
 
   app.post("/api/consultations/:id/assistant/welcome", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       if (isNaN(appointmentId)) return res.status(400).json({ error: "ID inválido" });
       const userId = req.userId;
 
@@ -2418,7 +2781,7 @@ export async function registerRoutes(
 
   app.post("/api/consultations/:id/assistant/chat", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       if (isNaN(appointmentId)) return res.status(400).json({ error: "ID inválido" });
       const userId = req.userId;
 
@@ -2449,7 +2812,7 @@ export async function registerRoutes(
 
   app.post("/api/consultations/:id/transcribe", isAuthenticated, async (req: any, res) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       
       // Update appointment status to in_progress
       await storage.updateAppointment(appointmentId, { status: "in_progress" });
@@ -3024,7 +3387,7 @@ ${latest.map(l => `- ${l.metricType}: ${l.value} ${l.unit} (${new Date(l.recorde
   // Consultation Chat Messages
   app.get("/api/consultations/:id/messages", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const appointment = await storage.getAppointment(appointmentId);
       if (!appointment) return res.status(404).json({ error: "Cita no encontrada" });
 
@@ -3062,7 +3425,7 @@ ${latest.map(l => `- ${l.metricType}: ${l.value} ${l.unit} (${new Date(l.recorde
 
   app.post("/api/consultations/:id/messages", isAuthenticated, chatUpload.single('file'), async (req: Request, res: Response) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const appointment = await storage.getAppointment(appointmentId);
       if (!appointment) return res.status(404).json({ error: "Cita no encontrada" });
 
@@ -3127,7 +3490,7 @@ ${latest.map(l => `- ${l.metricType}: ${l.value} ${l.unit} (${new Date(l.recorde
   // Consultation Ratings
   app.get("/api/consultations/:id/rating", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const userId = (req as any).userId;
 
       const appointment = await storage.getAppointment(appointmentId);
@@ -3148,7 +3511,7 @@ ${latest.map(l => `- ${l.metricType}: ${l.value} ${l.unit} (${new Date(l.recorde
 
   app.post("/api/consultations/:id/rating", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const appointmentId = parseInt(req.params.id);
+      const appointmentId = parseInt(req.params.id as string);
       const userId = (req as any).userId;
 
       const appointment = await storage.getAppointment(appointmentId);

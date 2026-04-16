@@ -145,7 +145,9 @@ export const prescriptions = pgTable("prescriptions", {
   instructions: text("instructions"),
   issuedAt: timestamp("issued_at").defaultNow().notNull(),
   validUntil: date("valid_until"),
-  status: text("status").notNull().default("active"), // active, dispensed, expired, cancelled
+  status: text("status").notNull().default("active"), // draft, pending_signature, signed, sent, active, dispensed, expired, cancelled
+  signedPdfData: text("signed_pdf_data"),
+  signedAt: timestamp("signed_at"),
 });
 
 // Medical Instructions table
@@ -161,6 +163,9 @@ export const medicalInstructions = pgTable("medical_instructions", {
   dueDate: date("due_date"),
   isCompleted: boolean("is_completed").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  status: text("status").notNull().default("active"), // draft, pending_signature, signed, sent, active
+  signedPdfData: text("signed_pdf_data"),
+  signedAt: timestamp("signed_at"),
 });
 
 // Exam Orders table
@@ -175,7 +180,9 @@ export const examOrders = pgTable("exam_orders", {
   }>>().notNull(),
   clinicalJustification: text("clinical_justification"),
   issuedAt: timestamp("issued_at").defaultNow().notNull(),
-  status: text("status").notNull().default("pending"), // pending, completed, cancelled
+  status: text("status").notNull().default("pending"), // draft, pending_signature, signed, sent, pending, completed, cancelled
+  signedPdfData: text("signed_pdf_data"),
+  signedAt: timestamp("signed_at"),
 });
 
 // Wearable Health Metrics table

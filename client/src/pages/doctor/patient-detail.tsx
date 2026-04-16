@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   ArrowLeft, User, Calendar, Phone, Mail, Droplets, AlertTriangle,
   Heart, FileText, Pill, FlaskConical, Video, PhoneCall, Clock,
-  ShieldAlert, ClipboardList
+  ShieldAlert, ClipboardList, MessageSquare, Paperclip
 } from "lucide-react";
 
 type PatientProfile = {
@@ -66,6 +66,18 @@ type Prescription = {
   doctorName: string;
   doctorSpecialty: string | null;
   appointmentId: number | null;
+};
+
+type ChatMessage = {
+  id: number;
+  appointmentId: number;
+  senderRole: string;
+  content: string | null;
+  fileName: string | null;
+  fileUrl: string | null;
+  fileType: string | null;
+  fileSize: number | null;
+  createdAt: string;
 };
 
 type ExamOrder = {
@@ -129,6 +141,11 @@ export default function PatientDetailPage() {
 
   const { data: examOrders, isLoading: loadingExams } = useQuery<ExamOrder[]>({
     queryKey: ["/api/doctors/me/patients", id, "exam-orders"],
+    enabled: id > 0,
+  });
+
+  const { data: messages, isLoading: loadingMessages } = useQuery<ChatMessage[]>({
+    queryKey: ["/api/doctors/me/patients", id, "messages"],
     enabled: id > 0,
   });
 
@@ -245,7 +262,7 @@ export default function PatientDetailPage() {
       </Card>
 
       <Tabs defaultValue="history" className="space-y-4">
-        <TabsList className="grid grid-cols-4 w-full max-w-lg">
+        <TabsList className="grid grid-cols-5 w-full max-w-2xl">
           <TabsTrigger value="history" data-testid="tab-history">
             <Calendar className="h-4 w-4 mr-1.5 hidden sm:inline" />
             Historial
@@ -262,6 +279,10 @@ export default function PatientDetailPage() {
             <FlaskConical className="h-4 w-4 mr-1.5 hidden sm:inline" />
             Exámenes
           </TabsTrigger>
+          <TabsTrigger value="messages" data-testid="tab-messages">
+            <MessageSquare className="h-4 w-4 mr-1.5 hidden sm:inline" />
+            Chat
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="history">
@@ -275,6 +296,9 @@ export default function PatientDetailPage() {
         </TabsContent>
         <TabsContent value="exams">
           <ExamsTab examOrders={examOrders} loading={loadingExams} />
+        </TabsContent>
+        <TabsContent value="messages">
+          <MessagesTab messages={messages} loading={loadingMessages} />
         </TabsContent>
       </Tabs>
     </div>
@@ -454,6 +478,81 @@ function ExamsTab({ examOrders, loading }: { examOrders?: ExamOrder[]; loading: 
           </CardContent>
         </Card>
       ))}
+    </div>
+  );
+}
+
+function MessagesTab({ messages, loading }: { messages?: ChatMessage[]; loading: boolean }) {
+  if (loading) return <LoadingSkeleton />;
+  if (!messages || messages.length === 0) return <EmptyState text="No hay mensajes" icon={MessageSquare} />;
+
+  const groups = messages.reduce<Record<number, ChatMessage[]>>((acc, m) => {
+    (acc[m.appointmentId] ||= []).push(m);
+    return acc;
+  }, {});
+  const appointmentIds = Object.keys(groups).map(Number).sort((a, b) => b - a);
+
+  return (
+    <div className="space-y-4" data-testid="messages-list">
+      {appointmentIds.map((aptId) => {
+        const msgs = groups[aptId];
+        const first = msgs[0];
+        const dateLabel = first ? new Date(first.createdAt).toLocaleDateString("es-CL", {
+          day: "2-digit", month: "short", year: "numeric"
+        }) : "";
+        return (
+          <Card key={aptId} data-testid={`messages-group-${aptId}`}>
+            <CardHeader className="py-3 px-4 border-b">
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Calendar className="h-4 w-4" />
+                  Consulta del {dateLabel}
+                </CardTitle>
+                <Badge variant="outline" className="text-[10px]">{msgs.length} mensajes</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="py-3 px-4 space-y-2 max-h-80 overflow-y-auto">
+              {msgs.map((m) => {
+                const isDoctor = m.senderRole === "doctor";
+                return (
+                  <div
+                    key={m.id}
+                    className={`flex ${isDoctor ? "justify-end" : "justify-start"}`}
+                    data-testid={`message-${m.id}`}
+                  >
+                    <div
+                      className={`max-w-[75%] rounded-lg px-3 py-2 text-xs ${
+                        isDoctor ? "bg-primary text-primary-foreground" : "bg-muted"
+                      }`}
+                    >
+                      <div className="font-medium text-[10px] uppercase opacity-70 mb-0.5">
+                        {isDoctor ? "Doctor" : "Paciente"}
+                      </div>
+                      {m.content && <p className="whitespace-pre-wrap break-words">{m.content}</p>}
+                      {m.fileName && (
+                        <a
+                          href={m.fileUrl || "#"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 mt-1 underline opacity-90"
+                        >
+                          <Paperclip className="h-3 w-3" />
+                          {m.fileName}
+                        </a>
+                      )}
+                      <div className="text-[10px] opacity-60 mt-1">
+                        {new Date(m.createdAt).toLocaleTimeString("es-CL", {
+                          hour: "2-digit", minute: "2-digit"
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 }

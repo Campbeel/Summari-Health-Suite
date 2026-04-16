@@ -56,6 +56,7 @@ import {
   Shield,
 } from "lucide-react";
 import { ClinicalAssistant } from "@/components/clinical-assistant";
+import { SigningPanel } from "@/components/signing-panel";
 import type { ReportTemplate } from "@shared/schema";
 import {
   DropdownMenu,
@@ -745,6 +746,8 @@ export default function ConsultationValidationPage() {
 
             {hasAnyDocuments && !emailSent && (
               <div className="space-y-4">
+                <SigningPanel appointmentId={id!} />
+
                 <h3 className="font-semibold text-lg flex items-center gap-2">
                   <Mail className="h-5 w-5" />
                   Enviar documentos al paciente

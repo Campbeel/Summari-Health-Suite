@@ -305,7 +305,8 @@ export interface IStorage {
   createPrescription(prescription: InsertPrescription): Promise<Prescription>;
 
   // Prescriptions (update)
-  updatePrescription(id: number, data: Partial<InsertPrescription>): Promise<Prescription>;
+  updatePrescription(id: number, data: Partial<InsertPrescription> & { signedPdfData?: string | null; signedAt?: Date | null; status?: string }): Promise<Prescription>;
+  getPrescriptionById(id: number): Promise<Prescription | undefined>;
 
   // Medical Instructions
   getMedicalInstruction(id: number): Promise<MedicalInstruction | undefined>;
@@ -314,6 +315,7 @@ export interface IStorage {
   getInstructionsByRecordId(clinicalRecordId: number): Promise<MedicalInstruction[]>;
   deleteInstructionsByRecordId(clinicalRecordId: number): Promise<void>;
   createMedicalInstruction(instruction: InsertMedicalInstruction): Promise<MedicalInstruction>;
+  updateMedicalInstruction(id: number, data: Partial<InsertMedicalInstruction> & { signedPdfData?: string | null; signedAt?: Date | null; status?: string }): Promise<MedicalInstruction>;
 
   // Wearable Metrics
   createWearableMetric(metric: InsertWearableMetric): Promise<WearableMetric>;
@@ -336,10 +338,13 @@ export interface IStorage {
   getExamOrdersWithDoctorByPatient(patientId: number): Promise<ExamOrderWithDoctor[]>;
   deleteExamOrdersByRecordId(clinicalRecordId: number): Promise<void>;
   createExamOrder(examOrder: InsertExamOrder): Promise<ExamOrder>;
+  getExamOrderById(id: number): Promise<ExamOrder | undefined>;
+  updateExamOrder(id: number, data: Partial<InsertExamOrder> & { signedPdfData?: string | null; signedAt?: Date | null; status?: string }): Promise<ExamOrder>;
 
   // Consultation Messages
   getConsultationMessages(appointmentId: number): Promise<ConsultationMessage[]>;
   createConsultationMessage(message: InsertConsultationMessage): Promise<ConsultationMessage>;
+  getConsultationMessagesByPatientDoctor(doctorId: number, patientId: number): Promise<Array<ConsultationMessage & { doctorId: number }>>;
 
   // Consultation Ratings
   getConsultationRating(appointmentId: number): Promise<ConsultationRating | undefined>;
@@ -861,6 +866,8 @@ export class DatabaseStorage implements IStorage {
         issuedAt: prescriptions.issuedAt,
         validUntil: prescriptions.validUntil,
         status: prescriptions.status,
+        signedPdfData: prescriptions.signedPdfData,
+        signedAt: prescriptions.signedAt,
         doctorName: sql<string>`COALESCE(u.first_name || ' ' || u.last_name, u.email)`.as('doctorName'),
         doctorSpecialty: doctors.specialty,
       })
@@ -868,7 +875,7 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(doctors, eq(prescriptions.doctorId, doctors.id))
       .leftJoin(sql`users u`, sql`${doctors.userId} = u.id`)
       .where(eq(prescriptions.clinicalRecordId, clinicalRecordId));
-    return result[0];
+    return result[0] as any;
   }
 
   async getPrescriptionsByPatient(patientId: number): Promise<PrescriptionWithDoctor[]> {
@@ -937,13 +944,18 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async updatePrescription(id: number, data: Partial<InsertPrescription>): Promise<Prescription> {
+  async updatePrescription(id: number, data: Partial<InsertPrescription> & { signedPdfData?: string | null; signedAt?: Date | null; status?: string }): Promise<Prescription> {
     const [updated] = await db
       .update(prescriptions)
-      .set(data)
+      .set(data as any)
       .where(eq(prescriptions.id, id))
       .returning();
     return updated;
+  }
+
+  async getPrescriptionById(id: number): Promise<Prescription | undefined> {
+    const [p] = await db.select().from(prescriptions).where(eq(prescriptions.id, id));
+    return p;
   }
 
   async deleteInstructionsByRecordId(clinicalRecordId: number): Promise<void> {
@@ -964,6 +976,11 @@ export class DatabaseStorage implements IStorage {
   async createMedicalInstruction(instruction: InsertMedicalInstruction): Promise<MedicalInstruction> {
     const [created] = await db.insert(medicalInstructions).values(instruction).returning();
     return created;
+  }
+
+  async updateMedicalInstruction(id: number, data: Partial<InsertMedicalInstruction> & { signedPdfData?: string | null; signedAt?: Date | null; status?: string }): Promise<MedicalInstruction> {
+    const [updated] = await db.update(medicalInstructions).set(data as any).where(eq(medicalInstructions.id, id)).returning();
+    return updated;
   }
 
   // Wearable Metrics
@@ -1111,6 +1128,16 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
+  async getExamOrderById(id: number): Promise<ExamOrder | undefined> {
+    const [e] = await db.select().from(examOrders).where(eq(examOrders.id, id));
+    return e;
+  }
+
+  async updateExamOrder(id: number, data: Partial<InsertExamOrder> & { signedPdfData?: string | null; signedAt?: Date | null; status?: string }): Promise<ExamOrder> {
+    const [updated] = await db.update(examOrders).set(data as any).where(eq(examOrders.id, id)).returning();
+    return updated;
+  }
+
   // Consultation Messages
   async getConsultationMessages(appointmentId: number): Promise<ConsultationMessage[]> {
     return await db.select().from(consultationMessages)
@@ -1121,6 +1148,28 @@ export class DatabaseStorage implements IStorage {
   async createConsultationMessage(message: InsertConsultationMessage): Promise<ConsultationMessage> {
     const [created] = await db.insert(consultationMessages).values(message).returning();
     return created;
+  }
+
+  async getConsultationMessagesByPatientDoctor(doctorId: number, patientId: number): Promise<Array<ConsultationMessage & { doctorId: number }>> {
+    const result = await db
+      .select({
+        id: consultationMessages.id,
+        appointmentId: consultationMessages.appointmentId,
+        senderUserId: consultationMessages.senderUserId,
+        senderRole: consultationMessages.senderRole,
+        content: consultationMessages.content,
+        fileName: consultationMessages.fileName,
+        fileUrl: consultationMessages.fileUrl,
+        fileType: consultationMessages.fileType,
+        fileSize: consultationMessages.fileSize,
+        createdAt: consultationMessages.createdAt,
+        doctorId: appointments.doctorId,
+      })
+      .from(consultationMessages)
+      .innerJoin(appointments, eq(consultationMessages.appointmentId, appointments.id))
+      .where(and(eq(appointments.doctorId, doctorId), eq(appointments.patientId, patientId)))
+      .orderBy(consultationMessages.createdAt);
+    return result as any;
   }
 
   async getConsultationRating(appointmentId: number): Promise<ConsultationRating | undefined> {

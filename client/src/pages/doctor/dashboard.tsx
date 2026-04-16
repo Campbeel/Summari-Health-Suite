@@ -28,6 +28,10 @@ import {
   FileCheck,
   Check,
   X,
+  FileSignature,
+  Pill,
+  ClipboardList,
+  FlaskConical,
 } from "lucide-react";
 import { format, parseISO, isToday, addDays, subDays, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
@@ -169,6 +173,18 @@ export default function DoctorDashboard() {
 
   const { data: appointments, isLoading: loadingAppointments } = useQuery<AppointmentWithPatient[]>({
     queryKey: ["/api/doctors/me/appointments"],
+  });
+
+  const { data: pendingSignatures } = useQuery<Array<{
+    appointmentId: number;
+    patientName: string;
+    scheduledDate: string;
+    scheduledTime: string;
+    pendingDocs: Array<'prescription' | 'instructions' | 'exams'>;
+    link: string;
+  }>>({
+    queryKey: ["/api/doctors/me/pending-signatures"],
+    refetchInterval: 60000,
   });
 
   const updateStatusMutation = useMutation({
@@ -404,6 +420,54 @@ export default function DoctorDashboard() {
           )}
         </CardContent>
       </Card>
+
+      {pendingSignatures && pendingSignatures.length > 0 && (
+        <Card data-testid="pending-signatures-card" className="border-amber-300 dark:border-amber-800">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileSignature className="h-5 w-5 text-amber-600" />
+              Documentos Pendientes de Firma
+              <Badge variant="secondary" className="ml-1">{pendingSignatures.length}</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-2">
+            {pendingSignatures.map((p) => (
+              <Link
+                key={p.appointmentId}
+                href={p.link}
+                data-testid={`pending-signature-${p.appointmentId}`}
+              >
+                <div className="flex items-center justify-between gap-3 p-3 rounded-md border hover:bg-accent cursor-pointer transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{p.patientName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {format(parseISO(p.scheduledDate), "d 'de' MMM yyyy", { locale: es })} · {p.scheduledTime.slice(0, 5)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {p.pendingDocs.includes('prescription') && (
+                      <Badge variant="outline" className="text-[10px] gap-1">
+                        <Pill className="h-3 w-3" /> Receta
+                      </Badge>
+                    )}
+                    {p.pendingDocs.includes('instructions') && (
+                      <Badge variant="outline" className="text-[10px] gap-1">
+                        <ClipboardList className="h-3 w-3" /> Indic.
+                      </Badge>
+                    )}
+                    {p.pendingDocs.includes('exams') && (
+                      <Badge variant="outline" className="text-[10px] gap-1">
+                        <FlaskConical className="h-3 w-3" /> Exámenes
+                      </Badge>
+                    )}
+                    <ChevronRight className="h-4 w-4 text-muted-foreground ml-1" />
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground px-1">
         <span className="font-medium">Leyenda:</span>
