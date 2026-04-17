@@ -3,7 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/queryClient";
-import { Bot, Send, Loader2, User } from "lucide-react";
+import { Bot, Send, Loader2, User, Sparkles } from "lucide-react";
 
 interface Message {
   role: "user" | "assistant";
@@ -82,9 +82,10 @@ export function ClinicalAssistant({ appointmentId, className = "" }: ClinicalAss
 
   return (
     <div className={`flex flex-col h-full ${className}`} data-testid="clinical-assistant">
-      <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30">
-        <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center">
+      <div className="flex items-center gap-2 px-3 py-2 border-b bg-gradient-to-r from-primary/5 to-transparent">
+        <div className="relative h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center">
           <Bot className="h-4 w-4 text-primary" />
+          <Sparkles className="h-2.5 w-2.5 text-primary absolute -top-0.5 -right-0.5" />
         </div>
         <div>
           <p className="text-sm font-medium leading-none">Asistente Clínico</p>

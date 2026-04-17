@@ -72,6 +72,7 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
   const remoteParticipantRef = useRef<string | null>(null);
   const disconnectedManuallyRef = useRef(false);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const disconnectedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const maxReconnectAttempts = 10;
   const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
@@ -110,6 +111,10 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
   }, []);
 
   const cleanupPeerConnection = useCallback(() => {
+    if (disconnectedTimeoutRef.current) {
+      clearTimeout(disconnectedTimeoutRef.current);
+      disconnectedTimeoutRef.current = null;
+    }
     if (peerConnectionRef.current) {
       peerConnectionRef.current.onicecandidate = null;
       peerConnectionRef.current.ontrack = null;
@@ -173,7 +178,11 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
         reconnectAttemptRef.current = 0;
       } else if (state === 'disconnected') {
         console.log('[WebRTC] Peer disconnected, waiting 5s before considering failed...');
-        setTimeout(() => {
+        if (disconnectedTimeoutRef.current) {
+          clearTimeout(disconnectedTimeoutRef.current);
+        }
+        disconnectedTimeoutRef.current = setTimeout(() => {
+          disconnectedTimeoutRef.current = null;
           if (peerConnectionRef.current === pc && pc.connectionState === 'disconnected') {
             console.log('[WebRTC] Still disconnected after timeout');
             setIsConnected(false);
@@ -353,6 +362,11 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
 
   const connect = useCallback(async () => {
     console.log('[WebRTC] Attempting to connect...', { roomId, userId, appointmentId });
+
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       console.log('[WebRTC] Already connected to WebSocket');

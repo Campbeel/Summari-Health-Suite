@@ -449,17 +449,49 @@ export default function ConsultationPage() {
 
       mediaRecorder.onerror = (event: any) => {
         console.error("[Recording] MediaRecorder error:", event.error?.name, event.error?.message);
+        toast({
+          title: "Error en la grabación",
+          description: "Se detectó un problema con la transcripción. Intenta reanudarla.",
+          variant: "destructive",
+        });
+        setIsRecording(false);
       };
+
+      // Monitor local audio track for unexpected loss (mic unplugged, permissions revoked)
+      const localTrack = localAudioTracks[0];
+      if (localTrack) {
+        localTrack.onended = () => {
+          console.warn("[Recording] Local audio track ended unexpectedly");
+          toast({
+            title: "Micrófono desconectado",
+            description: "Se perdió el acceso al micrófono. Verifica los permisos.",
+            variant: "destructive",
+          });
+          setIsRecording(false);
+        };
+        localTrack.onmute = () => {
+          console.warn("[Recording] Local audio track muted by system");
+        };
+      }
 
       mediaRecorder.start(5000);
       setIsRecording(true);
 
       console.log(`[Recording] Recording started (preserveChunks=${preserveChunks}, existing chunks: ${audioChunksRef.current.length}, state: ${mediaRecorder.state})`);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error starting recording:", error);
+      const isPermission = error?.name === "NotAllowedError" || error?.name === "PermissionDeniedError";
+      toast({
+        title: isPermission ? "Permiso de micrófono denegado" : "No se pudo iniciar la grabación",
+        description: isPermission
+          ? "Permite el acceso al micrófono para transcribir la consulta."
+          : "Ocurrió un error al iniciar la transcripción. Intenta nuevamente.",
+        variant: "destructive",
+      });
+      setIsRecording(false);
     }
-  }, [createMixedAudioStream]);
+  }, [createMixedAudioStream, toast]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {

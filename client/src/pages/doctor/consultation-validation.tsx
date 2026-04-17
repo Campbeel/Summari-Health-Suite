@@ -54,6 +54,7 @@ import {
   Search,
   X,
   Shield,
+  Sparkles,
 } from "lucide-react";
 import { ClinicalAssistant } from "@/components/clinical-assistant";
 import { SigningPanel } from "@/components/signing-panel";
@@ -1126,9 +1127,9 @@ export default function ConsultationValidationPage() {
                             {isRegenerating ? (
                               <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
                             ) : (
-                              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                              <Sparkles className="h-3.5 w-3.5 mr-1.5 text-primary" />
                             )}
-                            Regenerar
+                            Regenerar con IA
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
@@ -1169,10 +1170,17 @@ export default function ConsultationValidationPage() {
                   )}
 
                   <div>
+                    {(validationData?.clinicalRecord as any)?.hasTranscription && (
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Sparkles className="h-3 w-3 text-primary" />
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">Generado por IA</span>
+                        <span className="text-[10px] text-muted-foreground">· Editable</span>
+                      </div>
+                    )}
                     <Textarea
                       value={medicalReportText}
                       onChange={(e) => setMedicalReportText(e.target.value)}
-                      className="min-h-[450px] text-sm font-mono resize-y overflow-y-auto"
+                      className="min-h-[450px] text-sm leading-relaxed resize-y overflow-y-auto"
                       placeholder="La anamnesis aparecerá aquí después de la consulta. Incluye el informe generado y las notas clínicas. Puede modificarlo libremente."
                       data-testid="input-medical-report"
                     />
@@ -1335,10 +1343,16 @@ export default function ConsultationValidationPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {medications.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground" data-testid="prescription-empty">
-                      <Pill className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">No hay medicamentos en la receta</p>
-                      <p className="text-xs mt-1">Agrega medicamentos manualmente</p>
+                    <div className="text-center py-10 px-4 border border-dashed rounded-lg" data-testid="prescription-empty">
+                      <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                        <Pill className="h-6 w-6 text-primary" />
+                      </div>
+                      <p className="text-sm font-medium">Sin medicamentos en la receta</p>
+                      <p className="text-xs text-muted-foreground mt-1 mb-4">Agrega el primer medicamento para empezar</p>
+                      <Button size="sm" onClick={addMedication} data-testid="button-add-first-medication">
+                        <Plus className="h-4 w-4 mr-1.5" />
+                        Agregar medicamento
+                      </Button>
                     </div>
                   ) : (
                     <>
@@ -1466,8 +1480,12 @@ export default function ConsultationValidationPage() {
         </div>
 
         <div className="space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1">
-          <Card className="overflow-hidden">
-            <ClinicalAssistant appointmentId={id!} className="h-[350px]" />
+          <Card className="overflow-hidden border-primary/20 shadow-sm">
+            <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-3 py-1.5 border-b border-primary/10 flex items-center gap-1.5">
+              <Sparkles className="h-3 w-3 text-primary" />
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">IA</span>
+            </div>
+            <ClinicalAssistant appointmentId={id!} className="h-[480px]" />
           </Card>
 
           <Card>
@@ -1487,7 +1505,7 @@ export default function ConsultationValidationPage() {
                   {alertsMutation.isPending ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <RefreshCw className="h-3.5 w-3.5" />
+                    <Sparkles className="h-3.5 w-3.5 text-primary" />
                   )}
                 </Button>
               </div>
