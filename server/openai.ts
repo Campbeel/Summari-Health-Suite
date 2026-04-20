@@ -714,9 +714,10 @@ Genera un mensaje de bienvenida conciso y profesional en español para el doctor
 3. Indicar el motivo de consulta si está disponible
 4. Mencionar si es paciente nuevo o recurrente (y cuántas consultas previas tiene)
 5. Resaltar información clínica relevante (alergias, antecedentes importantes)
-6. Ser directo y útil, como un briefing clínico rápido
+6. Si hay un resumen de historia clínica previa (previousConsultationsSummary), destacar 1-3 puntos clave (diagnósticos recurrentes, medicación crónica, tendencias) en una línea breve
+7. Ser directo y útil, como un briefing clínico rápido
 
-Mantén el tono profesional pero cálido. No uses formato markdown extenso, solo texto plano con saltos de línea simples. Máximo 200 palabras.`
+Mantén el tono profesional pero cálido. No uses formato markdown extenso, solo texto plano con saltos de línea simples. Máximo 220 palabras.`
         },
         {
           role: "user",
@@ -749,7 +750,10 @@ Contexto del paciente actual:
 - Antecedentes: ${context.patientMedicalHistory || 'Sin antecedentes registrados'}
 - Motivo de consulta: ${context.consultationReason || 'No especificado'}
 - Paciente ${context.isNewPatient ? 'nuevo' : `recurrente (${context.previousConsultationsCount} consultas previas)`}
-${context.currentClinicalRecord ? `
+${context.previousConsultationsSummary ? `
+Resumen de historia clínica previa (resumido por IA, usar como contexto rápido):
+${context.previousConsultationsSummary}
+` : ''}${context.currentClinicalRecord ? `
 Registro clínico actual:
 - Motivo de consulta: ${context.currentClinicalRecord.chiefComplaint || 'No registrado'}
 - Síntomas: ${context.currentClinicalRecord.symptoms?.join(', ') || 'No registrados'}
@@ -784,5 +788,80 @@ Tu rol:
   } catch (error) {
     console.error("Error in assistant chat:", error);
     throw new Error("Failed to get assistant response");
+  }
+}
+
+export interface PastConsultationInput {
+  date: string;
+  doctorName?: string;
+  specialty?: string;
+  chiefComplaint?: string;
+  diagnosis?: string;
+  reportText?: string;
+  prescriptions?: Array<{ medication: string; dosage?: string; frequency?: string; duration?: string }>;
+}
+
+export async function generatePatientHistorySummary(
+  patientName: string,
+  baselineHistory: string | null | undefined,
+  pastConsultations: PastConsultationInput[],
+): Promise<string> {
+  if (pastConsultations.length === 0) {
+    return baselineHistory?.trim() ? `Antecedentes registrados: ${baselineHistory.trim()}` : "Sin consultas previas registradas.";
+  }
+
+  const trimmedConsultations = pastConsultations.slice(0, 15).map(c => ({
+    date: c.date,
+    doctorName: c.doctorName,
+    specialty: c.specialty,
+    chiefComplaint: c.chiefComplaint?.slice(0, 300),
+    diagnosis: c.diagnosis?.slice(0, 300),
+    reportText: c.reportText?.slice(0, 1500),
+    prescriptions: (c.prescriptions || []).slice(0, 8),
+  }));
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `Eres un asistente clínico. Vas a recibir el historial de consultas previas de un paciente y debes producir un RESUMEN CLÍNICO COMPACTO en español, optimizado para que otro asistente IA lo use como contexto sin agotar tokens.
+
+Reglas:
+- Máximo 250 palabras.
+- Texto plano (sin markdown extenso). Usa secciones cortas con guiones.
+- Estructura sugerida:
+  Antecedentes relevantes: ...
+  Diagnósticos previos recurrentes: ...
+  Medicación crónica/recurrente: ...
+  Evolución / patrones: ...
+  Alertas o pendientes: ...
+- Resume; no repitas datos textualmente. Omite secciones vacías.
+- Si los antecedentes basales aportan información, intégralos.
+- No inventes datos. Si algo no está, no lo menciones.`,
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            patientName,
+            baselineHistory: baselineHistory || null,
+            pastConsultations: trimmedConsultations,
+          }),
+        },
+      ],
+      temperature: 0.3,
+      max_tokens: 500,
+    });
+
+    return response.choices[0]?.message?.content?.trim() || "Sin resumen disponible.";
+  } catch (error) {
+    console.error("Error generating patient history summary:", error);
+    const lines = trimmedConsultations.map(c => {
+      const dx = c.diagnosis ? ` - Dx: ${c.diagnosis}` : '';
+      const cc = c.chiefComplaint ? ` - Motivo: ${c.chiefComplaint}` : '';
+      return `• ${c.date}${dx}${cc}`;
+    });
+    return `Consultas previas (${trimmedConsultations.length}):\n${lines.join('\n')}`;
   }
 }

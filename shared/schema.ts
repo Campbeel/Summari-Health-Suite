@@ -35,6 +35,8 @@ export const patients = pgTable("patients", {
   medicalHistory: text("medical_history"),
   emergencyContact: text("emergency_contact"),
   emergencyPhone: text("emergency_phone"),
+  historySummary: text("history_summary"),
+  historySummaryAt: timestamp("history_summary_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

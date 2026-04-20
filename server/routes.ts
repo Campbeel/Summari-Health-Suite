@@ -8,7 +8,7 @@ import fs from "fs";
 import { storage } from "./storage";
 import { isAuthenticated, registerAuthRoutes } from "./auth";
 import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText, verifyFlowSignature } from "./flow";
-import { transcribeAudio, transcribeAudioChunked, generatePrescriptionFromTranscript, generateFullConsultationSuggestions, generateMedicalReport, generateMedicalReportWithTemplate, DEFAULT_REPORT_TEMPLATE_PROMPT, generateClinicalAlerts, generateAssistantWelcome, chatWithAssistant, type AssistantContext } from "./openai";
+import { transcribeAudio, transcribeAudioChunked, generatePrescriptionFromTranscript, generateFullConsultationSuggestions, generateMedicalReport, generateMedicalReportWithTemplate, DEFAULT_REPORT_TEMPLATE_PROMPT, generateClinicalAlerts, generateAssistantWelcome, chatWithAssistant, generatePatientHistorySummary, type AssistantContext, type PastConsultationInput } from "./openai";
 import { sendConsultationDocuments, sendPaymentReceiptEmail } from "./email";
 import { generateConsultationPdf, generateSeparateConsultationPdfs, generatePaymentReceiptPdf, type PdfDocumentData, type ReceiptPdfData } from "./pdf-generator";
 import { getFitbitAuthUrl, getAndRemovePendingState, exchangeCodeForTokens, refreshFitbitTokens, fetchFitbitData } from "./fitbit";
@@ -2725,6 +2725,74 @@ export async function registerRoutes(
 
     const genderMap: Record<string, string> = { male: "Masculino", female: "Femenino", other: "Otro" };
 
+    let previousConsultationsSummary: string | undefined;
+    if (patient && previousConsultationsCount > 0) {
+      try {
+        const pastRecords = (await storage.getClinicalRecordsByPatient(appointment.patientId))
+          .filter(r => r.appointmentId !== appointmentId);
+
+        const latestRecordTs = pastRecords.reduce<number>((acc, r) => {
+          const ts = new Date((r.updatedAt as any) || (r.createdAt as any) || 0).getTime();
+          return ts > acc ? ts : acc;
+        }, 0);
+
+        const cachedAt = patient.historySummaryAt ? new Date(patient.historySummaryAt).getTime() : 0;
+        const cacheStale = !patient.historySummary || cachedAt < latestRecordTs;
+
+        if (!cacheStale && patient.historySummary) {
+          previousConsultationsSummary = patient.historySummary;
+        } else {
+          const allPrescriptions = await storage.getPrescriptionsByPatient(appointment.patientId);
+          const prescriptionsByRecord = new Map<number, Array<{ medication: string; dosage?: string; frequency?: string; duration?: string }>>();
+          for (const p of allPrescriptions) {
+            const meds = (p as any).medications;
+            if (Array.isArray(meds)) {
+              prescriptionsByRecord.set(p.clinicalRecordId, meds.map((m: any) => ({
+                medication: m.medication || m.name || '',
+                dosage: m.dosage,
+                frequency: m.frequency,
+                duration: m.duration,
+              })));
+            }
+          }
+
+          const pastConsultations: PastConsultationInput[] = pastRecords
+            .sort((a, b) => new Date((b.updatedAt as any) || (b.createdAt as any) || 0).getTime() - new Date((a.updatedAt as any) || (a.createdAt as any) || 0).getTime())
+            .slice(0, 15)
+            .map(r => {
+              const reportText = r.medicalReport && typeof r.medicalReport === 'object'
+                ? ((r.medicalReport as any).editedText || (r.medicalReport as any).text || '')
+                : '';
+              const dateRaw = (r.updatedAt as any) || (r.createdAt as any);
+              return {
+                date: dateRaw ? new Date(dateRaw).toISOString().split('T')[0] : 'sin fecha',
+                chiefComplaint: r.chiefComplaint || undefined,
+                diagnosis: r.diagnosis || undefined,
+                reportText: reportText || undefined,
+                prescriptions: prescriptionsByRecord.get(r.id) || [],
+              };
+            });
+
+          previousConsultationsSummary = await generatePatientHistorySummary(
+            patientName,
+            patient.medicalHistory,
+            pastConsultations,
+          );
+
+          try {
+            await storage.updatePatient(patient.id, {
+              historySummary: previousConsultationsSummary,
+              historySummaryAt: new Date(),
+            } as any);
+          } catch (cacheErr) {
+            console.error("Error caching patient history summary:", cacheErr);
+          }
+        }
+      } catch (err) {
+        console.error("Error building patient history summary:", err);
+      }
+    }
+
     return {
       doctorName,
       patientName,
@@ -2736,6 +2804,7 @@ export async function registerRoutes(
       consultationType: appointment.consultationType || undefined,
       isNewPatient: previousConsultationsCount === 0,
       previousConsultationsCount,
+      previousConsultationsSummary,
       currentClinicalRecord: clinicalRecord ? {
         chiefComplaint: clinicalRecord.chiefComplaint || undefined,
         symptoms: clinicalRecord.symptoms || undefined,

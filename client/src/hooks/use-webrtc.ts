@@ -502,10 +502,10 @@ export function useWebRTC({ roomId, userId, appointmentId, isDoctor, onRemoteStr
             break;
 
           case 'doctor-disconnected':
-            console.log('[WebRTC] Doctor disconnected');
+            console.log('[WebRTC] Doctor ended the consultation');
             setIsWaiting(false);
-            setError('El médico se ha desconectado de la consulta');
-            onErrorRef.current?.('El médico se ha desconectado de la consulta');
+            disconnectedManuallyRef.current = true;
+            setError(null);
             onDoctorDisconnectedRef.current?.();
             break;
 

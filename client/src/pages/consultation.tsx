@@ -141,6 +141,8 @@ export default function ConsultationPage() {
   const [notes, setNotes] = useState("");
   const [hasJoinedCall, setHasJoinedCall] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [consultationEnded, setConsultationEnded] = useState(false);
+  const [endedCountdown, setEndedCountdown] = useState(7);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatFile, setChatFile] = useState<globalThis.File | null>(null);
@@ -186,6 +188,7 @@ export default function ConsultationPage() {
     appointmentId: id,
     isDoctor,
     onError: (error) => {
+      if (consultationEnded) return;
       toast({
         title: "Error de videollamada",
         description: error,
@@ -199,6 +202,7 @@ export default function ConsultationPage() {
           description: "La videollamada se ha establecido correctamente",
         });
       } else if (state === 'disconnected' || state === 'failed') {
+        if (consultationEnded) return;
         toast({
           title: "Desconectado",
           description: "La conexión de video se ha interrumpido",
@@ -220,12 +224,26 @@ export default function ConsultationPage() {
     },
     onDoctorDisconnected: () => {
       if (!isDoctor) {
-        setTimeout(() => {
-          navigate(`/consultation/${id}/feedback`);
-        }, 2000);
+        setConsultationEnded(true);
       }
     },
   });
+
+  useEffect(() => {
+    if (!consultationEnded || isDoctor) return;
+    setEndedCountdown(7);
+    const interval = setInterval(() => {
+      setEndedCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          navigate(`/consultation/${id}/feedback`);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [consultationEnded, isDoctor, id, navigate]);
 
   useEffect(() => {
     if (!isDoctor && id) {
@@ -727,6 +745,36 @@ export default function ConsultationPage() {
                 <Button variant="outline" onClick={() => navigate("/appointments")} data-testid="button-back-from-denied">
                   Volver a mis consultas
                 </Button>
+              </div>
+            </div>
+          ) : consultationEnded && !isDoctor ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/95 backdrop-blur-sm z-10">
+              <div className="text-center max-w-md px-4 sm:px-6" data-testid="overlay-consultation-ended">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4 sm:mb-6">
+                  <ShieldCheck className="h-8 w-8 sm:h-10 sm:w-10 text-primary" />
+                </div>
+                <h3 className="text-lg sm:text-xl font-semibold mb-2" data-testid="text-ended-title">
+                  Consulta finalizada
+                </h3>
+                <p className="text-sm sm:text-base text-muted-foreground mb-4 sm:mb-6" data-testid="text-ended-message">
+                  El médico ha finalizado la consulta. En breve te llevaremos a la página de evaluación.
+                </p>
+                <div className="flex flex-col items-center gap-3">
+                  <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm" data-testid="text-ended-countdown">
+                      Redirigiendo en {endedCountdown}s...
+                    </span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate(`/consultation/${id}/feedback`)}
+                    data-testid="button-go-feedback-now"
+                  >
+                    Ir ahora
+                  </Button>
+                </div>
               </div>
             </div>
           ) : isWaiting ? (
