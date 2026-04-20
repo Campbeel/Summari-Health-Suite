@@ -1140,6 +1140,60 @@ export async function registerRoutes(
     }
   });
 
+  async function sendReceiptEmailForAppointment(appointmentId: number, paidAmount?: number): Promise<void> {
+    console.log(`[Receipt] Preparing receipt email for appointment ${appointmentId}...`);
+    const fullAppointment = await storage.getAppointment(appointmentId);
+    if (!fullAppointment) {
+      console.error(`[Receipt] Could not find appointment ${appointmentId} for receipt email`);
+      return;
+    }
+    const patient = await storage.getPatient(fullAppointment.patientId);
+    const patientUser = patient ? await storage.getUser(patient.userId) : null;
+    const doctor = await storage.getDoctor(fullAppointment.doctorId);
+    const doctorUser = doctor ? await storage.getUser(doctor.userId) : null;
+
+    if (!patientUser?.email) {
+      console.error(`[Receipt] Patient has no email for appointment ${appointmentId}`);
+      return;
+    }
+    if (!doctorUser || !doctor) {
+      console.error(`[Receipt] Doctor not found for appointment ${appointmentId}`);
+      return;
+    }
+
+    const patientName = `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() || 'Paciente';
+    const doctorName = `Dr. ${doctorUser.firstName || ''} ${doctorUser.lastName || ''}`.trim();
+    const orderId = fullAppointment.flowCommerceOrderId || `APT-${appointmentId}`;
+    const amount = paidAmount || (fullAppointment as any).consultationFee || doctor.consultationFee || 0;
+
+    console.log(`[Receipt] Generating PDF for ${patientName} (${patientUser.email}), order ${orderId}, amount ${amount}`);
+    const receiptPdfBuffer = await generatePaymentReceiptPdf({
+      patientName,
+      patientRut: patient?.rut || patientUser?.rut || undefined,
+      doctorName,
+      doctorSpecialty: doctor.specialty,
+      consultationDate: fullAppointment.scheduledDate,
+      consultationTime: fullAppointment.scheduledTime?.slice(0, 5) || '',
+      amount,
+      commerceOrderId: orderId,
+    });
+    console.log(`[Receipt] PDF generated (${receiptPdfBuffer.length} bytes), sending email...`);
+
+    await sendPaymentReceiptEmail({
+      patientName,
+      patientRut: patient?.rut || patientUser?.rut || undefined,
+      patientEmail: patientUser.email,
+      doctorName,
+      doctorSpecialty: doctor.specialty,
+      consultationDate: fullAppointment.scheduledDate,
+      consultationTime: fullAppointment.scheduledTime?.slice(0, 5) || '',
+      amount,
+      commerceOrderId: orderId,
+      receiptPdfBuffer,
+    });
+    console.log(`[Receipt] Payment receipt email with PDF sent for appointment ${appointmentId} to ${patientUser.email}`);
+  }
+
   app.post("/api/flow/confirm", async (req, res) => {
     try {
       const { token, s: signature } = req.body;
@@ -1196,64 +1250,10 @@ export async function registerRoutes(
         status: isPaymentSuccessful(paymentStatus.status) ? "confirmed" : "scheduled",
       });
       
-      if (isPaymentSuccessful(paymentStatus.status)) {
-        console.log(`[Receipt] Payment successful for appointment ${appointmentId}, preparing receipt email...`);
-        (async () => {
-          try {
-            const fullAppointment = await storage.getAppointment(appointmentId);
-            if (!fullAppointment) {
-              console.error(`[Receipt] Could not find appointment ${appointmentId} for receipt email`);
-              return;
-            }
-            const patient = await storage.getPatient(fullAppointment.patientId);
-            const patientUser = patient ? await storage.getUser(patient.userId) : null;
-            const doctor = await storage.getDoctor(fullAppointment.doctorId);
-            const doctorUser = doctor ? await storage.getUser(doctor.userId) : null;
-            
-            if (!patientUser?.email) {
-              console.error(`[Receipt] Patient has no email for appointment ${appointmentId}`);
-              return;
-            }
-            if (!doctorUser || !doctor) {
-              console.error(`[Receipt] Doctor not found for appointment ${appointmentId}`);
-              return;
-            }
-            
-            const patientName = `${patientUser.firstName || ''} ${patientUser.lastName || ''}`.trim() || 'Paciente';
-            const doctorName = `Dr. ${doctorUser.firstName || ''} ${doctorUser.lastName || ''}`.trim();
-            const orderId = appointment.flowCommerceOrderId || `APT-${appointmentId}`;
-            const amount = paymentStatus.amount || doctor.consultationFee || 0;
-
-            console.log(`[Receipt] Generating PDF for ${patientName} (${patientUser.email}), order ${orderId}, amount ${amount}`);
-            const receiptPdfBuffer = await generatePaymentReceiptPdf({
-              patientName,
-              patientRut: patient?.rut || patientUser?.rut || undefined,
-              doctorName,
-              doctorSpecialty: doctor.specialty,
-              consultationDate: fullAppointment.scheduledDate,
-              consultationTime: fullAppointment.scheduledTime?.slice(0, 5) || '',
-              amount,
-              commerceOrderId: orderId,
-            });
-            console.log(`[Receipt] PDF generated (${receiptPdfBuffer.length} bytes), sending email...`);
-
-            await sendPaymentReceiptEmail({
-              patientName,
-              patientRut: patient?.rut || patientUser?.rut || undefined,
-              patientEmail: patientUser.email,
-              doctorName,
-              doctorSpecialty: doctor.specialty,
-              consultationDate: fullAppointment.scheduledDate,
-              consultationTime: fullAppointment.scheduledTime?.slice(0, 5) || '',
-              amount,
-              commerceOrderId: orderId,
-              receiptPdfBuffer,
-            });
-            console.log(`[Receipt] Payment receipt email with PDF sent for appointment ${appointmentId} to ${patientUser.email}`);
-          } catch (emailError: any) {
-            console.error(`[Receipt] Failed to send payment receipt email for appointment ${appointmentId}:`, emailError?.message || emailError);
-          }
-        })();
+      if (isPaymentSuccessful(paymentStatus.status) && appointment.paymentStatus !== "paid") {
+        sendReceiptEmailForAppointment(appointmentId, paymentStatus.amount).catch(err => {
+          console.error(`[Receipt] Background send failed for appointment ${appointmentId}:`, err?.message || err);
+        });
       }
       
       console.log(`Flow payment confirmed for appointment ${appointmentId}: ${newStatus}`);
@@ -1286,12 +1286,19 @@ export async function registerRoutes(
       
       const paymentStatus = await getPaymentStatus(appointment.flowToken);
       const status = getPaymentStatusText(paymentStatus.status);
-      
+      const wasNotPaid = appointment.paymentStatus !== "paid";
+
       await storage.updateAppointment(appointment.id, {
         paymentStatus: status,
         status: isPaymentSuccessful(paymentStatus.status) ? "confirmed" : appointment.status,
       });
-      
+
+      if (isPaymentSuccessful(paymentStatus.status) && wasNotPaid) {
+        sendReceiptEmailForAppointment(appointment.id, paymentStatus.amount).catch(err => {
+          console.error(`[Receipt] Background send failed for appointment ${appointment.id}:`, err?.message || err);
+        });
+      }
+
       res.json({
         status,
         isSuccessful: isPaymentSuccessful(paymentStatus.status),
