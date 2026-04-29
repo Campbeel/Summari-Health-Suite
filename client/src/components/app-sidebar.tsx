@@ -62,7 +62,7 @@ const DOCTOR_MENU: MenuItem[] = [
 
 const ADMIN_MENU: MenuItem[] = [
   { title: "Dashboard", url: "/admin/dashboard", icon: LayoutDashboard, testId: "nav-admin-dashboard" },
-  { title: "Usuarios", url: "/admin/users", icon: Users, testId: "nav-admin-users" },
+  { title: "Doctor@s", url: "/admin/users", icon: Users, testId: "nav-admin-users" },
   { title: "Agendas", url: "/admin/schedules", icon: CalendarClock, testId: "nav-admin-schedules" },
 ];
 

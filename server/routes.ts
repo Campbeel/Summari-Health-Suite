@@ -3244,6 +3244,8 @@ export async function registerRoutes(
           specialty: doctor?.specialty || null,
           licenseNumber: doctor?.licenseNumber || null,
           consultationFee: doctor?.consultationFee || null,
+          bio: doctor?.bio || null,
+          isActive: doctor?.isActive ?? null,
         };
       }));
       res.json(decorated);
