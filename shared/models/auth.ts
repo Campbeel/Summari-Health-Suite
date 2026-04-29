@@ -22,6 +22,11 @@ export const users = pgTable("users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   isAdmin: boolean("is_admin").notNull().default(false),
+  // Strict role: 'patient' | 'doctor' | 'admin' | 'superAdmin'
+  role: varchar("role").notNull().default("patient"),
+  // Org assignment (used for admins and org-affiliated doctors). NULL for patients,
+  // independent doctors and superAdmin.
+  organizationId: varchar("organization_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

@@ -7,315 +7,186 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useAdmin } from "@/hooks/use-admin";
-import { useLocation } from "wouter";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Shield, UserPlus, Stethoscope, User, Loader2 } from "lucide-react";
+import { Loader2, Plus, Trash2, Stethoscope, Shield, Users } from "lucide-react";
 
-interface UserWithDoctorStatus {
+interface OrgUser {
   id: string;
   email: string | null;
   firstName: string | null;
   lastName: string | null;
-  isAdmin: boolean;
-  isDoctor: boolean;
+  rut: string | null;
+  role: string;
   doctorId: number | null;
   specialty: string | null;
-  createdAt: string;
+  licenseNumber: string | null;
+  consultationFee: number | null;
 }
 
+const empty = {
+  rut: "", firstName: "", lastName: "", email: "", password: "",
+  specialty: "", licenseNumber: "", consultationFee: 25000, bio: "",
+};
+
 export default function AdminUsersPage() {
-  const { isAdmin, isLoading: isAdminLoading } = useAdmin();
-  const [, navigate] = useLocation();
   const { toast } = useToast();
-  
-  const [selectedUser, setSelectedUser] = useState<UserWithDoctorStatus | null>(null);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [formData, setFormData] = useState({
-    specialty: "",
-    licenseNumber: "",
-    bio: "",
-    consultationFee: 25000,
-  });
-  const [formErrors, setFormErrors] = useState<{ specialty?: string; licenseNumber?: string }>({});
+  const { data: orgUsers, isLoading } = useQuery<OrgUser[]>({ queryKey: ["/api/admin/users"] });
+  const [createOpen, setCreateOpen] = useState(false);
+  const [deleteUser, setDeleteUser] = useState<OrgUser | null>(null);
+  const [form, setForm] = useState(empty);
 
-  const { data: users, isLoading } = useQuery<UserWithDoctorStatus[]>({
-    queryKey: ["/api/admin/users"],
-    enabled: isAdmin,
-  });
-
-  const promoteMutation = useMutation({
-    mutationFn: async (data: {
-      userId: string;
-      specialty: string;
-      licenseNumber: string;
-      bio?: string;
-      consultationFee: number;
-    }) => {
-      return await apiRequest("POST", "/api/admin/promote-to-doctor", data);
-    },
+  const createDoctor = useMutation({
+    mutationFn: async () => apiRequest("POST", "/api/admin/doctors", {
+      ...form,
+      consultationFee: Number(form.consultationFee),
+    }),
     onSuccess: () => {
-      toast({
-        title: "Usuario promovido",
-        description: "El usuario ahora es médico y puede acceder al portal médico.",
-      });
+      toast({ title: "Médico creado" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
-      setIsDialogOpen(false);
-      setSelectedUser(null);
-      setFormData({
-        specialty: "",
-        licenseNumber: "",
-        bio: "",
-        consultationFee: 25000,
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/doctors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      setCreateOpen(false);
+      setForm(empty);
     },
-    onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error.message || "No se pudo promover al usuario",
-        variant: "destructive",
-      });
-    },
+    onError: (e: any) => toast({ title: "Error", description: e?.message || "No se pudo crear", variant: "destructive" }),
   });
 
-  if (isAdminLoading) {
+  const removeUser = useMutation({
+    mutationFn: async (id: string) => apiRequest("DELETE", `/api/admin/users/${id}`),
+    onSuccess: () => {
+      toast({ title: "Usuario eliminado" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/doctors"] });
+      setDeleteUser(null);
+    },
+    onError: (e: any) => toast({ title: "Error", description: e?.message || "No se pudo eliminar", variant: "destructive" }),
+  });
+
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
-
-  if (!isAdmin) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
-        <Shield className="h-16 w-16 text-muted-foreground" />
-        <h1 className="text-2xl font-bold">Acceso Restringido</h1>
-        <p className="text-muted-foreground text-center">
-          No tienes permisos de administrador para acceder a esta página.
-        </p>
-        <Button onClick={() => navigate("/")}>Volver al Inicio</Button>
-      </div>
-    );
-  }
-
-  const handlePromoteClick = (user: UserWithDoctorStatus) => {
-    setSelectedUser(user);
-    setFormErrors({});
-    setIsDialogOpen(true);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedUser) return;
-
-    const errors: { specialty?: string; licenseNumber?: string } = {};
-    if (!formData.specialty.trim()) errors.specialty = "La especialidad es obligatoria";
-    if (!formData.licenseNumber.trim()) errors.licenseNumber = "El número de licencia es obligatorio";
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
-      return;
-    }
-    setFormErrors({});
-
-    promoteMutation.mutate({
-      userId: selectedUser.id,
-      specialty: formData.specialty,
-      licenseNumber: formData.licenseNumber,
-      bio: formData.bio || undefined,
-      consultationFee: formData.consultationFee,
-    });
-  };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center gap-3">
-        <Shield className="h-8 w-8 text-primary" />
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Panel de Administración</h1>
-          <p className="text-muted-foreground">Gestiona usuarios y médicos</p>
+          <h1 className="text-3xl font-bold flex items-center gap-2" data-testid="text-users-title">
+            <Users className="h-7 w-7" /> Cuentas y permisos
+          </h1>
+          <p className="text-muted-foreground">Administra los usuarios de tu organización</p>
         </div>
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogTrigger asChild>
+            <Button data-testid="button-new-doctor"><Plus className="h-4 w-4 mr-2" /> Nuevo médico</Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Crear médico</DialogTitle>
+              <DialogDescription>Se creará una cuenta y un perfil profesional asociados a tu organización</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              <div><Label>RUT *</Label><Input value={form.rut} onChange={e => setForm({ ...form, rut: e.target.value })} placeholder="12345678-9" data-testid="input-doctor-rut" /></div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>Nombre *</Label><Input value={form.firstName} onChange={e => setForm({ ...form, firstName: e.target.value })} data-testid="input-doctor-firstname" /></div>
+                <div><Label>Apellido *</Label><Input value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} data-testid="input-doctor-lastname" /></div>
+              </div>
+              <div><Label>Email *</Label><Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} data-testid="input-doctor-email" /></div>
+              <div><Label>Contraseña *</Label><Input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} data-testid="input-doctor-password" /></div>
+              <div><Label>Especialidad *</Label><Input value={form.specialty} onChange={e => setForm({ ...form, specialty: e.target.value })} placeholder="Medicina General" data-testid="input-doctor-specialty" /></div>
+              <div><Label>Nº de licencia *</Label><Input value={form.licenseNumber} onChange={e => setForm({ ...form, licenseNumber: e.target.value })} data-testid="input-doctor-license" /></div>
+              <div><Label>Tarifa (CLP)</Label><Input type="number" value={form.consultationFee} onChange={e => setForm({ ...form, consultationFee: parseInt(e.target.value) || 0 })} data-testid="input-doctor-fee" /></div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button>
+              <Button onClick={() => createDoctor.mutate()} disabled={createDoctor.isPending || !form.rut || !form.specialty} data-testid="button-create-doctor">
+                {createDoctor.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Crear médico
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Usuarios Registrados</CardTitle>
-          <CardDescription>
-            Lista de todos los usuarios. Puedes promover pacientes a médicos.
-          </CardDescription>
+          <CardTitle>Usuarios de tu organización</CardTitle>
+          <CardDescription>{orgUsers?.length ?? 0} usuario(s)</CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Usuario</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Rol</TableHead>
-                  <TableHead>Especialidad</TableHead>
-                  <TableHead>Acciones</TableHead>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Nombre</TableHead>
+                <TableHead>RUT / Email</TableHead>
+                <TableHead>Rol</TableHead>
+                <TableHead>Especialidad</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {orgUsers?.map(u => (
+                <TableRow key={u.id} data-testid={`row-user-${u.id}`}>
+                  <TableCell>
+                    <div className="font-medium">{u.firstName} {u.lastName}</div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="text-sm">{u.rut || "—"}</div>
+                    <div className="text-xs text-muted-foreground">{u.email}</div>
+                  </TableCell>
+                  <TableCell>
+                    {u.role === "admin" ? (
+                      <Badge variant="default" className="gap-1"><Shield className="h-3 w-3" /> Administrador</Badge>
+                    ) : u.role === "doctor" ? (
+                      <Badge variant="secondary" className="gap-1"><Stethoscope className="h-3 w-3" /> Médico</Badge>
+                    ) : (
+                      <Badge variant="outline">{u.role}</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>{u.specialty || "—"}</TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="ghost" size="icon" onClick={() => setDeleteUser(u)} data-testid={`button-delete-user-${u.id}`}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users?.map((user) => (
-                  <TableRow key={user.id} data-testid={`row-user-${user.id}`}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {user.isDoctor ? (
-                          <Stethoscope className="h-4 w-4 text-primary" />
-                        ) : (
-                          <User className="h-4 w-4 text-muted-foreground" />
-                        )}
-                        <span className="font-medium">
-                          {user.firstName && user.lastName
-                            ? `${user.firstName} ${user.lastName}`
-                            : user.email || "Usuario"}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>{user.email || "-"}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        {user.isAdmin && (
-                          <Badge variant="default" data-testid={`badge-admin-${user.id}`}>
-                            Admin
-                          </Badge>
-                        )}
-                        {user.isDoctor && (
-                          <Badge variant="secondary" data-testid={`badge-doctor-${user.id}`}>
-                            Médico
-                          </Badge>
-                        )}
-                        {!user.isDoctor && !user.isAdmin && (
-                          <Badge variant="outline" data-testid={`badge-patient-${user.id}`}>
-                            Paciente
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{user.specialty || "-"}</TableCell>
-                    <TableCell>
-                      {!user.isDoctor && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handlePromoteClick(user)}
-                          data-testid={`button-promote-${user.id}`}
-                        >
-                          <UserPlus className="h-4 w-4 mr-1" />
-                          Hacer Médico
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+              ))}
+              {orgUsers && orgUsers.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">No hay usuarios en tu organización</TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Promover a Médico</DialogTitle>
-            <DialogDescription>
-              Ingresa los datos profesionales para{" "}
-              {selectedUser?.firstName && selectedUser?.lastName
-                ? `${selectedUser.firstName} ${selectedUser.lastName}`
-                : selectedUser?.email}
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="specialty">Especialidad *</Label>
-              <Input
-                id="specialty"
-                value={formData.specialty}
-                onChange={(e) => { setFormData({ ...formData, specialty: e.target.value }); setFormErrors(prev => ({ ...prev, specialty: undefined })); }}
-                placeholder="Ej: Medicina General, Cardiología"
-                className={formErrors.specialty ? "border-destructive" : ""}
-                data-testid="input-specialty"
-              />
-              {formErrors.specialty && (
-                <p className="text-sm text-destructive" data-testid="error-specialty">{formErrors.specialty}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="licenseNumber">Número de Licencia *</Label>
-              <Input
-                id="licenseNumber"
-                value={formData.licenseNumber}
-                onChange={(e) => { setFormData({ ...formData, licenseNumber: e.target.value }); setFormErrors(prev => ({ ...prev, licenseNumber: undefined })); }}
-                placeholder="Ej: MED-2024-001"
-                className={formErrors.licenseNumber ? "border-destructive" : ""}
-                data-testid="input-license"
-              />
-              {formErrors.licenseNumber && (
-                <p className="text-sm text-destructive" data-testid="error-license">{formErrors.licenseNumber}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="bio">Biografía</Label>
-              <Input
-                id="bio"
-                value={formData.bio}
-                onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                placeholder="Breve descripción profesional"
-                data-testid="input-bio"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="consultationFee">Tarifa por Consulta (centavos)</Label>
-              <Input
-                id="consultationFee"
-                type="number"
-                value={formData.consultationFee}
-                onChange={(e) => setFormData({ ...formData, consultationFee: parseInt(e.target.value) || 0 })}
-                placeholder="25000"
-                data-testid="input-fee"
-              />
-              <p className="text-xs text-muted-foreground">
-                ${(formData.consultationFee / 100).toFixed(2)} USD
-              </p>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={promoteMutation.isPending} data-testid="button-confirm-promote">
-                {promoteMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Procesando...
-                  </>
-                ) : (
-                  "Confirmar"
-                )}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <AlertDialog open={!!deleteUser} onOpenChange={(o) => !o && setDeleteUser(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar usuario?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Si es un médico, será desactivado y no podrá recibir nuevas consultas. Si es admin, su cuenta será eliminada.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteUser && removeUser.mutate(deleteUser.id)} data-testid="button-confirm-delete-user">
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

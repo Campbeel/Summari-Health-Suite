@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/use-auth";
 import { useDoctor } from "@/hooks/use-doctor";
+import { useRole, type UserRole } from "@/hooks/use-role";
 import { AppSidebar } from "@/components/app-sidebar";
 import { NotificationBell } from "@/components/notification-bell";
 import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/sidebar";
@@ -35,11 +36,24 @@ import ConsultationValidationPage from "@/pages/doctor/consultation-validation";
 import DoctorPatientsPage from "@/pages/doctor/patients";
 import PatientDetailPage from "@/pages/doctor/patient-detail";
 import AdminUsersPage from "@/pages/admin/users";
+import AdminDashboardPage from "@/pages/admin/dashboard";
+import AdminSchedulesPage from "@/pages/admin/schedules";
+import SuperAdminDashboardPage from "@/pages/super-admin/dashboard";
+import SuperAdminOrganizationsPage from "@/pages/super-admin/organizations";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
 import HealthDataPage from "@/pages/health-data";
 import ConsultationFeedbackPage from "@/pages/consultation-feedback";
 import ConsultationSummaryPage from "@/pages/consultation-summary";
+
+function homeForRole(role: UserRole): string {
+  switch (role) {
+    case "doctor": return "/doctor/dashboard";
+    case "admin": return "/admin/dashboard";
+    case "superAdmin": return "/super-admin/dashboard";
+    case "patient": default: return "/";
+  }
+}
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -68,19 +82,23 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ProtectedRoute({ component: Component, fullScreen }: { component: React.ComponentType; fullScreen?: boolean }) {
+function ProtectedRoute({ component: Component, fullScreen, allowedRoles }: { component: React.ComponentType; fullScreen?: boolean; allowedRoles?: UserRole[] }) {
   const { isAuthenticated, isLoading } = useAuth();
+  const { role, isLoading: roleLoading } = useRole();
   const [location, navigate] = useLocation();
 
   const shouldRedirectToLogin = !isLoading && !isAuthenticated;
+  const wrongRole = isAuthenticated && !roleLoading && allowedRoles && !allowedRoles.includes(role);
 
   useEffect(() => {
     if (shouldRedirectToLogin && location !== "/") {
       navigate("/login");
+    } else if (wrongRole) {
+      navigate(homeForRole(role));
     }
-  }, [shouldRedirectToLogin, location, navigate]);
+  }, [shouldRedirectToLogin, wrongRole, role, location, navigate]);
 
-  if (isLoading) {
+  if (isLoading || (allowedRoles && roleLoading)) {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -88,7 +106,7 @@ function ProtectedRoute({ component: Component, fullScreen }: { component: React
     );
   }
 
-  if (shouldRedirectToLogin) {
+  if (shouldRedirectToLogin || wrongRole) {
     return null;
   }
 
@@ -139,6 +157,24 @@ function DoctorProtectedRoute({ component: Component }: { component: React.Compo
   );
 }
 
+function RoleHomeRedirect() {
+  const { role, isLoading } = useRole();
+  const [, navigate] = useLocation();
+  useEffect(() => {
+    if (!isLoading && role !== "patient") {
+      navigate(homeForRole(role));
+    }
+  }, [role, isLoading, navigate]);
+  if (isLoading || role !== "patient") {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
+  return <Dashboard />;
+}
+
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
 
@@ -154,22 +190,22 @@ function Router() {
     <Switch>
       <Route path="/">
         {isAuthenticated ? (
-          <ProtectedRoute component={Dashboard} />
+          <ProtectedRoute component={RoleHomeRedirect} allowedRoles={["patient", "doctor", "admin", "superAdmin"]} />
         ) : (
           <LandingPage />
         )}
       </Route>
       <Route path="/login">
-        {isAuthenticated ? <ProtectedRoute component={Dashboard} /> : <AuthLoginPage />}
+        {isAuthenticated ? <ProtectedRoute component={RoleHomeRedirect} /> : <AuthLoginPage />}
       </Route>
       <Route path="/crear-cuenta">
-        {isAuthenticated ? <ProtectedRoute component={Dashboard} /> : <AuthRegisterPage />}
+        {isAuthenticated ? <ProtectedRoute component={RoleHomeRedirect} /> : <AuthRegisterPage />}
       </Route>
       <Route path="/recuperar-contrasena">
-        {isAuthenticated ? <ProtectedRoute component={Dashboard} /> : <ForgotPasswordPage />}
+        {isAuthenticated ? <ProtectedRoute component={RoleHomeRedirect} /> : <ForgotPasswordPage />}
       </Route>
       <Route path="/restablecer-contrasena">
-        {isAuthenticated ? <ProtectedRoute component={Dashboard} /> : <ResetPasswordPage />}
+        {isAuthenticated ? <ProtectedRoute component={RoleHomeRedirect} /> : <ResetPasswordPage />}
       </Route>
       <Route path="/appointments">
         <ProtectedRoute component={AppointmentsPage} />
@@ -231,8 +267,20 @@ function Router() {
       <Route path="/doctor/consultation/:id/validate">
         <DoctorProtectedRoute component={ConsultationValidationPage} />
       </Route>
+      <Route path="/admin/dashboard">
+        <ProtectedRoute component={AdminDashboardPage} allowedRoles={["admin"]} />
+      </Route>
       <Route path="/admin/users">
-        <ProtectedRoute component={AdminUsersPage} />
+        <ProtectedRoute component={AdminUsersPage} allowedRoles={["admin"]} />
+      </Route>
+      <Route path="/admin/schedules">
+        <ProtectedRoute component={AdminSchedulesPage} allowedRoles={["admin"]} />
+      </Route>
+      <Route path="/super-admin/dashboard">
+        <ProtectedRoute component={SuperAdminDashboardPage} allowedRoles={["superAdmin"]} />
+      </Route>
+      <Route path="/super-admin/organizations">
+        <ProtectedRoute component={SuperAdminOrganizationsPage} allowedRoles={["superAdmin"]} />
       </Route>
       <Route component={NotFound} />
     </Switch>

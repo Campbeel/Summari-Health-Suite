@@ -44,8 +44,9 @@ import {
   reportTemplates,
   type ReportTemplate,
   type InsertReportTemplate,
+  organizations,
 } from "@shared/schema";
-import { eq, and, gte, lte, desc, sql, notInArray } from "drizzle-orm";
+import { eq, and, or, gte, lte, desc, sql, notInArray, isNull } from "drizzle-orm";
 
 // Custom type definitions for joined queries
 type DoctorWithUserInfo = {
@@ -442,7 +443,12 @@ export class DatabaseStorage implements IStorage {
       })
       .from(doctors)
       .leftJoin(users, eq(doctors.userId, users.id))
-      .where(eq(doctors.isActive, true));
+      .leftJoin(organizations, eq(doctors.organizationId, organizations.id))
+      // Active doctor AND (no org OR org is active) — independents and active-org doctors only.
+      .where(and(
+        eq(doctors.isActive, true),
+        or(isNull(doctors.organizationId), eq(organizations.isActive, true)),
+      ));
     return result;
   }
 

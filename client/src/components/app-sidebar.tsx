@@ -1,20 +1,7 @@
-import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { useDoctor, type UserRole } from "@/hooks/use-doctor";
-import { useAdmin } from "@/hooks/use-admin";
+import { useRole, type UserRole } from "@/hooks/use-role";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import {
   Sidebar,
   SidebarContent,
@@ -35,24 +22,28 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { BrandLogo } from "@/components/brand-logo";
-import { 
-  Home, 
-  Calendar, 
-  FileText, 
-  Settings, 
+import {
+  Home,
+  Calendar,
+  FileText,
+  Settings,
   LogOut,
   ChevronUp,
   Pill,
   LayoutDashboard,
   User,
   Users,
-  Shield,
   Activity,
   ClipboardList,
   FlaskConical,
+  Building2,
+  CalendarClock,
+  ShieldCheck,
 } from "lucide-react";
 
-const patientMenuItems = [
+type MenuItem = { title: string; url: string; icon: any; testId: string };
+
+const PATIENT_MENU: MenuItem[] = [
   { title: "Inicio", url: "/", icon: Home, testId: "nav-home" },
   { title: "Mis Consultas", url: "/appointments", icon: Calendar, testId: "nav-appointments" },
   { title: "Datos de Salud", url: "/health-data", icon: Activity, testId: "nav-health-data" },
@@ -62,40 +53,54 @@ const patientMenuItems = [
   { title: "Exámenes", url: "/examenes", icon: FlaskConical, testId: "nav-exam-orders" },
 ];
 
-const doctorMenuItems = [
+const DOCTOR_MENU: MenuItem[] = [
   { title: "Panel", url: "/doctor/dashboard", icon: LayoutDashboard, testId: "link-doctor-dashboard" },
   { title: "Mis Citas", url: "/doctor/appointments", icon: Calendar, testId: "link-doctor-appointments" },
   { title: "Pacientes", url: "/doctor/patients", icon: Users, testId: "link-doctor-patients" },
   { title: "Mi Perfil Profesional", url: "/doctor/profile", icon: User, testId: "link-doctor-profile" },
 ];
 
+const ADMIN_MENU: MenuItem[] = [
+  { title: "Dashboard", url: "/admin/dashboard", icon: LayoutDashboard, testId: "nav-admin-dashboard" },
+  { title: "Usuarios", url: "/admin/users", icon: Users, testId: "nav-admin-users" },
+  { title: "Agendas", url: "/admin/schedules", icon: CalendarClock, testId: "nav-admin-schedules" },
+];
+
+const SUPERADMIN_MENU: MenuItem[] = [
+  { title: "Plataforma", url: "/super-admin/dashboard", icon: ShieldCheck, testId: "nav-super-admin-dashboard" },
+  { title: "Organizaciones", url: "/super-admin/organizations", icon: Building2, testId: "nav-super-admin-orgs" },
+];
+
+function menuForRole(role: UserRole): { items: MenuItem[]; label: string } {
+  switch (role) {
+    case "doctor":
+      return { items: DOCTOR_MENU, label: "Panel Médico" };
+    case "admin":
+      return { items: ADMIN_MENU, label: "Administración" };
+    case "superAdmin":
+      return { items: SUPERADMIN_MENU, label: "Super Administración" };
+    case "patient":
+    default:
+      return { items: PATIENT_MENU, label: "Menú Principal" };
+  }
+}
+
+function roleLabel(role: UserRole): string {
+  switch (role) {
+    case "doctor": return "Médico";
+    case "admin": return "Administrador";
+    case "superAdmin": return "Super Admin";
+    case "patient": default: return "Paciente";
+  }
+}
+
 export function AppSidebar() {
   const { user, logout } = useAuth();
-  const { isDoctor, currentRole, switchRole } = useDoctor();
-  const { isAdmin } = useAdmin();
-  const [location, navigate] = useLocation();
-  const [pendingRoleSwitch, setPendingRoleSwitch] = useState<"patient" | "doctor" | null>(null);
-
-  const handleRoleSwitch = (role: "patient" | "doctor") => {
-    if (role === currentRole) return;
-    setPendingRoleSwitch(role);
-  };
-
-  const confirmRoleSwitch = () => {
-    if (!pendingRoleSwitch) return;
-    switchRole(pendingRoleSwitch);
-    if (pendingRoleSwitch === "doctor") {
-      navigate("/doctor/dashboard");
-    } else {
-      navigate("/");
-    }
-    setPendingRoleSwitch(null);
-  };
-
-  const menuItems = currentRole === "doctor" ? doctorMenuItems : patientMenuItems;
+  const { role } = useRole();
+  const [location] = useLocation();
+  const { items, label } = menuForRole(role);
 
   return (
-    <>
     <Sidebar>
       <SidebarHeader className="p-4">
         <Link href="/" className="flex items-center gap-3" data-testid="link-sidebar-home">
@@ -108,41 +113,14 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        {isDoctor && (
-          <SidebarGroup className="px-2 py-2">
-            <div className="flex gap-1 p-1 bg-muted/50 rounded-md">
-              <Button
-                variant={currentRole === "patient" ? "default" : "ghost"}
-                size="sm"
-                className="flex-1"
-                onClick={() => handleRoleSwitch("patient")}
-                data-testid="button-role-switch-patient"
-              >
-                Paciente
-              </Button>
-              <Button
-                variant={currentRole === "doctor" ? "default" : "ghost"}
-                size="sm"
-                className="flex-1"
-                onClick={() => handleRoleSwitch("doctor")}
-                data-testid="button-role-switch-doctor"
-              >
-                Médico
-              </Button>
-            </div>
-          </SidebarGroup>
-        )}
-
         <SidebarGroup>
-          <SidebarGroupLabel>
-            {currentRole === "doctor" ? "Panel Médico" : "Menú Principal"}
-          </SidebarGroupLabel>
+          <SidebarGroupLabel>{label}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {menuItems.map((item) => (
+              {items.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton 
-                    asChild 
+                  <SidebarMenuButton
+                    asChild
                     isActive={location === item.url}
                     data-testid={item.testId}
                   >
@@ -156,28 +134,6 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        {isAdmin && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Administración</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton 
-                    asChild 
-                    isActive={location === "/admin/users"}
-                    data-testid="nav-admin-users"
-                  >
-                    <Link href="/admin/users">
-                      <Shield className="h-4 w-4" />
-                      <span>Gestionar Usuarios</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
       </SidebarContent>
 
       <SidebarFooter className="p-2">
@@ -197,12 +153,12 @@ export function AppSidebar() {
                   </Avatar>
                   <div className="flex flex-col items-start text-sm">
                     <span className="font-medium truncate max-w-[120px]">
-                      {user?.firstName && user?.lastName 
+                      {user?.firstName && user?.lastName
                         ? `${user.firstName} ${user.lastName}`
                         : user?.email || "Usuario"}
                     </span>
-                    <span className="text-xs text-muted-foreground">
-                      {currentRole === "doctor" ? "Médico" : "Paciente"}
+                    <span className="text-xs text-muted-foreground" data-testid="text-user-role">
+                      {roleLabel(role)}
                     </span>
                   </div>
                   <ChevronUp className="ml-auto h-4 w-4" />
@@ -214,14 +170,16 @@ export function AppSidebar() {
                 align="start"
                 sideOffset={8}
               >
-                <DropdownMenuItem asChild>
-                  <Link href="/profile" className="cursor-pointer">
-                    <Settings className="h-4 w-4 mr-2" />
-                    Configuración
-                  </Link>
-                </DropdownMenuItem>
+                {role === "patient" || role === "doctor" ? (
+                  <DropdownMenuItem asChild>
+                    <Link href="/profile" className="cursor-pointer">
+                      <Settings className="h-4 w-4 mr-2" />
+                      Configuración
+                    </Link>
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   onClick={() => logout()}
                   className="text-destructive focus:text-destructive cursor-pointer"
                   data-testid="button-logout"
@@ -235,25 +193,5 @@ export function AppSidebar() {
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
-
-    <AlertDialog open={pendingRoleSwitch !== null} onOpenChange={(open) => { if (!open) setPendingRoleSwitch(null); }}>
-      <AlertDialogContent data-testid="dialog-role-switch">
-        <AlertDialogHeader>
-          <AlertDialogTitle>Cambiar de vista</AlertDialogTitle>
-          <AlertDialogDescription>
-            {pendingRoleSwitch === "doctor"
-              ? "Vas a cambiar a la vista de Médico. Tu navegación actual se perderá."
-              : "Vas a cambiar a la vista de Paciente. Tu navegación actual se perderá."}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel data-testid="button-cancel-role-switch">Cancelar</AlertDialogCancel>
-          <AlertDialogAction onClick={confirmRoleSwitch} data-testid="button-confirm-role-switch">
-            Cambiar a {pendingRoleSwitch === "doctor" ? "Médico" : "Paciente"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-    </>
   );
 }

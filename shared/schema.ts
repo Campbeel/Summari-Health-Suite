@@ -7,10 +7,31 @@ import { z } from "zod";
 export * from "./models/auth";
 export * from "./models/chat";
 
+// Organizations table
+export const organizations = pgTable("organizations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  rut: text("rut"),
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+  address: text("address"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertOrganizationSchema = createInsertSchema(organizations).omit({
+  id: true,
+  createdAt: true,
+});
+export type Organization = typeof organizations.$inferSelect;
+export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
+
 // Doctors table
 export const doctors = pgTable("doctors", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull(),
+  // Optional: doctors can be independent (NULL) or org-affiliated
+  organizationId: varchar("organization_id"),
   specialty: text("specialty").notNull(),
   licenseNumber: text("license_number").notNull(),
   bio: text("bio"),

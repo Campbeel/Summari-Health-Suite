@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { z } from "zod";
 import { db } from "./db";
-import { users, patients, passwordResetTokens } from "@shared/schema";
+import { users, patients, passwordResetTokens, organizations, doctors } from "@shared/schema";
 import { eq, and, gt, isNull } from "drizzle-orm";
 import { sendPasswordResetEmail } from "./email";
 
@@ -43,6 +43,45 @@ export const isAuthenticated: RequestHandler = (req: Request, res: Response, nex
     return res.status(401).json({ message: "Unauthorized" });
   }
 };
+
+// Build middleware that allows requests only when the user has one of the given roles.
+export function requireRole(...allowed: string[]): RequestHandler {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (!req.userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    try {
+      const [user] = await db.select().from(users).where(eq(users.id, req.userId));
+      if (!user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      if (!allowed.includes(user.role)) {
+        return res.status(403).json({ message: "Forbidden", role: user.role });
+      }
+      // For org-scoped roles, enforce that the organization is still active.
+      if ((user.role === "admin" || user.role === "doctor") && user.organizationId) {
+        const [org] = await db.select().from(organizations).where(eq(organizations.id, user.organizationId));
+        if (org && org.isActive === false) {
+          return res.status(403).json({ message: "Organization is inactive" });
+        }
+      }
+      // For doctor role, also block access if their doctor profile has been deactivated.
+      if (user.role === "doctor") {
+        const [doc] = await db.select().from(doctors).where(eq(doctors.userId, user.id));
+        if (doc && doc.isActive === false) {
+          return res.status(403).json({ message: "Doctor account is inactive" });
+        }
+      }
+      // Stash on req for downstream handlers.
+      (req as any).userRole = user.role;
+      (req as any).userOrgId = user.organizationId;
+      next();
+    } catch (e) {
+      console.error("[Auth] requireRole failed:", e);
+      return res.status(500).json({ message: "Authorization check failed" });
+    }
+  };
+}
 
 function generateToken(userId: string, email: string): string {
   return jwt.sign({ userId, email } as JwtPayload, JWT_SECRET, { expiresIn: JWT_EXPIRY });

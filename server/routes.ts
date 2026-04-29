@@ -6,7 +6,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { storage } from "./storage";
-import { isAuthenticated, registerAuthRoutes } from "./auth";
+import { isAuthenticated, registerAuthRoutes, requireRole } from "./auth";
 import { createPayment, getPaymentStatus, isPaymentSuccessful, getPaymentStatusText, verifyFlowSignature } from "./flow";
 import { transcribeAudio, transcribeAudioChunked, generatePrescriptionFromTranscript, generateFullConsultationSuggestions, generateMedicalReport, generateMedicalReportWithTemplate, DEFAULT_REPORT_TEMPLATE_PROMPT, generateClinicalAlerts, generateAssistantWelcome, chatWithAssistant, generatePatientHistorySummary, type AssistantContext, type PastConsultationInput } from "./openai";
 import { sendConsultationDocuments, sendPaymentReceiptEmail } from "./email";
@@ -19,7 +19,16 @@ import {
   insertPrescriptionSchema,
   insertMedicalInstructionSchema,
   insertDoctorSchema,
+  insertOrganizationSchema,
+  organizations,
+  users,
+  doctors,
+  patients,
+  appointments,
 } from "@shared/schema";
+import { db } from "./db";
+import { eq, and, sql as dsql, inArray, desc as ddesc } from "drizzle-orm";
+import bcrypt from "bcryptjs";
 
 // WebRTC signaling room management
 interface WaitingEntry {
@@ -84,7 +93,7 @@ export async function registerRoutes(
   });
 
   // Doctor (current user) routes - must be before :id routes to prevent "me" being matched as an id
-  app.get("/api/doctors/me", isAuthenticated, async (req: any, res) => {
+  app.get("/api/doctors/me", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
@@ -105,7 +114,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/stats", isAuthenticated, async (req: any, res) => {
+  app.get("/api/doctors/me/stats", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
@@ -122,7 +131,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/appointments", isAuthenticated, async (req: any, res) => {
+  app.get("/api/doctors/me/appointments", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
@@ -139,7 +148,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/doctors/me/profile", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/doctors/me/profile", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
@@ -177,7 +186,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/doctors/me/availability", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/doctors/me/availability", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
@@ -210,7 +219,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/appointments/:id/status", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/appointments/:id/status", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
@@ -246,7 +255,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/patients", isAuthenticated, async (req: any, res) => {
+  app.get("/api/doctors/me/patients", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
@@ -262,7 +271,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/patients/:patientId", isAuthenticated, async (req: any, res) => {
+  app.get("/api/doctors/me/patients/:patientId", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
@@ -288,7 +297,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/patients/:patientId/history", isAuthenticated, async (req: any, res) => {
+  app.get("/api/doctors/me/patients/:patientId/history", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
@@ -311,7 +320,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/patients/:patientId/records", isAuthenticated, async (req: any, res) => {
+  app.get("/api/doctors/me/patients/:patientId/records", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
@@ -334,7 +343,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/patients/:patientId/prescriptions", isAuthenticated, async (req: any, res) => {
+  app.get("/api/doctors/me/patients/:patientId/prescriptions", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
@@ -357,7 +366,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/patients/:patientId/exam-orders", isAuthenticated, async (req: any, res) => {
+  app.get("/api/doctors/me/patients/:patientId/exam-orders", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
@@ -381,7 +390,7 @@ export async function registerRoutes(
   });
 
   // T001: Doctor notifications (patient online + overtime)
-  app.get("/api/doctors/me/notifications", isAuthenticated, async (req: any, res) => {
+  app.get("/api/doctors/me/notifications", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const doctor = await storage.getDoctorByUserId(req.userId);
       if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
@@ -462,7 +471,7 @@ export async function registerRoutes(
   });
 
   // T002: Chat history per patient
-  app.get("/api/doctors/me/patients/:patientId/messages", isAuthenticated, async (req: any, res) => {
+  app.get("/api/doctors/me/patients/:patientId/messages", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const doctor = await storage.getDoctorByUserId(req.userId);
       if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
@@ -649,7 +658,7 @@ export async function registerRoutes(
   });
 
   // GET pending signatures across all consultations for the logged-in doctor
-  app.get("/api/doctors/me/pending-signatures", isAuthenticated, async (req: any, res) => {
+  app.get("/api/doctors/me/pending-signatures", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const doctor = await storage.getDoctorByUserId(req.userId);
       if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
@@ -705,7 +714,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/report-templates", isAuthenticated, async (req: any, res) => {
+  app.get("/api/doctors/me/report-templates", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const doctor = await storage.getDoctorByUserId(req.userId);
       if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
@@ -717,7 +726,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/report-templates/default-prompt", isAuthenticated, async (req: any, res) => {
+  app.get("/api/doctors/me/report-templates/default-prompt", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const doctor = await storage.getDoctorByUserId(req.userId);
       if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
@@ -727,7 +736,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/doctors/me/report-templates", isAuthenticated, async (req: any, res) => {
+  app.post("/api/doctors/me/report-templates", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const doctor = await storage.getDoctorByUserId(req.userId);
       if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
@@ -748,7 +757,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/doctors/me/report-templates/:templateId", isAuthenticated, async (req: any, res) => {
+  app.put("/api/doctors/me/report-templates/:templateId", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const doctor = await storage.getDoctorByUserId(req.userId);
       if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
@@ -766,7 +775,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/doctors/me/report-templates/:templateId", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/doctors/me/report-templates/:templateId", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const doctor = await storage.getDoctorByUserId(req.userId);
       if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
@@ -992,6 +1001,15 @@ export async function registerRoutes(
       const doctor = await storage.getDoctor(appointmentData.doctorId);
       if (!doctor) {
         return res.status(404).json({ error: "Médico no encontrado" });
+      }
+      if (doctor.isActive === false) {
+        return res.status(400).json({ error: "Este médico no está disponible para nuevas consultas" });
+      }
+      if (doctor.organizationId) {
+        const [docOrg] = await db.select().from(organizations).where(eq(organizations.id, doctor.organizationId));
+        if (docOrg && docOrg.isActive === false) {
+          return res.status(400).json({ error: "La organización de este médico no está activa" });
+        }
       }
 
       // Overwrite duration from doctor's preference
@@ -1914,7 +1932,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/consultations/:id/end", isAuthenticated, async (req: any, res) => {
+  app.post("/api/consultations/:id/end", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       const { audioData, notes, diagnosis, symptoms } = req.body;
@@ -2071,7 +2089,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/consultations/:id/regenerate-report", isAuthenticated, async (req: any, res) => {
+  app.post("/api/consultations/:id/regenerate-report", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
@@ -2122,7 +2140,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/consultations/:id/validation", isAuthenticated, async (req: any, res) => {
+  app.get("/api/consultations/:id/validation", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
@@ -2192,7 +2210,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/consultations/:id/validate", isAuthenticated, async (req: any, res) => {
+  app.post("/api/consultations/:id/validate", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
@@ -2636,7 +2654,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/consultations/:id/generate-suggestions", isAuthenticated, async (req: any, res) => {
+  app.post("/api/consultations/:id/generate-suggestions", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
@@ -2664,7 +2682,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/consultations/:id/alerts", isAuthenticated, async (req: any, res) => {
+  app.post("/api/consultations/:id/alerts", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
@@ -2822,7 +2840,7 @@ export async function registerRoutes(
     };
   }
 
-  app.post("/api/consultations/:id/assistant/welcome", isAuthenticated, async (req: any, res) => {
+  app.post("/api/consultations/:id/assistant/welcome", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       if (isNaN(appointmentId)) return res.status(400).json({ error: "ID inválido" });
@@ -2855,7 +2873,7 @@ export async function registerRoutes(
     })).min(1).max(50),
   });
 
-  app.post("/api/consultations/:id/assistant/chat", isAuthenticated, async (req: any, res) => {
+  app.post("/api/consultations/:id/assistant/chat", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       if (isNaN(appointmentId)) return res.status(400).json({ error: "ID inválido" });
@@ -2957,84 +2975,439 @@ export async function registerRoutes(
     }
   };
 
-  // Admin routes
-  app.get("/api/admin/users", isAuthenticated, isAdmin, async (req: any, res) => {
-    try {
-      const allUsers = await storage.getAllUsers();
-      const usersWithDoctorStatus = await Promise.all(
-        allUsers.map(async (user) => {
-          const doctor = await storage.getDoctorByUserId(user.id);
-          const { passwordHash, ...safeUser } = user;
-          return {
-            ...safeUser,
-            isDoctor: !!doctor,
-            doctorId: doctor?.id || null,
-            specialty: doctor?.specialty || null,
-          };
-        })
-      );
-      res.json(usersWithDoctorStatus);
-    } catch (error) {
-      console.error("Error fetching users:", error);
-      res.status(500).json({ error: "Failed to fetch users" });
-    }
-  });
-
-  app.post("/api/admin/promote-to-doctor", isAuthenticated, isAdmin, async (req: any, res) => {
-    try {
-      const promoteSchema = z.object({
-        userId: z.string(),
-        specialty: z.string().min(1, "Specialty is required"),
-        licenseNumber: z.string().min(1, "License number is required"),
-        bio: z.string().optional(),
-        consultationFee: z.number().min(0).default(25000),
-      });
-      
-      const validationResult = promoteSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({
-          error: "Validation failed",
-          errors: validationResult.error.flatten(),
-        });
-      }
-      
-      const { userId, specialty, licenseNumber, bio, consultationFee } = validationResult.data;
-      
-      // Check if user exists
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ error: "User not found" });
-      }
-      
-      // Check if already a doctor
-      const existingDoctor = await storage.getDoctorByUserId(userId);
-      if (existingDoctor) {
-        return res.status(400).json({ error: "User is already a doctor" });
-      }
-      
-      // Create doctor profile
-      const doctor = await storage.createDoctor({
-        userId,
-        specialty,
-        licenseNumber,
-        bio: bio || null,
-        consultationFee,
-      });
-      
-      res.json({ success: true, doctor });
-    } catch (error) {
-      console.error("Error promoting user to doctor:", error);
-      res.status(500).json({ error: "Failed to promote user to doctor" });
-    }
-  });
+  // Legacy /api/admin/users + /api/admin/promote-to-doctor removed.
+  // Replaced by org-scoped requireRole("admin") versions below and POST /api/admin/doctors.
 
   app.get("/api/admin/check", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
       const user = await storage.getUser(userId);
-      res.json({ isAdmin: !!user?.isAdmin });
+      res.json({
+        isAdmin: !!user?.isAdmin,
+        role: user?.role || "patient",
+        organizationId: user?.organizationId || null,
+      });
     } catch (error) {
       res.status(500).json({ error: "Failed to check admin status" });
+    }
+  });
+
+  // ========================================================================
+  // SUPER ADMIN routes (platform-level: organizations CRUD + platform stats)
+  // ========================================================================
+  app.get("/api/super-admin/organizations", isAuthenticated, requireRole("superAdmin"), async (_req, res) => {
+    try {
+      const orgs = await db.select().from(organizations).orderBy(ddesc(organizations.createdAt));
+      // Decorate with counts
+      const decorated = await Promise.all(orgs.map(async (org) => {
+        const [{ doctorCount }] = await db.select({ doctorCount: dsql<number>`count(*)::int` })
+          .from(doctors).where(eq(doctors.organizationId, org.id));
+        const [{ adminCount }] = await db.select({ adminCount: dsql<number>`count(*)::int` })
+          .from(users).where(and(eq(users.organizationId, org.id), eq(users.role, "admin")));
+        return { ...org, doctorCount, adminCount };
+      }));
+      res.json(decorated);
+    } catch (error) {
+      console.error("Error listing organizations:", error);
+      res.status(500).json({ error: "Failed to list organizations" });
+    }
+  });
+
+  app.post("/api/super-admin/organizations", isAuthenticated, requireRole("superAdmin"), async (req, res) => {
+    try {
+      const parsed = insertOrganizationSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", errors: parsed.error.flatten() });
+      }
+      const [created] = await db.insert(organizations).values(parsed.data).returning();
+      res.json(created);
+    } catch (error) {
+      console.error("Error creating organization:", error);
+      res.status(500).json({ error: "Failed to create organization" });
+    }
+  });
+
+  app.put("/api/super-admin/organizations/:id", isAuthenticated, requireRole("superAdmin"), async (req, res) => {
+    try {
+      const id = String(req.params.id);
+      const parsed = insertOrganizationSchema.partial().safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", errors: parsed.error.flatten() });
+      }
+      const [updated] = await db.update(organizations).set(parsed.data).where(eq(organizations.id, id)).returning();
+      if (!updated) return res.status(404).json({ error: "Organization not found" });
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating organization:", error);
+      res.status(500).json({ error: "Failed to update organization" });
+    }
+  });
+
+  app.delete("/api/super-admin/organizations/:id", isAuthenticated, requireRole("superAdmin"), async (req, res) => {
+    try {
+      const id = String(req.params.id);
+      // Soft-deactivate to avoid breaking referenced doctors/users.
+      const [updated] = await db.update(organizations).set({ isActive: false }).where(eq(organizations.id, id)).returning();
+      if (!updated) return res.status(404).json({ error: "Organization not found" });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deactivating organization:", error);
+      res.status(500).json({ error: "Failed to deactivate organization" });
+    }
+  });
+
+  // Create an admin user for a given organization
+  app.post("/api/super-admin/organizations/:id/admins", isAuthenticated, requireRole("superAdmin"), async (req, res) => {
+    try {
+      const orgId = String(req.params.id);
+      const schema = z.object({
+        rut: z.string().min(3),
+        firstName: z.string().min(1),
+        lastName: z.string().min(1),
+        email: z.string().email(),
+        password: z.string().min(6),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", errors: parsed.error.flatten() });
+      }
+      const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId));
+      if (!org) return res.status(404).json({ error: "Organization not found" });
+
+      const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+      const newUserId = `user_admin_${Math.random().toString(36).slice(2, 10)}`;
+      const [created] = await db.insert(users).values({
+        id: newUserId,
+        rut: parsed.data.rut,
+        username: parsed.data.rut,
+        firstName: parsed.data.firstName,
+        lastName: parsed.data.lastName,
+        email: parsed.data.email,
+        passwordHash,
+        role: "admin",
+        organizationId: orgId,
+        isAdmin: true,
+      }).returning();
+      const { passwordHash: _, ...safe } = created;
+      res.json(safe);
+    } catch (error: any) {
+      if (String(error?.message || "").includes("duplicate")) {
+        return res.status(409).json({ error: "Ya existe un usuario con ese RUT o email" });
+      }
+      console.error("Error creating org admin:", error);
+      res.status(500).json({ error: "Failed to create org admin" });
+    }
+  });
+
+  app.get("/api/super-admin/stats", isAuthenticated, requireRole("superAdmin"), async (_req, res) => {
+    try {
+      const [orgCount] = await db.select({ c: dsql<number>`count(*)::int` }).from(organizations);
+      const [doctorCount] = await db.select({ c: dsql<number>`count(*)::int` }).from(doctors);
+      const [patientCount] = await db.select({ c: dsql<number>`count(*)::int` }).from(patients);
+      const [userCount] = await db.select({ c: dsql<number>`count(*)::int` }).from(users);
+      const [apptCount] = await db.select({ c: dsql<number>`count(*)::int` }).from(appointments);
+      const [revenueRow] = await db.select({
+        total: dsql<number>`COALESCE(SUM(${doctors.consultationFee}), 0)::int`
+      })
+        .from(appointments)
+        .innerJoin(doctors, eq(appointments.doctorId, doctors.id))
+        .where(eq(appointments.paymentStatus, "paid"));
+      res.json({
+        organizations: orgCount.c,
+        doctors: doctorCount.c,
+        patients: patientCount.c,
+        users: userCount.c,
+        appointments: apptCount.c,
+        totalRevenue: revenueRow.total,
+      });
+    } catch (error) {
+      console.error("Error fetching super-admin stats:", error);
+      res.status(500).json({ error: "Failed to fetch platform stats" });
+    }
+  });
+
+  // ========================================================================
+  // ORG ADMIN routes (scoped to admin's organization)
+  // ========================================================================
+  async function getRequestOrgId(req: any): Promise<string | null> {
+    if ((req as any).userOrgId) return (req as any).userOrgId as string;
+    const user = await storage.getUser(req.userId);
+    return user?.organizationId || null;
+  }
+
+  app.get("/api/admin/me/organization", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      const orgId = await getRequestOrgId(req);
+      if (!orgId) return res.status(404).json({ error: "Sin organización asignada" });
+      const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId));
+      res.json(org || null);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch organization" });
+    }
+  });
+
+  app.get("/api/admin/stats", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      const orgId = await getRequestOrgId(req);
+      if (!orgId) return res.status(404).json({ error: "Sin organización asignada" });
+
+      const orgDoctors = await db.select().from(doctors).where(eq(doctors.organizationId, orgId));
+      const doctorIds = orgDoctors.map(d => d.id);
+
+      if (doctorIds.length === 0) {
+        return res.json({
+          totalRevenue: 0, scheduled: 0, paid: 0, lost: 0, completed: 0,
+          totalAppointments: 0, doctorCount: 0, patientCount: 0,
+          revenueByDay: [], statusBreakdown: [], byDoctor: [],
+        });
+      }
+
+      const allAppts = await db.select().from(appointments).where(inArray(appointments.doctorId, doctorIds));
+
+      let totalRevenue = 0;
+      let scheduled = 0, paid = 0, lost = 0, completed = 0;
+      const revenueByDay: Record<string, number> = {};
+      const byDoctorMap = new Map<number, { revenue: number; count: number; completed: number }>();
+
+      for (const a of allAppts) {
+        const doctor = orgDoctors.find(d => d.id === a.doctorId);
+        const fee = doctor?.consultationFee || 0;
+
+        if (a.paymentStatus === "paid") {
+          totalRevenue += fee;
+          paid += 1;
+          revenueByDay[a.scheduledDate] = (revenueByDay[a.scheduledDate] || 0) + fee;
+        }
+        if (a.status === "scheduled" || a.status === "confirmed") scheduled += 1;
+        if (a.status === "completed") completed += 1;
+        if (a.status === "cancelled" || a.paymentStatus === "rejected") lost += 1;
+
+        const cur = byDoctorMap.get(a.doctorId) || { revenue: 0, count: 0, completed: 0 };
+        cur.count += 1;
+        if (a.paymentStatus === "paid") cur.revenue += fee;
+        if (a.status === "completed") cur.completed += 1;
+        byDoctorMap.set(a.doctorId, cur);
+      }
+
+      const patientIds = Array.from(new Set(allAppts.map(a => a.patientId)));
+
+      const byDoctor = await Promise.all(orgDoctors.map(async (d) => {
+        const [u] = await db.select().from(users).where(eq(users.id, d.userId));
+        const stats = byDoctorMap.get(d.id) || { revenue: 0, count: 0, completed: 0 };
+        return {
+          id: d.id,
+          name: `${u?.firstName || ""} ${u?.lastName || ""}`.trim() || u?.email || "Doctor",
+          specialty: d.specialty,
+          consultationFee: d.consultationFee,
+          ...stats,
+        };
+      }));
+
+      res.json({
+        totalRevenue,
+        scheduled,
+        paid,
+        lost,
+        completed,
+        totalAppointments: allAppts.length,
+        doctorCount: orgDoctors.length,
+        patientCount: patientIds.length,
+        revenueByDay: Object.entries(revenueByDay)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([date, amount]) => ({ date, amount })),
+        statusBreakdown: [
+          { status: "scheduled", count: scheduled },
+          { status: "paid", count: paid },
+          { status: "completed", count: completed },
+          { status: "lost", count: lost },
+        ],
+        byDoctor,
+      });
+    } catch (error) {
+      console.error("Error fetching admin stats:", error);
+      res.status(500).json({ error: "Failed to fetch admin stats" });
+    }
+  });
+
+  // List users in admin's org (doctors + admins)
+  app.get("/api/admin/users", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      const orgId = await getRequestOrgId(req);
+      if (!orgId) return res.json([]);
+      const orgUsers = await db.select().from(users).where(eq(users.organizationId, orgId));
+      const decorated = await Promise.all(orgUsers.map(async (u) => {
+        const { passwordHash, ...safe } = u;
+        const doctor = await storage.getDoctorByUserId(u.id);
+        return {
+          ...safe,
+          doctorId: doctor?.id || null,
+          specialty: doctor?.specialty || null,
+          licenseNumber: doctor?.licenseNumber || null,
+          consultationFee: doctor?.consultationFee || null,
+        };
+      }));
+      res.json(decorated);
+    } catch (error) {
+      console.error("Error listing org users:", error);
+      res.status(500).json({ error: "Failed to list users" });
+    }
+  });
+
+  // Org admin creates a doctor in their org
+  app.post("/api/admin/doctors", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      const orgId = await getRequestOrgId(req);
+      if (!orgId) return res.status(400).json({ error: "Sin organización asignada" });
+
+      const schema = z.object({
+        rut: z.string().min(3),
+        firstName: z.string().min(1),
+        lastName: z.string().min(1),
+        email: z.string().email(),
+        password: z.string().min(6),
+        specialty: z.string().min(1),
+        licenseNumber: z.string().min(1),
+        consultationFee: z.number().int().min(0).default(25000),
+        bio: z.string().optional(),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", errors: parsed.error.flatten() });
+      }
+      const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+      const newUserId = `user_doc_${Math.random().toString(36).slice(2, 10)}`;
+      const result = await db.transaction(async (tx) => {
+        const [u] = await tx.insert(users).values({
+          id: newUserId,
+          rut: parsed.data.rut,
+          username: parsed.data.rut,
+          firstName: parsed.data.firstName,
+          lastName: parsed.data.lastName,
+          email: parsed.data.email,
+          passwordHash,
+          role: "doctor",
+          organizationId: orgId,
+          isAdmin: false,
+        }).returning();
+        const [doc] = await tx.insert(doctors).values({
+          userId: newUserId,
+          organizationId: orgId,
+          specialty: parsed.data.specialty,
+          licenseNumber: parsed.data.licenseNumber,
+          consultationFee: parsed.data.consultationFee,
+          bio: parsed.data.bio || null,
+        }).returning();
+        return { u, doc };
+      });
+      const { passwordHash: _, ...safe } = result.u;
+      res.json({ user: safe, doctor: result.doc });
+    } catch (error: any) {
+      if (String(error?.message || "").includes("duplicate")) {
+        return res.status(409).json({ error: "Ya existe un usuario con ese RUT o email" });
+      }
+      console.error("Error creating doctor:", error);
+      res.status(500).json({ error: "Failed to create doctor" });
+    }
+  });
+
+  // Org admin edits doctor profile (specialty, fee, license)
+  app.put("/api/admin/doctors/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      const orgId = await getRequestOrgId(req);
+      const doctorId = parseInt(req.params.id);
+      const [doc] = await db.select().from(doctors).where(eq(doctors.id, doctorId));
+      if (!doc || doc.organizationId !== orgId) return res.status(404).json({ error: "Doctor no encontrado en su organización" });
+
+      const schema = z.object({
+        specialty: z.string().optional(),
+        licenseNumber: z.string().optional(),
+        consultationFee: z.number().int().min(0).optional(),
+        bio: z.string().nullable().optional(),
+        isActive: z.boolean().optional(),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", errors: parsed.error.flatten() });
+      }
+      const [updated] = await db.update(doctors).set(parsed.data).where(eq(doctors.id, doctorId)).returning();
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating doctor:", error);
+      res.status(500).json({ error: "Failed to update doctor" });
+    }
+  });
+
+  // Org admin updates doctor availability (schedule editing)
+  app.put("/api/admin/doctors/:id/availability", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      const orgId = await getRequestOrgId(req);
+      const doctorId = parseInt(req.params.id);
+      const [doc] = await db.select().from(doctors).where(eq(doctors.id, doctorId));
+      if (!doc || doc.organizationId !== orgId) return res.status(404).json({ error: "Doctor no encontrado en su organización" });
+
+      const schema = z.object({
+        availability: z.record(z.string(), z.array(z.object({
+          start: z.string().regex(/^\d{2}:\d{2}$/),
+          end: z.string().regex(/^\d{2}:\d{2}$/),
+        }))),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", errors: parsed.error.flatten() });
+      }
+      const [updated] = await db.update(doctors).set({ availability: parsed.data.availability }).where(eq(doctors.id, doctorId)).returning();
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating availability:", error);
+      res.status(500).json({ error: "Failed to update availability" });
+    }
+  });
+
+  // Org admin deletes user (soft via isActive on doctor; users get deleted)
+  app.delete("/api/admin/users/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      const orgId = await getRequestOrgId(req);
+      const userId = req.params.id;
+      if (userId === req.userId) return res.status(400).json({ error: "No puedes eliminarte a ti mismo" });
+      const [target] = await db.select().from(users).where(eq(users.id, userId));
+      if (!target || target.organizationId !== orgId) {
+        return res.status(404).json({ error: "Usuario no encontrado en su organización" });
+      }
+      // If doctor, deactivate
+      const doc = await storage.getDoctorByUserId(userId);
+      if (doc) {
+        await db.update(doctors).set({ isActive: false }).where(eq(doctors.id, doc.id));
+      }
+      // For admins remove the user row outright (no FKs)
+      if (target.role === "admin") {
+        await db.delete(users).where(eq(users.id, userId));
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      res.status(500).json({ error: "Failed to delete user" });
+    }
+  });
+
+  // Org admin lists doctors of their org with availability info
+  app.get("/api/admin/doctors", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      const orgId = await getRequestOrgId(req);
+      if (!orgId) return res.json([]);
+      const docs = await db.select().from(doctors).where(eq(doctors.organizationId, orgId));
+      const decorated = await Promise.all(docs.map(async (d) => {
+        const [u] = await db.select().from(users).where(eq(users.id, d.userId));
+        return {
+          ...d,
+          firstName: u?.firstName || null,
+          lastName: u?.lastName || null,
+          email: u?.email || null,
+        };
+      }));
+      res.json(decorated);
+    } catch (error) {
+      console.error("Error listing org doctors:", error);
+      res.status(500).json({ error: "Failed to list doctors" });
     }
   });
 
@@ -3965,6 +4338,11 @@ ${latest.map(l => `- ${l.metricType}: ${l.value} ${l.unit} (${new Date(l.recorde
   });
 
   log('WebRTC signaling server initialized on /ws');
+
+  // Catch-all 404 for unmatched /api/* paths so unknown API calls don't fall through to the SPA HTML.
+  app.use("/api", (req, res) => {
+    res.status(404).json({ error: "Not Found", path: req.originalUrl });
+  });
 
   return httpServer;
 }
