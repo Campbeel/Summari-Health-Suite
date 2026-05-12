@@ -315,6 +315,7 @@ export default function ConsultationValidationPage() {
   const [clinicalNotes, setClinicalNotes] = useState("");
 
   const [medications, setMedications] = useState<Medication[]>([]);
+  const [acknowledgedAllergyConflicts, setAcknowledgedAllergyConflicts] = useState<Set<number>>(new Set());
   const [instructionsText, setInstructionsText] = useState("");
   
   const [gesDiagnoses, setGesDiagnoses] = useState<GesDiagnosis[]>([]);
@@ -634,11 +635,54 @@ export default function ConsultationValidationPage() {
     setMedications(prev => prev.map((med, i) =>
       i === index ? { ...med, [field]: value } : med
     ));
+    if (field === "name") {
+      setAcknowledgedAllergyConflicts(prev => {
+        if (!prev.has(index)) return prev;
+        const next = new Set(prev);
+        next.delete(index);
+        return next;
+      });
+    }
   };
 
   const removeMedication = (index: number) => {
     setMedications(prev => prev.filter((_, i) => i !== index));
+    setAcknowledgedAllergyConflicts(prev => {
+      if (prev.size === 0) return prev;
+      const next = new Set<number>();
+      prev.forEach(i => {
+        if (i < index) next.add(i);
+        else if (i > index) next.add(i - 1);
+      });
+      return next;
+    });
   };
+
+  const normalizeForMatch = (s: string) =>
+    s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+  const findAllergyConflicts = (medName: string, allergies?: string[]): string[] => {
+    if (!medName || !allergies || allergies.length === 0) return [];
+    const med = normalizeForMatch(medName);
+    if (med.length < 3) return [];
+    const conflicts: string[] = [];
+    for (const raw of allergies) {
+      const a = normalizeForMatch(raw);
+      if (a.length < 3) continue;
+      if (med.includes(a) || a.includes(med)) {
+        conflicts.push(raw);
+      }
+    }
+    return conflicts;
+  };
+
+  const allergyConflictsByIndex = medications.map((m, i) => ({
+    index: i,
+    conflicts: findAllergyConflicts(m.name, validationData?.patient.allergies),
+  }));
+  const unacknowledgedAllergyConflicts = allergyConflictsByIndex.filter(
+    c => c.conflicts.length > 0 && !acknowledgedAllergyConflicts.has(c.index),
+  );
 
 
   const handlePdfPreview = async (types: string[]) => {
@@ -957,7 +1001,19 @@ export default function ConsultationValidationPage() {
             </Button>
           )}
           <Button
-            onClick={() => setIsConfirmOpen(true)}
+            onClick={() => {
+              if (unacknowledgedAllergyConflicts.length > 0) {
+                const first = unacknowledgedAllergyConflicts[0];
+                const med = medications[first.index];
+                toast({
+                  title: "Contraindicación por alergia sin revisar",
+                  description: `"${med?.name || "Un medicamento"}" coincide con: ${first.conflicts.join(", ")}. Quítalo o marca la casilla de confirmación bajo tu responsabilidad.`,
+                  variant: "destructive",
+                });
+                return;
+              }
+              setIsConfirmOpen(true);
+            }}
             disabled={validateMutation.isPending}
             data-testid="button-validate"
           >
@@ -1390,6 +1446,51 @@ export default function ConsultationValidationPage() {
                                 <Trash2 className="h-4 w-4 text-destructive" />
                               </Button>
                             </div>
+                            {(() => {
+                              const conflicts = allergyConflictsByIndex[index]?.conflicts || [];
+                              if (conflicts.length === 0) return null;
+                              const ack = acknowledgedAllergyConflicts.has(index);
+                              return (
+                                <div
+                                  className="rounded-md border border-destructive/60 bg-destructive/5 p-3"
+                                  data-testid={`alert-allergy-conflict-${index}`}
+                                >
+                                  <div className="flex items-start gap-2">
+                                    <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                                    <div className="text-xs space-y-1.5 flex-1">
+                                      <p className="font-semibold text-destructive">
+                                        Posible contraindicación por alergia
+                                      </p>
+                                      <p className="text-destructive/90">
+                                        El paciente tiene registradas las siguientes alergias que coinciden con este medicamento:{" "}
+                                        <span className="font-medium" data-testid={`text-allergy-conflicts-${index}`}>
+                                          {conflicts.join(", ")}
+                                        </span>
+                                      </p>
+                                      <label className="flex items-center gap-2 pt-1 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={ack}
+                                          onChange={(e) => {
+                                            setAcknowledgedAllergyConflicts(prev => {
+                                              const next = new Set(prev);
+                                              if (e.target.checked) next.add(index);
+                                              else next.delete(index);
+                                              return next;
+                                            });
+                                          }}
+                                          className="h-3.5 w-3.5 accent-destructive"
+                                          data-testid={`checkbox-ack-allergy-${index}`}
+                                        />
+                                        <span className="text-foreground/90">
+                                          He revisado la alergia y, bajo mi responsabilidad, recetar de todos modos.
+                                        </span>
+                                      </label>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                               <div>
                                 <Label>Nombre</Label>
