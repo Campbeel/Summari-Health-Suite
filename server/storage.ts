@@ -51,12 +51,10 @@ import { eq, and, or, gte, lte, desc, sql, notInArray, isNull } from "drizzle-or
 // Custom type definitions for joined queries
 type DoctorWithUserInfo = {
   id: number;
-  userId: string;
   specialty: string;
   bio: string | null;
   consultationFee: number;
   availability: { [day: string]: { start: string; end: string }[] } | null;
-  isActive: boolean;
   userName: string;
   userImage: string | null | undefined;
 };
@@ -432,12 +430,10 @@ export class DatabaseStorage implements IStorage {
     const result = await db
       .select({
         id: doctors.id,
-        userId: doctors.userId,
         specialty: doctors.specialty,
         bio: doctors.bio,
         consultationFee: doctors.consultationFee,
         availability: doctors.availability,
-        isActive: doctors.isActive,
         userName: sql<string>`COALESCE(${users.firstName} || ' ' || ${users.lastName}, ${users.email})`.as('userName'),
         userImage: users.profileImageUrl,
       })

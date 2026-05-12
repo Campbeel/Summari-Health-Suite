@@ -1343,17 +1343,36 @@ export default function ConsultationValidationPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {medications.length === 0 ? (
-                    <div className="text-center py-10 px-4 border border-dashed rounded-lg" data-testid="prescription-empty">
-                      <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
-                        <Pill className="h-6 w-6 text-primary" />
+                    <>
+                      {hasMedicalReport && (
+                        <div
+                          className="flex gap-3 rounded-md border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 p-3"
+                          data-testid="alert-prescription-empty-after-transcript"
+                        >
+                          <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                          <div className="text-sm">
+                            <p className="font-medium text-amber-900 dark:text-amber-100">
+                              No se detectaron medicamentos en la transcripción
+                            </p>
+                            <p className="text-amber-800/90 dark:text-amber-200/90 mt-0.5">
+                              Si corresponde, agrégalos manualmente. Si efectivamente no
+                              recetaste medicamentos, puedes continuar sin agregar nada.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      <div className="text-center py-10 px-4 border border-dashed rounded-lg" data-testid="prescription-empty">
+                        <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                          <Pill className="h-6 w-6 text-primary" />
+                        </div>
+                        <p className="text-sm font-medium">Sin medicamentos en la receta</p>
+                        <p className="text-xs text-muted-foreground mt-1 mb-4">Agrega el primer medicamento para empezar</p>
+                        <Button size="sm" onClick={addMedication} data-testid="button-add-first-medication">
+                          <Plus className="h-4 w-4 mr-1.5" />
+                          Agregar medicamento
+                        </Button>
                       </div>
-                      <p className="text-sm font-medium">Sin medicamentos en la receta</p>
-                      <p className="text-xs text-muted-foreground mt-1 mb-4">Agrega el primer medicamento para empezar</p>
-                      <Button size="sm" onClick={addMedication} data-testid="button-add-first-medication">
-                        <Plus className="h-4 w-4 mr-1.5" />
-                        Agregar medicamento
-                      </Button>
-                    </div>
+                    </>
                   ) : (
                     <>
                       {medications.map((med, index) => (

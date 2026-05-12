@@ -8,6 +8,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link, useLocation } from "wouter";
 import { Calendar, Clock, Video, Phone, Play, X, Check, Users, FileCheck } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -39,10 +43,11 @@ function getStatusBadge(status: string) {
   return <Badge variant={s.variant} data-testid={`status-badge-${status}`}>{s.label}</Badge>;
 }
 
-function AppointmentCard({ appointment, onStatusChange, onOpenSummary }: { 
+function AppointmentCard({ appointment, onStatusChange, onOpenSummary, onCancelRequest }: { 
   appointment: AppointmentWithPatient;
   onStatusChange: (id: number, status: string) => void;
   onOpenSummary: (id: number) => void;
+  onCancelRequest: (appointment: AppointmentWithPatient) => void;
 }) {
   const [, navigate] = useLocation();
   const canConfirm = appointment.status === "scheduled";
@@ -115,8 +120,9 @@ function AppointmentCard({ appointment, onStatusChange, onOpenSummary }: {
           </Button>
         )}
         {canCancel && (
-          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => onStatusChange(appointment.id, "cancelled")} data-testid={`button-cancel-${appointment.id}`}>
-            <X className="h-3.5 w-3.5" />
+          <Button size="sm" variant="outline" className="text-destructive hover:text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => onCancelRequest(appointment)} data-testid={`button-cancel-${appointment.id}`}>
+            <X className="h-3.5 w-3.5 mr-1" />
+            Cancelar cita
           </Button>
         )}
         {appointment.status === "completed" && (
@@ -132,6 +138,7 @@ function AppointmentCard({ appointment, onStatusChange, onOpenSummary }: {
 export default function DoctorAppointmentsPage() {
   const { toast } = useToast();
   const [summaryId, setSummaryId] = useState<number | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<AppointmentWithPatient | null>(null);
 
   const { data: appointments, isLoading } = useQuery<AppointmentWithPatient[]>({
     queryKey: ["/api/doctors/me/appointments"],
@@ -210,6 +217,7 @@ export default function DoctorAppointmentsPage() {
             appointment={appointment} 
             onStatusChange={handleStatusChange}
             onOpenSummary={setSummaryId}
+            onCancelRequest={setCancelTarget}
           />
         ))}
       </div>
@@ -277,6 +285,41 @@ export default function DoctorAppointmentsPage() {
           {renderAppointmentList(cancelledAppointments)}
         </TabsContent>
       </Tabs>
+
+      <AlertDialog open={!!cancelTarget} onOpenChange={(o) => !o && setCancelTarget(null)}>
+        <AlertDialogContent data-testid="dialog-cancel-appointment">
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Cancelar esta cita?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>Esta acción no se puede deshacer. Se notificará al paciente.</p>
+                {cancelTarget && (
+                  <div className="rounded-md border bg-muted/40 p-3 text-sm text-foreground">
+                    <div><span className="text-muted-foreground">Paciente:</span> <span className="font-medium" data-testid="text-cancel-patient">{cancelTarget.patientName}</span></div>
+                    <div><span className="text-muted-foreground">Fecha:</span> <span className="font-medium" data-testid="text-cancel-date">{format(parseISO(cancelTarget.scheduledDate), "PPP", { locale: es })}</span></div>
+                    <div><span className="text-muted-foreground">Hora:</span> <span className="font-medium" data-testid="text-cancel-time">{cancelTarget.scheduledTime}</span></div>
+                  </div>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-keep-appointment">Conservar cita</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (cancelTarget) {
+                  handleStatusChange(cancelTarget.id, "cancelled");
+                  setCancelTarget(null);
+                }
+              }}
+              data-testid="button-confirm-cancel"
+            >
+              Sí, cancelar cita
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
