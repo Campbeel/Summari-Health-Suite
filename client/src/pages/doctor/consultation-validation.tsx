@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { findPregnancyLactationConflicts, type PregnancyLactationConflict } from "@shared/drug-risk";
+import { MedicationNameAutocomplete } from "@/components/medication-name-autocomplete";
 import {
   Dialog,
   DialogContent,
@@ -114,6 +116,8 @@ interface ValidationData {
     gender?: string;
     bloodType?: string;
     allergies?: string[];
+    isPregnant?: boolean;
+    isBreastfeeding?: boolean;
     medicalHistory?: string;
     emergencyContact?: string;
     emergencyPhone?: string;
@@ -316,6 +320,7 @@ export default function ConsultationValidationPage() {
 
   const [medications, setMedications] = useState<Medication[]>([]);
   const [acknowledgedAllergyConflicts, setAcknowledgedAllergyConflicts] = useState<Set<number>>(new Set());
+  const [acknowledgedPregLactConflicts, setAcknowledgedPregLactConflicts] = useState<Set<number>>(new Set());
   const [instructionsText, setInstructionsText] = useState("");
   
   const [gesDiagnoses, setGesDiagnoses] = useState<GesDiagnosis[]>([]);
@@ -636,18 +641,20 @@ export default function ConsultationValidationPage() {
       i === index ? { ...med, [field]: value } : med
     ));
     if (field === "name") {
-      setAcknowledgedAllergyConflicts(prev => {
+      const dropIndex = (prev: Set<number>) => {
         if (!prev.has(index)) return prev;
         const next = new Set(prev);
         next.delete(index);
         return next;
-      });
+      };
+      setAcknowledgedAllergyConflicts(dropIndex);
+      setAcknowledgedPregLactConflicts(dropIndex);
     }
   };
 
   const removeMedication = (index: number) => {
     setMedications(prev => prev.filter((_, i) => i !== index));
-    setAcknowledgedAllergyConflicts(prev => {
+    const shiftIndices = (prev: Set<number>) => {
       if (prev.size === 0) return prev;
       const next = new Set<number>();
       prev.forEach(i => {
@@ -655,7 +662,9 @@ export default function ConsultationValidationPage() {
         else if (i > index) next.add(i - 1);
       });
       return next;
-    });
+    };
+    setAcknowledgedAllergyConflicts(shiftIndices);
+    setAcknowledgedPregLactConflicts(shiftIndices);
   };
 
   const normalizeForMatch = (s: string) =>
@@ -682,6 +691,26 @@ export default function ConsultationValidationPage() {
   }));
   const unacknowledgedAllergyConflicts = allergyConflictsByIndex.filter(
     c => c.conflicts.length > 0 && !acknowledgedAllergyConflicts.has(c.index),
+  );
+
+  // Pregnancy/lactancia contraindications. "absolute" severity cannot be acknowledged — the doctor
+  // must remove the medication. "relative" can be acknowledged like the allergy flow.
+  const pregLactConflictsByIndex: { index: number; conflicts: PregnancyLactationConflict[] }[] =
+    medications.map((m, i) => ({
+      index: i,
+      conflicts: findPregnancyLactationConflicts(m.name, {
+        isPregnant: validationData?.patient.isPregnant,
+        isBreastfeeding: validationData?.patient.isBreastfeeding,
+      }),
+    }));
+  const absolutePregLactConflicts = pregLactConflictsByIndex.filter(
+    c => c.conflicts.some((x) => x.severity === "absolute"),
+  );
+  const unacknowledgedRelativePregLactConflicts = pregLactConflictsByIndex.filter(
+    c =>
+      c.conflicts.some((x) => x.severity === "relative") &&
+      !c.conflicts.some((x) => x.severity === "absolute") &&
+      !acknowledgedPregLactConflicts.has(c.index),
   );
 
 
@@ -1002,6 +1031,26 @@ export default function ConsultationValidationPage() {
           )}
           <Button
             onClick={() => {
+              if (absolutePregLactConflicts.length > 0) {
+                const first = absolutePregLactConflicts[0];
+                const med = medications[first.index];
+                toast({
+                  title: "Contraindicación absoluta",
+                  description: `"${med?.name || "Un medicamento"}" está contraindicado por embarazo/lactancia. Debes quitarlo para continuar.`,
+                  variant: "destructive",
+                });
+                return;
+              }
+              if (unacknowledgedRelativePregLactConflicts.length > 0) {
+                const first = unacknowledgedRelativePregLactConflicts[0];
+                const med = medications[first.index];
+                toast({
+                  title: "Riesgo en embarazo/lactancia sin revisar",
+                  description: `"${med?.name || "Un medicamento"}" tiene precauciones. Quítalo o marca la casilla de confirmación bajo tu responsabilidad.`,
+                  variant: "destructive",
+                });
+                return;
+              }
               if (unacknowledgedAllergyConflicts.length > 0) {
                 const first = unacknowledgedAllergyConflicts[0];
                 const med = medications[first.index];
@@ -1130,6 +1179,30 @@ export default function ConsultationValidationPage() {
             </>
           )}
 
+          {(validationData.patient.isPregnant || validationData.patient.isBreastfeeding) && (
+            <>
+              <div className="hidden sm:block h-6 w-px bg-border" />
+              <div className="flex items-center gap-1">
+                {validationData.patient.isPregnant && (
+                  <span
+                    className="text-[11px] bg-amber-500/15 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-medium"
+                    data-testid="badge-pregnant"
+                  >
+                    Embarazada
+                  </span>
+                )}
+                {validationData.patient.isBreastfeeding && (
+                  <span
+                    className="text-[11px] bg-amber-500/15 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-medium"
+                    data-testid="badge-breastfeeding"
+                  >
+                    Lactancia
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+
           {validationData.patient.medicalHistory && (
             <>
               <div className="hidden sm:block h-6 w-px bg-border" />
@@ -1226,22 +1299,44 @@ export default function ConsultationValidationPage() {
                   )}
 
                   <div>
-                    {(validationData?.clinicalRecord as any)?.hasTranscription && (
+                    {(validationData?.clinicalRecord as any)?.hasTranscription ? (
                       <div className="flex items-center gap-1.5 mb-2">
                         <Sparkles className="h-3 w-3 text-primary" />
                         <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">Generado por IA</span>
                         <span className="text-[10px] text-muted-foreground">· Editable</span>
+                      </div>
+                    ) : (
+                      <div
+                        className="mb-3 flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 p-3"
+                        data-testid="alert-no-transcription"
+                      >
+                        <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                        <div className="text-sm">
+                          <p className="font-medium text-amber-900 dark:text-amber-100">
+                            No se encontró transcripción para esta consulta
+                          </p>
+                          <p className="text-amber-800/90 dark:text-amber-200/90 mt-0.5">
+                            Puedes redactar el informe manualmente o contactar al equipo de soporte
+                            si esperabas una transcripción automática.
+                          </p>
+                        </div>
                       </div>
                     )}
                     <Textarea
                       value={medicalReportText}
                       onChange={(e) => setMedicalReportText(e.target.value)}
                       className="min-h-[450px] text-sm leading-relaxed resize-y overflow-y-auto"
-                      placeholder="La anamnesis aparecerá aquí después de la consulta. Incluye el informe generado y las notas clínicas. Puede modificarlo libremente."
+                      placeholder={
+                        (validationData?.clinicalRecord as any)?.hasTranscription
+                          ? "La anamnesis aparecerá aquí después de la consulta. Incluye el informe generado y las notas clínicas. Puede modificarlo libremente."
+                          : "Redacta la anamnesis manualmente: motivo de consulta, antecedentes, examen físico, etc."
+                      }
                       data-testid="input-medical-report"
                     />
                     <p className="text-xs text-muted-foreground mt-2">
-                      Generado a partir de la grabación e incluye notas clínicas. Puede editarlo libremente antes de validar.
+                      {(validationData?.clinicalRecord as any)?.hasTranscription
+                        ? "Generado a partir de la grabación e incluye notas clínicas. Puede editarlo libremente antes de validar."
+                        : "Sin grabación disponible. Completa el informe a partir de tus notas durante la consulta."}
                     </p>
                   </div>
 
@@ -1400,7 +1495,7 @@ export default function ConsultationValidationPage() {
                 <CardContent className="space-y-4">
                   {medications.length === 0 ? (
                     <>
-                      {hasMedicalReport && (
+                      {(validationData?.clinicalRecord as any)?.hasTranscription && (
                         <div
                           className="flex gap-3 rounded-md border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 p-3"
                           data-testid="alert-prescription-empty-after-transcript"
@@ -1491,14 +1586,71 @@ export default function ConsultationValidationPage() {
                                 </div>
                               );
                             })()}
+                            {(() => {
+                              const conflicts = pregLactConflictsByIndex[index]?.conflicts || [];
+                              if (conflicts.length === 0) return null;
+                              const hasAbsolute = conflicts.some((c) => c.severity === "absolute");
+                              const ack = acknowledgedPregLactConflicts.has(index);
+                              return (
+                                <div
+                                  className="rounded-md border border-destructive/60 bg-destructive/5 p-3"
+                                  data-testid={`alert-preg-lact-conflict-${index}`}
+                                >
+                                  <div className="flex items-start gap-2">
+                                    <AlertCircle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                                    <div className="text-xs space-y-1.5 flex-1">
+                                      <p className="font-semibold text-destructive">
+                                        {hasAbsolute
+                                          ? "Contraindicación absoluta: no prescribir"
+                                          : "Posible contraindicación por embarazo / lactancia"}
+                                      </p>
+                                      <ul className="space-y-1 list-disc pl-4 text-destructive/90">
+                                        {conflicts.map((c, i) => (
+                                          <li key={i} data-testid={`text-preg-lact-reason-${index}-${i}`}>
+                                            <span className="font-medium">
+                                              {c.scope === "pregnancy" ? "Embarazo" : "Lactancia"}
+                                            </span>
+                                            {": "}
+                                            {c.reason}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                      {hasAbsolute ? (
+                                        <p className="text-destructive font-medium pt-1">
+                                          Quita este medicamento de la receta para continuar.
+                                        </p>
+                                      ) : (
+                                        <label className="flex items-center gap-2 pt-1 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={ack}
+                                            onChange={(e) => {
+                                              setAcknowledgedPregLactConflicts(prev => {
+                                                const next = new Set(prev);
+                                                if (e.target.checked) next.add(index);
+                                                else next.delete(index);
+                                                return next;
+                                              });
+                                            }}
+                                            className="h-3.5 w-3.5 accent-destructive"
+                                            data-testid={`checkbox-ack-preg-lact-${index}`}
+                                          />
+                                          <span className="text-foreground/90">
+                                            He valorado el riesgo/beneficio y, bajo mi responsabilidad, recetar de todos modos.
+                                          </span>
+                                        </label>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                               <div>
                                 <Label>Nombre</Label>
-                                <Input
+                                <MedicationNameAutocomplete
                                   value={med.name}
-                                  onChange={(e) => updateMedication(index, "name", e.target.value)}
-                                  placeholder="Nombre del medicamento"
-                                  className="mt-1"
+                                  onChange={(v) => updateMedication(index, "name", v)}
                                   data-testid={`input-med-name-${index}`}
                                 />
                               </div>

@@ -36,6 +36,9 @@ export function useAuth() {
     queryKey: ["/api/auth/user"],
     queryFn: fetchUser,
     retry: false,
+    // Revalidate when the tab regains focus. If the JWT expired while the user was away
+    // (e.g. left their laptop overnight), this triggers the 401 path that clears the token.
+    refetchOnWindowFocus: true,
     staleTime: 1000 * 60 * 5,
   });
 

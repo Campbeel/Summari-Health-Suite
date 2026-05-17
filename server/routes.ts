@@ -81,14 +81,51 @@ export async function registerRoutes(
     }
   });
 
-  // Doctors routes
-  app.get("/api/doctors", async (req, res) => {
+  // Doctors directory — used by patients to browse and book consultations.
+  // Requires authentication: the directory is private to platform users, not the public internet.
+  app.get("/api/doctors", isAuthenticated, async (req, res) => {
     try {
       const doctors = await storage.getAllDoctors();
       res.json(doctors);
     } catch (error) {
       console.error("Error fetching doctors:", error);
       res.status(500).json({ error: "Failed to fetch doctors" });
+    }
+  });
+
+  // CIMA (AEMPS) medication catalog proxy. Public, free, Spanish-language. We proxy to avoid CORS,
+  // cache short-term to be a polite client, and project down to the fields the autocomplete needs.
+  // If we ever switch to Vidal Vademecum, this is the only endpoint that changes shape.
+  const cimaCache = new Map<string, { at: number; data: unknown }>();
+  const CIMA_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+  app.get("/api/drugs/search", isAuthenticated, async (req, res) => {
+    try {
+      const raw = (req.query.q as string | undefined)?.trim() || "";
+      if (raw.length < 3) return res.json({ results: [], source: "cima" });
+      const cacheKey = raw.toLowerCase();
+      const cached = cimaCache.get(cacheKey);
+      if (cached && Date.now() - cached.at < CIMA_CACHE_TTL_MS) {
+        return res.json(cached.data);
+      }
+      const url = `https://cima.aemps.es/cima/rest/medicamentos?nombre=${encodeURIComponent(raw)}&pagina=1`;
+      const upstream = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!upstream.ok) {
+        return res.status(502).json({ error: "Catálogo no disponible", results: [] });
+      }
+      const json = (await upstream.json()) as any;
+      const resultados: any[] = Array.isArray(json?.resultados) ? json.resultados : [];
+      const results = resultados.slice(0, 15).map((m) => ({
+        id: m?.nregistro || m?.cn || String(m?.nombre || ""),
+        name: String(m?.nombre || "").trim(),
+        activeIngredient: String(m?.pactivos || "").trim() || null,
+        labHolder: String(m?.labtitular || "").trim() || null,
+      }));
+      const payload = { results, source: "cima" as const };
+      cimaCache.set(cacheKey, { at: Date.now(), data: payload });
+      res.json(payload);
+    } catch (error) {
+      console.error("Error querying CIMA:", error);
+      res.status(502).json({ error: "Catálogo no disponible", results: [] });
     }
   });
 
@@ -224,30 +261,45 @@ export async function registerRoutes(
       const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
       
-      const statusSchema = z.object({
-        status: z.enum(["confirmed", "cancelled", "in_progress", "completed"]),
-      });
-      
+      const statusSchema = z
+        .object({
+          status: z.enum(["confirmed", "cancelled", "in_progress", "completed"]),
+          cancellationReason: z.string().trim().min(3).max(500).optional(),
+        })
+        .superRefine((val, ctx) => {
+          if (val.status === "cancelled" && !val.cancellationReason) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ["cancellationReason"],
+              message: "El motivo de cancelación es obligatorio (mínimo 3 caracteres).",
+            });
+          }
+        });
+
       const validationResult = statusSchema.safeParse(req.body);
-      
+
       if (!validationResult.success) {
         return res.status(400).json({
           error: "Validation failed",
           errors: validationResult.error.flatten(),
         });
       }
-      
+
       const appointment = await storage.getAppointment(appointmentId);
       if (!appointment) {
         return res.status(404).json({ error: "Appointment not found" });
       }
-      
+
       const doctor = await storage.getDoctorByUserId(userId);
       if (!doctor || doctor.id !== appointment.doctorId) {
         return res.status(403).json({ error: "Not authorized to update this appointment" });
       }
-      
-      const updated = await storage.updateAppointmentStatus(appointmentId, validationResult.data.status);
+
+      const updated = await storage.updateAppointmentStatus(
+        appointmentId,
+        validationResult.data.status,
+        validationResult.data.status === "cancelled" ? validationResult.data.cancellationReason : undefined,
+      );
       res.json(updated);
     } catch (error) {
       console.error("Error updating appointment status:", error);
@@ -2186,6 +2238,8 @@ export async function registerRoutes(
           gender: patient?.gender,
           bloodType: patient?.bloodType,
           allergies: patient?.allergies,
+          isPregnant: patient?.isPregnant ?? false,
+          isBreastfeeding: patient?.isBreastfeeding ?? false,
           medicalHistory: patient?.medicalHistory || undefined,
           emergencyContact: patient?.emergencyContact || undefined,
           emergencyPhone: patient?.emergencyPhone || undefined,
@@ -3099,6 +3153,132 @@ export async function registerRoutes(
     }
   });
 
+  // List all users with their roles. Used by superAdmin to pick who to promote.
+  app.get("/api/super-admin/users", isAuthenticated, requireRole("superAdmin"), async (_req, res) => {
+    try {
+      const allUsers = await db.select().from(users);
+      const allDocs = await db.select().from(doctors);
+      const doctorByUserId = new Map(allDocs.map((d) => [d.userId, d]));
+      const decorated = allUsers.map((u) => {
+        const { passwordHash, ...safe } = u;
+        const doc = doctorByUserId.get(u.id) || null;
+        return {
+          ...safe,
+          doctor: doc
+            ? {
+                id: doc.id,
+                specialty: doc.specialty,
+                licenseNumber: doc.licenseNumber,
+                consultationFee: doc.consultationFee,
+                organizationId: doc.organizationId,
+                isActive: doc.isActive,
+              }
+            : null,
+        };
+      });
+      res.json(decorated);
+    } catch (error) {
+      console.error("Error listing users for super-admin:", error);
+      res.status(500).json({ error: "Failed to list users" });
+    }
+  });
+
+  // Promote a user to doctor capability. Creates an unattached doctor row.
+  app.post("/api/super-admin/users/:userId/promote-doctor", isAuthenticated, requireRole("superAdmin"), async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const schema = z.object({
+        specialty: z.string().min(1),
+        licenseNumber: z.string().min(1),
+        consultationFee: z.number().int().min(0).default(25000),
+        bio: z.string().nullable().optional(),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", errors: parsed.error.flatten() });
+      }
+
+      const [target] = await db.select().from(users).where(eq(users.id, userId));
+      if (!target) return res.status(404).json({ error: "Usuario no encontrado" });
+      if (target.role !== "patient") {
+        return res.status(409).json({ error: "Sólo se puede promover a un paciente" });
+      }
+
+      // If they already have a doctor row (from a previous promotion), reactivate it instead of creating a new one.
+      const [existingDoc] = await db.select().from(doctors).where(eq(doctors.userId, userId));
+
+      const result = await db.transaction(async (tx) => {
+        const [updatedUser] = await tx
+          .update(users)
+          .set({ role: "doctor" })
+          .where(eq(users.id, userId))
+          .returning();
+        let doc;
+        if (existingDoc) {
+          [doc] = await tx
+            .update(doctors)
+            .set({
+              specialty: parsed.data.specialty,
+              licenseNumber: parsed.data.licenseNumber,
+              consultationFee: parsed.data.consultationFee,
+              bio: parsed.data.bio ?? null,
+              isActive: true,
+            })
+            .where(eq(doctors.id, existingDoc.id))
+            .returning();
+        } else {
+          [doc] = await tx
+            .insert(doctors)
+            .values({
+              userId,
+              organizationId: null,
+              specialty: parsed.data.specialty,
+              licenseNumber: parsed.data.licenseNumber,
+              consultationFee: parsed.data.consultationFee,
+              bio: parsed.data.bio ?? null,
+            })
+            .returning();
+        }
+        return { user: updatedUser, doctor: doc };
+      });
+
+      const { passwordHash, ...safe } = result.user;
+      res.json({ user: safe, doctor: result.doctor });
+    } catch (error) {
+      console.error("Error promoting user to doctor:", error);
+      res.status(500).json({ error: "Failed to promote user" });
+    }
+  });
+
+  // Revoke a user's doctor capability. Reverts role to patient and deactivates the doctor row.
+  // The doctor row is kept (soft-delete via isActive=false) to preserve historical appointments.
+  app.delete("/api/super-admin/users/:userId/promote-doctor", isAuthenticated, requireRole("superAdmin"), async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const [target] = await db.select().from(users).where(eq(users.id, userId));
+      if (!target) return res.status(404).json({ error: "Usuario no encontrado" });
+      if (target.role !== "doctor") {
+        return res.status(409).json({ error: "El usuario no tiene rol médico activo" });
+      }
+
+      await db.transaction(async (tx) => {
+        await tx
+          .update(users)
+          .set({ role: "patient", organizationId: null })
+          .where(eq(users.id, userId));
+        await tx
+          .update(doctors)
+          .set({ isActive: false, organizationId: null })
+          .where(eq(doctors.userId, userId));
+      });
+
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Error revoking doctor capability:", error);
+      res.status(500).json({ error: "Failed to revoke doctor capability" });
+    }
+  });
+
   app.get("/api/super-admin/stats", isAuthenticated, requireRole("superAdmin"), async (_req, res) => {
     try {
       const [orgCount] = await db.select({ c: dsql<number>`count(*)::int` }).from(organizations);
@@ -3256,60 +3436,13 @@ export async function registerRoutes(
   });
 
   // Org admin creates a doctor in their org
-  app.post("/api/admin/doctors", isAuthenticated, requireRole("admin"), async (req: any, res) => {
-    try {
-      const orgId = await getRequestOrgId(req);
-      if (!orgId) return res.status(400).json({ error: "Sin organización asignada" });
-
-      const schema = z.object({
-        rut: z.string().min(3),
-        firstName: z.string().min(1),
-        lastName: z.string().min(1),
-        email: z.string().email(),
-        password: z.string().min(6),
-        specialty: z.string().min(1),
-        licenseNumber: z.string().min(1),
-        consultationFee: z.number().int().min(0).default(25000),
-        bio: z.string().optional(),
-      });
-      const parsed = schema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ error: "Validation failed", errors: parsed.error.flatten() });
-      }
-      const passwordHash = await bcrypt.hash(parsed.data.password, 10);
-      const newUserId = `user_doc_${Math.random().toString(36).slice(2, 10)}`;
-      const result = await db.transaction(async (tx) => {
-        const [u] = await tx.insert(users).values({
-          id: newUserId,
-          rut: parsed.data.rut,
-          username: parsed.data.rut,
-          firstName: parsed.data.firstName,
-          lastName: parsed.data.lastName,
-          email: parsed.data.email,
-          passwordHash,
-          role: "doctor",
-          organizationId: orgId,
-          isAdmin: false,
-        }).returning();
-        const [doc] = await tx.insert(doctors).values({
-          userId: newUserId,
-          organizationId: orgId,
-          specialty: parsed.data.specialty,
-          licenseNumber: parsed.data.licenseNumber,
-          consultationFee: parsed.data.consultationFee,
-          bio: parsed.data.bio || null,
-        }).returning();
-        return { u, doc };
-      });
-      const { passwordHash: _, ...safe } = result.u;
-      res.json({ user: safe, doctor: result.doc });
-    } catch (error: any) {
-      if (String(error?.message || "").includes("duplicate")) {
-        return res.status(409).json({ error: "Ya existe un usuario con ese RUT o email" });
-      }
-      console.error("Error creating doctor:", error);
-      res.status(500).json({ error: "Failed to create doctor" });
-    }
+  // DEPRECATED: org admins no longer create doctors from scratch.
+  // The flow is now: superAdmin promotes a user to doctor, then the org admin attaches that doctor
+  // to the organization via POST /api/admin/doctors/:id/attach.
+  app.post("/api/admin/doctors", isAuthenticated, requireRole("admin"), async (_req, res) => {
+    res.status(410).json({
+      error: "Flujo deshabilitado. Solicita al super administrador promover al usuario y luego agrégalo con 'Agregar médico existente'.",
+    });
   });
 
   // Org admin edits doctor profile (specialty, fee, license)
@@ -3392,6 +3525,82 @@ export async function registerRoutes(
   });
 
   // Org admin lists doctors of their org with availability info
+  // Promoted-but-unattached doctors. Org admin picks from this list to attach to their org.
+  app.get("/api/admin/doctors/available", isAuthenticated, requireRole("admin"), async (_req, res) => {
+    try {
+      const freeDocs = await db
+        .select()
+        .from(doctors)
+        .where(and(eq(doctors.isActive, true), dsql`${doctors.organizationId} IS NULL`));
+      const decorated = await Promise.all(
+        freeDocs.map(async (d) => {
+          const [u] = await db.select().from(users).where(eq(users.id, d.userId));
+          return {
+            id: d.id,
+            userId: d.userId,
+            specialty: d.specialty,
+            licenseNumber: d.licenseNumber,
+            consultationFee: d.consultationFee,
+            firstName: u?.firstName || null,
+            lastName: u?.lastName || null,
+            email: u?.email || null,
+            rut: u?.rut || null,
+          };
+        })
+      );
+      res.json(decorated);
+    } catch (error) {
+      console.error("Error listing available doctors:", error);
+      res.status(500).json({ error: "Failed to list available doctors" });
+    }
+  });
+
+  // Attach a free (already promoted) doctor to the admin's organization.
+  app.post("/api/admin/doctors/:id/attach", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      const orgId = await getRequestOrgId(req);
+      if (!orgId) return res.status(400).json({ error: "Sin organización asignada" });
+      const doctorId = parseInt(req.params.id);
+      const [doc] = await db.select().from(doctors).where(eq(doctors.id, doctorId));
+      if (!doc) return res.status(404).json({ error: "Médico no encontrado" });
+      if (doc.organizationId) {
+        return res.status(409).json({ error: "El médico ya pertenece a una organización" });
+      }
+      if (!doc.isActive) {
+        return res.status(409).json({ error: "El médico está inactivo" });
+      }
+      await db.transaction(async (tx) => {
+        await tx.update(doctors).set({ organizationId: orgId }).where(eq(doctors.id, doctorId));
+        await tx.update(users).set({ organizationId: orgId }).where(eq(users.id, doc.userId));
+      });
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Error attaching doctor:", error);
+      res.status(500).json({ error: "Failed to attach doctor" });
+    }
+  });
+
+  // Detach a doctor from the admin's organization (back to the unattached pool).
+  app.delete("/api/admin/doctors/:id/attach", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      const orgId = await getRequestOrgId(req);
+      if (!orgId) return res.status(400).json({ error: "Sin organización asignada" });
+      const doctorId = parseInt(req.params.id);
+      const [doc] = await db.select().from(doctors).where(eq(doctors.id, doctorId));
+      if (!doc || doc.organizationId !== orgId) {
+        return res.status(404).json({ error: "Médico no encontrado en su organización" });
+      }
+      await db.transaction(async (tx) => {
+        await tx.update(doctors).set({ organizationId: null }).where(eq(doctors.id, doctorId));
+        await tx.update(users).set({ organizationId: null }).where(eq(users.id, doc.userId));
+      });
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Error detaching doctor:", error);
+      res.status(500).json({ error: "Failed to detach doctor" });
+    }
+  });
+
   app.get("/api/admin/doctors", isAuthenticated, requireRole("admin"), async (req: any, res) => {
     try {
       const orgId = await getRequestOrgId(req);

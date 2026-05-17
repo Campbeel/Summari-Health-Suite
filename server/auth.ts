@@ -12,7 +12,10 @@ const JWT_SECRET: string = process.env.SESSION_SECRET!;
 if (!process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET environment variable is required");
 }
-const JWT_EXPIRY = "7d";
+// Session lifetime upper bound. Combined with a client-side idle timeout this bounds the worst-case
+// window where a stolen or forgotten session could be used. Longer than a typical clinical workday
+// (so doctors aren't kicked out mid-shift) but far shorter than the 7d default we had.
+const JWT_EXPIRY = "12h";
 
 interface JwtPayload {
   userId: string;

@@ -18,7 +18,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Loader2, Plus, Trash2, Pencil, Stethoscope, Shield, Users } from "lucide-react";
+import { Loader2, Plus, Trash2, Pencil, Stethoscope, Shield, Users, UserPlus, UserMinus } from "lucide-react";
 
 interface OrgUser {
   id: string;
@@ -35,10 +35,17 @@ interface OrgUser {
   isActive?: boolean;
 }
 
-const empty = {
-  rut: "", firstName: "", lastName: "", email: "", password: "",
-  specialty: "", licenseNumber: "", consultationFee: 25000, bio: "",
-};
+interface AvailableDoctor {
+  id: number;
+  userId: string;
+  specialty: string;
+  licenseNumber: string;
+  consultationFee: number;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  rut: string | null;
+}
 
 interface EditForm {
   specialty: string;
@@ -51,28 +58,43 @@ interface EditForm {
 export default function AdminUsersPage() {
   const { toast } = useToast();
   const { data: orgUsers, isLoading } = useQuery<OrgUser[]>({ queryKey: ["/api/admin/users"] });
-  const [createOpen, setCreateOpen] = useState(false);
-  const [deleteUser, setDeleteUser] = useState<OrgUser | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [detachUser, setDetachUser] = useState<OrgUser | null>(null);
+  const [deleteAdmin, setDeleteAdmin] = useState<OrgUser | null>(null);
   const [editingUser, setEditingUser] = useState<OrgUser | null>(null);
-  const [form, setForm] = useState(empty);
   const [editForm, setEditForm] = useState<EditForm>({
     specialty: "", licenseNumber: "", consultationFee: 0, bio: "", isActive: true,
   });
 
-  const createDoctor = useMutation({
-    mutationFn: async () => apiRequest("POST", "/api/admin/doctors", {
-      ...form,
-      consultationFee: Number(form.consultationFee),
-    }),
+  const { data: availableDoctors, isLoading: loadingAvailable } = useQuery<AvailableDoctor[]>({
+    queryKey: ["/api/admin/doctors/available"],
+    enabled: addOpen,
+  });
+
+  const attachDoctor = useMutation({
+    mutationFn: async (doctorId: number) => apiRequest("POST", `/api/admin/doctors/${doctorId}/attach`),
     onSuccess: () => {
-      toast({ title: "Médico creado" });
+      toast({ title: "Médico agregado a tu organización" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/doctors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/doctors/available"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
-      setCreateOpen(false);
-      setForm(empty);
+      setAddOpen(false);
     },
-    onError: (e: any) => toast({ title: "Error", description: e?.message || "No se pudo crear", variant: "destructive" }),
+    onError: (e: any) => toast({ title: "Error", description: e?.message || "No se pudo agregar", variant: "destructive" }),
+  });
+
+  const detachDoctor = useMutation({
+    mutationFn: async (doctorId: number) => apiRequest("DELETE", `/api/admin/doctors/${doctorId}/attach`),
+    onSuccess: () => {
+      toast({ title: "Médico desvinculado", description: "Vuelve al pool de médicos disponibles." });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/doctors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/doctors/available"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      setDetachUser(null);
+    },
+    onError: (e: any) => toast({ title: "Error", description: e?.message || "No se pudo desvincular", variant: "destructive" }),
   });
 
   const updateDoctor = useMutation({
@@ -88,13 +110,12 @@ export default function AdminUsersPage() {
     onError: (e: any) => toast({ title: "Error", description: e?.message || "No se pudo actualizar", variant: "destructive" }),
   });
 
-  const removeUser = useMutation({
+  const removeAdmin = useMutation({
     mutationFn: async (id: string) => apiRequest("DELETE", `/api/admin/users/${id}`),
     onSuccess: () => {
-      toast({ title: "Usuario eliminado" });
+      toast({ title: "Administrador eliminado" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/doctors"] });
-      setDeleteUser(null);
+      setDeleteAdmin(null);
     },
     onError: (e: any) => toast({ title: "Error", description: e?.message || "No se pudo eliminar", variant: "destructive" }),
   });
@@ -125,34 +146,73 @@ export default function AdminUsersPage() {
           <h1 className="text-3xl font-bold flex items-center gap-2" data-testid="text-users-title">
             <Users className="h-7 w-7" /> Doctor@s
           </h1>
-          <p className="text-muted-foreground">Administra los doctores y administradores de tu organización</p>
+          <p className="text-muted-foreground">
+            Agrega médicos previamente promovidos por el super administrador a tu organización
+          </p>
         </div>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <Dialog open={addOpen} onOpenChange={setAddOpen}>
           <DialogTrigger asChild>
-            <Button data-testid="button-new-doctor"><Plus className="h-4 w-4 mr-2" /> Nuevo médico</Button>
+            <Button data-testid="button-add-doctor">
+              <UserPlus className="h-4 w-4 mr-2" /> Agregar médico
+            </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Crear médico</DialogTitle>
-              <DialogDescription>Se creará una cuenta y un perfil profesional asociados a tu organización</DialogDescription>
+              <DialogTitle>Agregar médico a tu organización</DialogTitle>
+              <DialogDescription>
+                Estos son los médicos promovidos por el super administrador que aún no pertenecen a ninguna organización.
+                Si no ves al médico que buscas, pídele al super administrador que lo promueva primero.
+              </DialogDescription>
             </DialogHeader>
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-              <div><Label>RUT *</Label><Input value={form.rut} onChange={e => setForm({ ...form, rut: e.target.value })} placeholder="12345678-9" data-testid="input-doctor-rut" /></div>
-              <div className="grid grid-cols-2 gap-2">
-                <div><Label>Nombre *</Label><Input value={form.firstName} onChange={e => setForm({ ...form, firstName: e.target.value })} data-testid="input-doctor-firstname" /></div>
-                <div><Label>Apellido *</Label><Input value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} data-testid="input-doctor-lastname" /></div>
-              </div>
-              <div><Label>Email *</Label><Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} data-testid="input-doctor-email" /></div>
-              <div><Label>Contraseña *</Label><Input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} data-testid="input-doctor-password" /></div>
-              <div><Label>Especialidad *</Label><Input value={form.specialty} onChange={e => setForm({ ...form, specialty: e.target.value })} placeholder="Medicina General" data-testid="input-doctor-specialty" /></div>
-              <div><Label>Nº de licencia *</Label><Input value={form.licenseNumber} onChange={e => setForm({ ...form, licenseNumber: e.target.value })} data-testid="input-doctor-license" /></div>
-              <div><Label>Tarifa (CLP)</Label><Input type="number" value={form.consultationFee} onChange={e => setForm({ ...form, consultationFee: parseInt(e.target.value) || 0 })} data-testid="input-doctor-fee" /></div>
+            <div className="max-h-[60vh] overflow-y-auto">
+              {loadingAvailable ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : !availableDoctors || availableDoctors.length === 0 ? (
+                <div className="text-center text-muted-foreground py-8">
+                  No hay médicos disponibles para agregar.
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Especialidad</TableHead>
+                      <TableHead>RUT</TableHead>
+                      <TableHead className="text-right">Acción</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {availableDoctors.map((d) => (
+                      <TableRow key={d.id} data-testid={`row-available-doctor-${d.id}`}>
+                        <TableCell>
+                          <div className="font-medium">
+                            {[d.firstName, d.lastName].filter(Boolean).join(" ") || "Sin nombre"}
+                          </div>
+                          <div className="text-xs text-muted-foreground">{d.email}</div>
+                        </TableCell>
+                        <TableCell>{d.specialty}</TableCell>
+                        <TableCell>{d.rut || "—"}</TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            onClick={() => attachDoctor.mutate(d.id)}
+                            disabled={attachDoctor.isPending}
+                            data-testid={`button-attach-doctor-${d.id}`}
+                          >
+                            {attachDoctor.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                            Agregar
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button>
-              <Button onClick={() => createDoctor.mutate()} disabled={createDoctor.isPending || !form.rut || !form.specialty} data-testid="button-create-doctor">
-                {createDoctor.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Crear médico
-              </Button>
+              <Button variant="outline" onClick={() => setAddOpen(false)}>Cerrar</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -176,7 +236,7 @@ export default function AdminUsersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {orgUsers?.map(u => (
+              {orgUsers?.map((u) => (
                 <TableRow key={u.id} data-testid={`row-user-${u.id}`}>
                   <TableCell>
                     <div className="font-medium">{u.firstName} {u.lastName}</div>
@@ -209,13 +269,26 @@ export default function AdminUsersPage() {
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       {u.doctorId && (
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(u)} data-testid={`button-edit-user-${u.id}`} title="Editar">
-                          <Pencil className="h-4 w-4" />
+                        <>
+                          <Button variant="ghost" size="icon" onClick={() => openEdit(u)} data-testid={`button-edit-user-${u.id}`} title="Editar">
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setDetachUser(u)}
+                            data-testid={`button-detach-user-${u.id}`}
+                            title="Quitar de la organización"
+                          >
+                            <UserMinus className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </>
+                      )}
+                      {u.role === "admin" && (
+                        <Button variant="ghost" size="icon" onClick={() => setDeleteAdmin(u)} data-testid={`button-delete-user-${u.id}`} title="Eliminar admin">
+                          <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       )}
-                      <Button variant="ghost" size="icon" onClick={() => setDeleteUser(u)} data-testid={`button-delete-user-${u.id}`} title="Eliminar">
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -303,17 +376,43 @@ export default function AdminUsersPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!deleteUser} onOpenChange={(o) => !o && setDeleteUser(null)}>
+      <AlertDialog open={!!detachUser} onOpenChange={(o) => !o && setDetachUser(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar usuario?</AlertDialogTitle>
+            <AlertDialogTitle>¿Quitar de la organización?</AlertDialogTitle>
             <AlertDialogDescription>
-              Si es un médico, será desactivado y no podrá recibir nuevas consultas. Si es admin, su cuenta será eliminada.
+              El médico será desvinculado de tu organización y volverá al pool de médicos disponibles.
+              Su perfil profesional y consultas históricas se mantienen.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => deleteUser && removeUser.mutate(deleteUser.id)} data-testid="button-confirm-delete-user">
+            <AlertDialogAction
+              onClick={() => detachUser?.doctorId && detachDoctor.mutate(detachUser.doctorId)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-detach"
+            >
+              Quitar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!deleteAdmin} onOpenChange={(o) => !o && setDeleteAdmin(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar administrador?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Su cuenta de administrador será eliminada. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteAdmin && removeAdmin.mutate(deleteAdmin.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-user"
+            >
               Eliminar
             </AlertDialogAction>
           </AlertDialogFooter>

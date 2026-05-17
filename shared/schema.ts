@@ -56,6 +56,10 @@ export const patients = pgTable("patients", {
   medicalHistory: text("medical_history"),
   emergencyContact: text("emergency_contact"),
   emergencyPhone: text("emergency_phone"),
+  // Pregnancy / lactation status drive bloqueant alerts in the prescription flow.
+  // Editable by the patient from their profile; visible to the doctor.
+  isPregnant: boolean("is_pregnant").notNull().default(false),
+  isBreastfeeding: boolean("is_breastfeeding").notNull().default(false),
   historySummary: text("history_summary"),
   historySummaryAt: timestamp("history_summary_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -75,6 +79,8 @@ export const appointments = pgTable("appointments", {
   flowCommerceOrderId: text("flow_commerce_order_id"),
   consultationType: text("consultation_type").notNull().default("video"), // video, audio
   notes: text("notes"),
+  // Reason given by whoever cancels the appointment. Required on the doctor-facing cancel flow.
+  cancellationReason: text("cancellation_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

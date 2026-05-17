@@ -9,9 +9,19 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/use-auth";
 import { useDoctor } from "@/hooks/use-doctor";
 import { useRole, type UserRole } from "@/hooks/use-role";
+import { useIdleTimeout } from "@/hooks/use-idle-timeout";
 import { AppSidebar } from "@/components/app-sidebar";
 import { NotificationBell } from "@/components/notification-bell";
 import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/sidebar";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
@@ -40,6 +50,7 @@ import AdminDashboardPage from "@/pages/admin/dashboard";
 import AdminSchedulesPage from "@/pages/admin/schedules";
 import SuperAdminDashboardPage from "@/pages/super-admin/dashboard";
 import SuperAdminOrganizationsPage from "@/pages/super-admin/organizations";
+import SuperAdminUsersPage from "@/pages/super-admin/users";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
 import HealthDataPage from "@/pages/health-data";
@@ -53,6 +64,42 @@ function homeForRole(role: UserRole): string {
     case "superAdmin": return "/super-admin/dashboard";
     case "patient": default: return "/";
   }
+}
+
+// Inactivity bound for an authenticated session. Combined with the server-side JWT TTL this is the
+// effective max time a forgotten browser stays usable.
+const IDLE_TIMEOUT_MS = 20 * 60 * 1000; // 20 min
+const IDLE_WARN_MS = 60 * 1000; // show the warning for the last 60s
+
+function IdleSessionGuard() {
+  const { isAuthenticated, logout } = useAuth();
+  const { isWarning, dismissWarning } = useIdleTimeout({
+    idleMs: IDLE_TIMEOUT_MS,
+    warnBeforeMs: IDLE_WARN_MS,
+    onWarn: () => {},
+    onTimeout: () => {
+      if (isAuthenticated) logout();
+    },
+    enabled: isAuthenticated,
+  });
+
+  return (
+    <AlertDialog open={isWarning}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>¿Sigues ahí?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Por seguridad cerraremos tu sesión en menos de un minuto por inactividad. Haz clic para mantenerla abierta.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogAction onClick={dismissWarning} data-testid="button-stay-signed-in">
+            Mantener sesión
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 }
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
@@ -158,14 +205,18 @@ function DoctorProtectedRoute({ component: Component }: { component: React.Compo
 }
 
 function RoleHomeRedirect() {
-  const { role, isLoading } = useRole();
+  const { role, isLoading: roleLoading } = useRole();
+  const { currentRole, isLoading: doctorLoading } = useDoctor();
+  const isLoading = roleLoading || doctorLoading;
   const [, navigate] = useLocation();
+  // A doctor who has opted into the patient view stays on the patient home.
+  const effectiveRole: UserRole = role === "doctor" && currentRole === "patient" ? "patient" : role;
   useEffect(() => {
-    if (!isLoading && role !== "patient") {
-      navigate(homeForRole(role));
+    if (!isLoading && effectiveRole !== "patient") {
+      navigate(homeForRole(effectiveRole));
     }
-  }, [role, isLoading, navigate]);
-  if (isLoading || role !== "patient") {
+  }, [effectiveRole, isLoading, navigate]);
+  if (isLoading || effectiveRole !== "patient") {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -282,6 +333,9 @@ function Router() {
       <Route path="/super-admin/organizations">
         <ProtectedRoute component={SuperAdminOrganizationsPage} allowedRoles={["superAdmin"]} />
       </Route>
+      <Route path="/super-admin/users">
+        <ProtectedRoute component={SuperAdminUsersPage} allowedRoles={["superAdmin"]} />
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );
@@ -293,6 +347,7 @@ function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Router />
+          <IdleSessionGuard />
           <Toaster />
         </TooltipProvider>
       </ThemeProvider>

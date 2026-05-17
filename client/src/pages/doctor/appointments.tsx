@@ -17,6 +17,8 @@ import { es } from "date-fns/locale";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { ConsultationSummaryDialog } from "@/components/consultation-summary-dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 
 interface AppointmentWithPatient {
   id: number;
@@ -139,14 +141,18 @@ export default function DoctorAppointmentsPage() {
   const { toast } = useToast();
   const [summaryId, setSummaryId] = useState<number | null>(null);
   const [cancelTarget, setCancelTarget] = useState<AppointmentWithPatient | null>(null);
+  const [cancellationReason, setCancellationReason] = useState("");
+  const [cancelReasonError, setCancelReasonError] = useState<string | null>(null);
 
   const { data: appointments, isLoading } = useQuery<AppointmentWithPatient[]>({
     queryKey: ["/api/doctors/me/appointments"],
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status }: { id: number; status: string }) => {
-      const response = await apiRequest("PATCH", `/api/appointments/${id}/status`, { status });
+    mutationFn: async ({ id, status, cancellationReason }: { id: number; status: string; cancellationReason?: string }) => {
+      const body: Record<string, unknown> = { status };
+      if (cancellationReason) body.cancellationReason = cancellationReason;
+      const response = await apiRequest("PATCH", `/api/appointments/${id}/status`, body);
       return response.json();
     },
     onSuccess: () => {
@@ -157,10 +163,10 @@ export default function DoctorAppointmentsPage() {
         description: "La cita ha sido actualizada correctamente",
       });
     },
-    onError: () => {
+    onError: (err: any) => {
       toast({
         title: "Error",
-        description: "No se pudo actualizar el estado de la cita",
+        description: err?.message || "No se pudo actualizar el estado de la cita",
         variant: "destructive",
       });
     },
@@ -168,6 +174,23 @@ export default function DoctorAppointmentsPage() {
 
   const handleStatusChange = (id: number, status: string) => {
     updateStatusMutation.mutate({ id, status });
+  };
+
+  const closeCancelDialog = () => {
+    setCancelTarget(null);
+    setCancellationReason("");
+    setCancelReasonError(null);
+  };
+
+  const submitCancellation = () => {
+    const reason = cancellationReason.trim();
+    if (reason.length < 3) {
+      setCancelReasonError("Ingresa un motivo (mínimo 3 caracteres).");
+      return;
+    }
+    if (!cancelTarget) return;
+    updateStatusMutation.mutate({ id: cancelTarget.id, status: "cancelled", cancellationReason: reason });
+    closeCancelDialog();
   };
 
   const filterAppointments = (status?: string) => {
@@ -286,13 +309,13 @@ export default function DoctorAppointmentsPage() {
         </TabsContent>
       </Tabs>
 
-      <AlertDialog open={!!cancelTarget} onOpenChange={(o) => !o && setCancelTarget(null)}>
+      <AlertDialog open={!!cancelTarget} onOpenChange={(o) => !o && closeCancelDialog()}>
         <AlertDialogContent data-testid="dialog-cancel-appointment">
           <AlertDialogHeader>
             <AlertDialogTitle>¿Cancelar esta cita?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2">
-                <p>Esta acción no se puede deshacer. Se notificará al paciente.</p>
+                <p>Esta acción no se puede deshacer. Se notificará al paciente con el motivo indicado.</p>
                 {cancelTarget && (
                   <div className="rounded-md border bg-muted/40 p-3 text-sm text-foreground">
                     <div><span className="text-muted-foreground">Paciente:</span> <span className="font-medium" data-testid="text-cancel-patient">{cancelTarget.patientName}</span></div>
@@ -303,15 +326,36 @@ export default function DoctorAppointmentsPage() {
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="cancellation-reason">
+              Motivo de la cancelación <span className="text-destructive">*</span>
+            </Label>
+            <Textarea
+              id="cancellation-reason"
+              value={cancellationReason}
+              onChange={(e) => {
+                setCancellationReason(e.target.value);
+                if (cancelReasonError) setCancelReasonError(null);
+              }}
+              placeholder="Ej: Inasistencia del paciente, emergencia del médico, etc."
+              rows={3}
+              data-testid="input-cancellation-reason"
+            />
+            {cancelReasonError && (
+              <p className="text-xs text-destructive" data-testid="error-cancellation-reason">
+                {cancelReasonError}
+              </p>
+            )}
+          </div>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-keep-appointment">Conservar cita</AlertDialogCancel>
+            <AlertDialogCancel onClick={closeCancelDialog} data-testid="button-keep-appointment">
+              Conservar cita
+            </AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => {
-                if (cancelTarget) {
-                  handleStatusChange(cancelTarget.id, "cancelled");
-                  setCancelTarget(null);
-                }
+              onClick={(e) => {
+                e.preventDefault();
+                submitCancellation();
               }}
               data-testid="button-confirm-cancel"
             >

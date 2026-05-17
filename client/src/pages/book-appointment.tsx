@@ -23,7 +23,8 @@ import {
   Check,
   Stethoscope,
   CreditCard,
-  Shield
+  Shield,
+  AlertTriangle
 } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -452,9 +453,21 @@ export default function BookAppointmentPage() {
                 </div>
               </div>
 
-              <p className="text-sm text-muted-foreground text-center">
-                Al continuar, serás redirigido a Flow para completar el pago. Tu cita se confirmará una vez procesado el pago.
-              </p>
+              <div
+                className="flex items-start gap-3 rounded-lg border-2 border-amber-400/70 bg-amber-50 dark:border-amber-700/70 dark:bg-amber-950/40 p-4"
+                data-testid="banner-payment-confirmation"
+              >
+                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                    Tu cita se confirmará sólo una vez procesado el pago
+                  </p>
+                  <p className="text-sm text-amber-900/90 dark:text-amber-200/90">
+                    Al continuar, serás redirigido a Flow para completarlo. Si cierras el sitio
+                    o cancelas el pago, la cita no quedará reservada.
+                  </p>
+                </div>
+              </div>
             </div>
           )}
         </CardContent>

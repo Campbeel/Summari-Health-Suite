@@ -195,10 +195,10 @@ export default function LandingPage() {
                 <div className="w-12 h-12 rounded-lg bg-accent/20 flex items-center justify-center">
                   <Shield className="h-6 w-6 text-accent" />
                 </div>
-                <h3 className="text-xl font-semibold">Seguridad Garantizada</h3>
+                <h3 className="text-xl font-semibold">Cuidamos tus datos</h3>
                 <p className="text-muted-foreground">
-                  Tus datos médicos están protegidos con los más altos 
-                  estándares de seguridad y privacidad.
+                  Trabajamos con los más altos estándares de seguridad
+                  para proteger tu información clínica.
                 </p>
               </CardContent>
             </Card>

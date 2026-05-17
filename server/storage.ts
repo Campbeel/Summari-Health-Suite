@@ -287,7 +287,7 @@ export interface IStorage {
   getUpcomingAppointmentsByDoctor(doctorId: number): Promise<AppointmentWithPatient[]>;
   createAppointment(appointment: InsertAppointment): Promise<Appointment>;
   updateAppointment(id: number, appointment: Partial<InsertAppointment>): Promise<Appointment>;
-  updateAppointmentStatus(id: number, status: string): Promise<Appointment>;
+  updateAppointmentStatus(id: number, status: string, cancellationReason?: string | null): Promise<Appointment>;
 
   // Clinical Records
   getClinicalRecord(id: number): Promise<ClinicalRecordWithDoctor | undefined>;
@@ -744,10 +744,12 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async updateAppointmentStatus(id: number, status: string): Promise<Appointment> {
+  async updateAppointmentStatus(id: number, status: string, cancellationReason?: string | null): Promise<Appointment> {
+    const patch: Record<string, unknown> = { status, updatedAt: new Date() };
+    if (cancellationReason !== undefined) patch.cancellationReason = cancellationReason;
     const [updated] = await db
       .update(appointments)
-      .set({ status, updatedAt: new Date() })
+      .set(patch)
       .where(eq(appointments.id, id))
       .returning();
     return updated;

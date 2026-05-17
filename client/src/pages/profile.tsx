@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
   Form,
   FormControl,
@@ -38,6 +39,8 @@ const profileSchema = z.object({
   dateOfBirth: z.string().optional(),
   gender: z.string().optional(),
   bloodType: z.string().optional(),
+  isPregnant: z.boolean().optional(),
+  isBreastfeeding: z.boolean().optional(),
   medicalHistory: z.string().optional(),
   emergencyContact: z.string().optional(),
   emergencyPhone: z.string().optional(),
@@ -73,6 +76,8 @@ export default function ProfilePage() {
       dateOfBirth: "",
       gender: "",
       bloodType: "",
+      isPregnant: false,
+      isBreastfeeding: false,
       medicalHistory: "",
       emergencyContact: "",
       emergencyPhone: "",
@@ -89,6 +94,8 @@ export default function ProfilePage() {
         dateOfBirth: profile.dateOfBirth || "",
         gender: profile.gender || "",
         bloodType: profile.bloodType || "",
+        isPregnant: !!profile.isPregnant,
+        isBreastfeeding: !!profile.isBreastfeeding,
         medicalHistory: profile.medicalHistory || "",
         emergencyContact: profile.emergencyContact || "",
         emergencyPhone: profile.emergencyPhone || "",
@@ -367,6 +374,53 @@ export default function ProfilePage() {
                   <p className="text-sm text-muted-foreground" data-testid="text-no-allergies">No hay alergias registradas</p>
                 )}
               </div>
+
+              {form.watch("gender") !== "male" && (
+                <div className="space-y-3 rounded-md border p-4">
+                  <div>
+                    <FormLabel>Embarazo y lactancia</FormLabel>
+                    <FormDescription className="mt-1">
+                      Esta información ayuda al médico a evitar prescripciones contraindicadas.
+                    </FormDescription>
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name="isPregnant"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between gap-3">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-sm font-normal">Actualmente embarazada</FormLabel>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={!!field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="switch-is-pregnant"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="isBreastfeeding"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between gap-3">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-sm font-normal">Actualmente en periodo de lactancia</FormLabel>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={!!field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="switch-is-breastfeeding"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              )}
 
               <FormField
                 control={form.control}

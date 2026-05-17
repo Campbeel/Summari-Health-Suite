@@ -1,6 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useRole, type UserRole } from "@/hooks/use-role";
+import { useDoctor } from "@/hooks/use-doctor";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Sidebar,
@@ -39,6 +40,8 @@ import {
   Building2,
   CalendarClock,
   ShieldCheck,
+  Stethoscope,
+  UserRound,
 } from "lucide-react";
 
 type MenuItem = { title: string; url: string; icon: any; testId: string };
@@ -69,6 +72,7 @@ const ADMIN_MENU: MenuItem[] = [
 const SUPERADMIN_MENU: MenuItem[] = [
   { title: "Plataforma", url: "/super-admin/dashboard", icon: ShieldCheck, testId: "nav-super-admin-dashboard" },
   { title: "Organizaciones", url: "/super-admin/organizations", icon: Building2, testId: "nav-super-admin-orgs" },
+  { title: "Usuarios", url: "/super-admin/users", icon: Users, testId: "nav-super-admin-users" },
 ];
 
 function menuForRole(role: UserRole): { items: MenuItem[]; label: string } {
@@ -96,9 +100,19 @@ function roleLabel(role: UserRole): string {
 
 export function AppSidebar() {
   const { user, logout } = useAuth();
-  const { role } = useRole();
-  const [location] = useLocation();
+  const { role: dbRole } = useRole();
+  const { isDoctor, currentRole, switchRole } = useDoctor();
+  const [location, navigate] = useLocation();
+  // When a doctor opts into the patient view, show the patient sidebar.
+  // Admin/superAdmin sidebars are always driven by the DB role.
+  const role: UserRole = dbRole === "doctor" && currentRole === "patient" ? "patient" : dbRole;
+  const canSwitchProfiles = isDoctor;
   const { items, label } = menuForRole(role);
+
+  const handleSwitchProfile = (next: "doctor" | "patient") => {
+    switchRole(next);
+    navigate(next === "doctor" ? "/doctor/dashboard" : "/");
+  };
 
   return (
     <Sidebar>
@@ -170,6 +184,30 @@ export function AppSidebar() {
                 align="start"
                 sideOffset={8}
               >
+                {canSwitchProfiles ? (
+                  <>
+                    {role === "doctor" ? (
+                      <DropdownMenuItem
+                        onClick={() => handleSwitchProfile("patient")}
+                        className="cursor-pointer"
+                        data-testid="button-switch-to-patient"
+                      >
+                        <UserRound className="h-4 w-4 mr-2" />
+                        Cambiar a perfil paciente
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        onClick={() => handleSwitchProfile("doctor")}
+                        className="cursor-pointer"
+                        data-testid="button-switch-to-doctor"
+                      >
+                        <Stethoscope className="h-4 w-4 mr-2" />
+                        Cambiar a perfil médico
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                  </>
+                ) : null}
                 {role === "patient" || role === "doctor" ? (
                   <DropdownMenuItem asChild>
                     <Link href="/profile" className="cursor-pointer">
