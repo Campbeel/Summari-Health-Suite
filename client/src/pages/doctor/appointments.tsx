@@ -8,10 +8,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link, useLocation } from "wouter";
 import { Calendar, Clock, Video, Phone, Play, X, Check, Users, FileCheck } from "lucide-react";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -45,11 +41,10 @@ function getStatusBadge(status: string) {
   return <Badge variant={s.variant} data-testid={`status-badge-${status}`}>{s.label}</Badge>;
 }
 
-function AppointmentCard({ appointment, onStatusChange, onOpenSummary, onCancelRequest }: { 
+function AppointmentCard({ appointment, onStatusChange, onOpenSummary }: { 
   appointment: AppointmentWithPatient;
   onStatusChange: (id: number, status: string) => void;
   onOpenSummary: (id: number) => void;
-  onCancelRequest: (appointment: AppointmentWithPatient) => void;
 }) {
   const [, navigate] = useLocation();
   const canConfirm = appointment.status === "scheduled";
@@ -122,9 +117,8 @@ function AppointmentCard({ appointment, onStatusChange, onOpenSummary, onCancelR
           </Button>
         )}
         {canCancel && (
-          <Button size="sm" variant="outline" className="text-destructive hover:text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => onCancelRequest(appointment)} data-testid={`button-cancel-${appointment.id}`}>
-            <X className="h-3.5 w-3.5 mr-1" />
-            Cancelar cita
+          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => onStatusChange(appointment.id, "cancelled")} data-testid={`button-cancel-${appointment.id}`}>
+            <X className="h-3.5 w-3.5" />
           </Button>
         )}
         {appointment.status === "completed" && (
@@ -140,9 +134,12 @@ function AppointmentCard({ appointment, onStatusChange, onOpenSummary, onCancelR
 export default function DoctorAppointmentsPage() {
   const { toast } = useToast();
   const [summaryId, setSummaryId] = useState<number | null>(null);
+<<<<<<< HEAD
   const [cancelTarget, setCancelTarget] = useState<AppointmentWithPatient | null>(null);
   const [cancellationReason, setCancellationReason] = useState("");
   const [cancelReasonError, setCancelReasonError] = useState<string | null>(null);
+=======
+>>>>>>> 480090b (Restored to '1619327d460fd9cbaa7c50f288b524ae38bdb4b3')
 
   const { data: appointments, isLoading } = useQuery<AppointmentWithPatient[]>({
     queryKey: ["/api/doctors/me/appointments"],
@@ -240,7 +237,6 @@ export default function DoctorAppointmentsPage() {
             appointment={appointment} 
             onStatusChange={handleStatusChange}
             onOpenSummary={setSummaryId}
-            onCancelRequest={setCancelTarget}
           />
         ))}
       </div>
@@ -308,6 +304,7 @@ export default function DoctorAppointmentsPage() {
           {renderAppointmentList(cancelledAppointments)}
         </TabsContent>
       </Tabs>
+<<<<<<< HEAD
 
       <AlertDialog open={!!cancelTarget} onOpenChange={(o) => !o && closeCancelDialog()}>
         <AlertDialogContent data-testid="dialog-cancel-appointment">
@@ -364,6 +361,8 @@ export default function DoctorAppointmentsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+=======
+>>>>>>> 480090b (Restored to '1619327d460fd9cbaa7c50f288b524ae38bdb4b3')
     </div>
   );
 }
