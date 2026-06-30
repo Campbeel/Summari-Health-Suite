@@ -265,7 +265,7 @@ export default function AuthRegisterPage() {
             </form>
             <div className="mt-4 text-center text-sm">
               <span className="text-muted-foreground">¿Ya tienes cuenta? </span>
-              <Link href="/login" className="text-primary font-medium hover:underline" data-testid="link-login">
+              <Link href="/" className="text-primary font-medium hover:underline" data-testid="link-login">
                 Iniciar sesión
               </Link>
             </div>

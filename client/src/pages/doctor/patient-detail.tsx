@@ -1,20 +1,38 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
+import { SpeechTextarea } from "@/components/speech-textarea";
+import { PatientClinicalAssistant } from "@/components/patient-clinical-assistant";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import {
-  ArrowLeft, User, Calendar, Phone, Mail, Droplets, AlertTriangle,
-  Heart, FileText, Pill, FlaskConical, Video, PhoneCall, Clock,
-  ShieldAlert, ClipboardList, MessageSquare, Paperclip
+  ArrowLeft,
+  User,
+  Phone,
+  Mail,
+  Droplets,
+  AlertTriangle,
+  Plus,
+  CheckCircle2,
+  Loader2,
+  Clock,
 } from "lucide-react";
+import {
+  formatDueLabel,
+  getTaskUrgency,
+  urgencyStyles,
+} from "@shared/care-tasks";
 
 type PatientProfile = {
   id: number;
-  userId: string;
   rut: string | null;
   email: string | null;
   whatsapp: string | null;
@@ -23,73 +41,35 @@ type PatientProfile = {
   bloodType: string | null;
   allergies: string[] | null;
   medicalHistory: string | null;
-  emergencyContact: string | null;
-  emergencyPhone: string | null;
   firstName: string | null;
   lastName: string | null;
   profileImageUrl: string | null;
 };
 
-type AppointmentHistory = {
+type CareSession = {
   id: number;
-  scheduledDate: string;
-  scheduledTime: string;
-  durationMinutes: number;
+  anamnesis: string | null;
   status: string;
-  consultationType: string;
-  notes: string | null;
-  doctorName: string;
-  doctorSpecialty: string | null;
-  diagnosis: string | null;
-  hasPrescription: boolean;
+  completedByName: string | null;
+  completedAt: string | null;
 };
 
-type ClinicalRecord = {
+type ResidentTask = {
   id: number;
-  recordDate: string;
-  chiefComplaint: string | null;
-  symptoms: string[] | null;
-  diagnosis: string | null;
-  notes: string | null;
-  doctorName: string;
-  doctorSpecialty: string | null;
-  hasPrescription: boolean;
-};
-
-type Prescription = {
-  id: number;
-  medications: Array<{ name: string; dosage: string; frequency: string; duration: string }>;
-  instructions: string | null;
-  issuedAt: string;
-  validUntil: string | null;
-  status: string;
-  doctorName: string;
-  doctorSpecialty: string | null;
-  appointmentId: number | null;
-};
-
-type ChatMessage = {
-  id: number;
-  appointmentId: number;
-  senderRole: string;
-  content: string | null;
-  fileName: string | null;
-  fileUrl: string | null;
-  fileType: string | null;
-  fileSize: number | null;
+  text: string;
+  dueAt: string;
+  resolved: boolean;
+  resolvedByName: string | null;
+  createdByName: string;
   createdAt: string;
 };
 
-type ExamOrder = {
-  id: number;
-  exams: Array<{ name: string; instructions?: string }>;
-  clinicalJustification: string | null;
-  issuedAt: string;
-  status: string;
-  doctorName: string;
-  doctorSpecialty: string | null;
-  appointmentId: number | null;
-};
+function defaultDueLocal(): string {
+  const d = new Date();
+  d.setHours(d.getHours() + 4, 0, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 function getAge(dateOfBirth: string | null): string {
   if (!dateOfBirth) return "";
@@ -102,143 +82,184 @@ function getAge(dateOfBirth: string | null): string {
 }
 
 function getInitials(first: string | null, last: string | null): string {
-  return `${(first || "")[0] || ""}${(last || "")[0] || ""}`.toUpperCase() || "P";
+  return `${(first || "")[0] || ""}${(last || "")[0] || ""}`.toUpperCase() || "R";
 }
-
-const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  scheduled: { label: "Programada", variant: "outline" },
-  confirmed: { label: "Confirmada", variant: "secondary" },
-  in_progress: { label: "En curso", variant: "default" },
-  completed: { label: "Completada", variant: "default" },
-  pending_validation: { label: "Pendiente validación", variant: "secondary" },
-  cancelled: { label: "Cancelada", variant: "destructive" },
-};
 
 export default function PatientDetailPage() {
   const { patientId } = useParams<{ patientId: string }>();
   const [, navigate] = useLocation();
+  const { toast } = useToast();
   const id = parseInt(patientId || "0");
 
-  const { data: patient, isLoading: loadingProfile } = useQuery<PatientProfile>({
-    queryKey: ["/api/doctors/me/patients", id],
+  const [anamnesis, setAnamnesis] = useState("");
+  const [newTask, setNewTask] = useState("");
+  const [newTaskDueAt, setNewTaskDueAt] = useState(defaultDueLocal);
+
+  const { data, isLoading } = useQuery<{ profile: PatientProfile; session: CareSession | null }>({
+    queryKey: ["/api/staff/patients", id, "care"],
+    queryFn: async () => {
+      const res = await fetch(`/api/staff/patients/${id}/care`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
+      });
+      if (!res.ok) throw new Error("No se pudo cargar la ficha");
+      return res.json();
+    },
     enabled: id > 0,
   });
 
-  const { data: history, isLoading: loadingHistory } = useQuery<AppointmentHistory[]>({
-    queryKey: ["/api/doctors/me/patients", id, "history"],
+  const { data: tasks = [], isLoading: tasksLoading } = useQuery<ResidentTask[]>({
+    queryKey: ["/api/staff/patients", id, "tasks"],
+    queryFn: async () => {
+      const res = await fetch(`/api/staff/patients/${id}/tasks`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
+      });
+      if (!res.ok) throw new Error("No se pudieron cargar las tareas");
+      return res.json();
+    },
     enabled: id > 0,
   });
 
-  const { data: records, isLoading: loadingRecords } = useQuery<ClinicalRecord[]>({
-    queryKey: ["/api/doctors/me/patients", id, "records"],
-    enabled: id > 0,
+  useEffect(() => {
+    if (data?.session) {
+      setAnamnesis(data.session.anamnesis || data.profile.medicalHistory || "");
+    } else if (data?.profile) {
+      setAnamnesis(data.profile.medicalHistory || "");
+    }
+  }, [data]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (payload: { anamnesis: string }) => {
+      const res = await apiRequest("PUT", `/api/staff/patients/${id}/care`, payload);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/staff/patients", id, "care"] });
+      toast({ title: "Registro guardado" });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
   });
 
-  const { data: prescriptions, isLoading: loadingPrescriptions } = useQuery<Prescription[]>({
-    queryKey: ["/api/doctors/me/patients", id, "prescriptions"],
-    enabled: id > 0,
+  const createTaskMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/staff/patients/${id}/tasks`, {
+        text: newTask.trim(),
+        dueAt: new Date(newTaskDueAt).toISOString(),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/staff/patients", id, "tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/staff/dashboard"] });
+      setNewTask("");
+      setNewTaskDueAt(defaultDueLocal());
+      toast({ title: "Tarea asignada", description: "Aparecerá en el panel del hogar" });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
   });
 
-  const { data: examOrders, isLoading: loadingExams } = useQuery<ExamOrder[]>({
-    queryKey: ["/api/doctors/me/patients", id, "exam-orders"],
-    enabled: id > 0,
+  const toggleTaskMutation = useMutation({
+    mutationFn: async ({ taskId, resolved }: { taskId: number; resolved: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/staff/patients/${id}/tasks/${taskId}`, { resolved });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/staff/patients", id, "tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/staff/dashboard"] });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
   });
 
-  const { data: messages, isLoading: loadingMessages } = useQuery<ChatMessage[]>({
-    queryKey: ["/api/doctors/me/patients", id, "messages"],
-    enabled: id > 0,
+  const completeMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("PUT", `/api/staff/patients/${id}/care`, { anamnesis });
+      const res = await apiRequest("POST", `/api/staff/patients/${id}/care/complete`);
+      return res.json();
+    },
+    onSuccess: (session) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/staff/dashboard"] });
+      toast({
+        title: "Registro finalizado",
+        description: `Realizado por ${session.completedByName}`,
+      });
+      navigate("/staff/dashboard");
+    },
+    onError: (e: Error) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
   });
 
-  if (loadingProfile) {
+  if (isLoading) {
     return (
-      <div className="container mx-auto py-6 px-4 max-w-5xl space-y-4">
+      <div className="max-w-5xl mx-auto space-y-4 p-4">
         <Skeleton className="h-8 w-32" />
-        <Skeleton className="h-40 w-full rounded-lg" />
-        <Skeleton className="h-64 w-full rounded-lg" />
+        <Skeleton className="h-40 w-full" />
       </div>
     );
   }
 
+  const patient = data?.profile;
   if (!patient) {
     return (
-      <div className="container mx-auto py-6 px-4 max-w-5xl text-center">
-        <p className="text-muted-foreground">Paciente no encontrado</p>
-        <Button variant="outline" className="mt-4" onClick={() => navigate("/doctor/patients")}>
+      <div className="text-center py-12">
+        <p className="text-muted-foreground">Residente no encontrado</p>
+        <Button className="mt-4" variant="outline" onClick={() => navigate("/staff/patients")}>
           Volver
         </Button>
       </div>
     );
   }
 
-  const fullName = `${patient.firstName || ""} ${patient.lastName || ""}`.trim() || "Paciente";
-  const age = getAge(patient.dateOfBirth);
+  const fullName = `${patient.firstName || ""} ${patient.lastName || ""}`.trim() || "Residente";
+  const isCompleted = data?.session?.status === "completed";
+  const pendingTasks = tasks.filter((t) => !t.resolved);
+  const resolvedTasks = tasks.filter((t) => t.resolved);
 
   return (
-    <div className="container mx-auto py-6 px-4 max-w-5xl">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="mb-4 gap-1"
-        onClick={() => navigate("/doctor/patients")}
-        data-testid="button-back"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Volver a pacientes
+    <div className="max-w-6xl mx-auto space-y-6">
+      <Button variant="ghost" size="sm" onClick={() => navigate("/staff/patients")} data-testid="button-back">
+        <ArrowLeft className="h-4 w-4 mr-1" />
+        Volver a residentes
       </Button>
 
-      <Card className="mb-6" data-testid="patient-profile-card">
-        <CardContent className="py-5 px-5">
-          <div className="flex flex-col sm:flex-row gap-5">
-            <Avatar className="h-20 w-20 flex-shrink-0">
+      <Card>
+        <CardContent className="py-5">
+          <div className="flex gap-4 flex-col sm:flex-row">
+            <Avatar className="h-16 w-16">
               <AvatarImage src={patient.profileImageUrl || undefined} />
-              <AvatarFallback className="bg-primary/10 text-primary text-xl font-semibold">
-                {getInitials(patient.firstName, patient.lastName)}
-              </AvatarFallback>
+              <AvatarFallback>{getInitials(patient.firstName, patient.lastName)}</AvatarFallback>
             </Avatar>
-
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-3 flex-wrap mb-2">
+            <div className="flex-1 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-xl font-bold" data-testid="text-patient-name">{fullName}</h1>
-                {patient.rut && (
-                  <Badge variant="outline" className="font-mono text-xs">{patient.rut}</Badge>
+                {patient.rut && <Badge variant="outline" className="font-mono">{patient.rut}</Badge>}
+                {isCompleted && (
+                  <Badge variant="secondary">
+                    Registro por {data?.session?.completedByName}
+                  </Badge>
                 )}
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2 text-sm">
-                {age && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <User className="h-3.5 w-3.5" />
-                    <span>{age} años · {patient.gender || "—"}</span>
-                  </div>
+              <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                {patient.dateOfBirth && (
+                  <span className="flex items-center gap-1"><User className="h-3.5 w-3.5" />{getAge(patient.dateOfBirth)} años</span>
                 )}
                 {patient.bloodType && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Droplets className="h-3.5 w-3.5" />
-                    <span>Grupo: {patient.bloodType}</span>
-                  </div>
+                  <span className="flex items-center gap-1"><Droplets className="h-3.5 w-3.5" />{patient.bloodType}</span>
                 )}
                 {patient.email && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Mail className="h-3.5 w-3.5" />
-                    <span>{patient.email}</span>
-                  </div>
+                  <span className="flex items-center gap-1"><Mail className="h-3.5 w-3.5" />{patient.email}</span>
                 )}
                 {patient.whatsapp && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Phone className="h-3.5 w-3.5" />
-                    <span>{patient.whatsapp}</span>
-                  </div>
-                )}
-                {patient.emergencyContact && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <ShieldAlert className="h-3.5 w-3.5" />
-                    <span>{patient.emergencyContact} ({patient.emergencyPhone || "—"})</span>
-                  </div>
+                  <span className="flex items-center gap-1"><Phone className="h-3.5 w-3.5" />{patient.whatsapp}</span>
                 )}
               </div>
-
               {patient.allergies && patient.allergies.length > 0 && (
-                <div className="mt-3 flex items-start gap-2">
+                <div className="flex items-start gap-2">
                   <AlertTriangle className="h-4 w-4 text-destructive mt-0.5" />
                   <div className="flex flex-wrap gap-1">
                     {patient.allergies.map((a, i) => (
@@ -247,333 +268,160 @@ export default function PatientDetailPage() {
                   </div>
                 </div>
               )}
-
-              {patient.medicalHistory && (
-                <div className="mt-3">
-                  <p className="text-xs font-medium text-muted-foreground mb-1">Antecedentes médicos</p>
-                  <p className="text-sm bg-muted/50 rounded-md p-2" data-testid="text-medical-history">
-                    {patient.medicalHistory}
-                  </p>
-                </div>
-              )}
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="history" className="space-y-4">
-        <TabsList className="grid grid-cols-5 w-full max-w-2xl">
-          <TabsTrigger value="history" data-testid="tab-history">
-            <Calendar className="h-4 w-4 mr-1.5 hidden sm:inline" />
-            Historial
-          </TabsTrigger>
-          <TabsTrigger value="records" data-testid="tab-records">
-            <ClipboardList className="h-4 w-4 mr-1.5 hidden sm:inline" />
-            Fichas
-          </TabsTrigger>
-          <TabsTrigger value="prescriptions" data-testid="tab-prescriptions">
-            <Pill className="h-4 w-4 mr-1.5 hidden sm:inline" />
-            Recetas
-          </TabsTrigger>
-          <TabsTrigger value="exams" data-testid="tab-exams">
-            <FlaskConical className="h-4 w-4 mr-1.5 hidden sm:inline" />
-            Exámenes
-          </TabsTrigger>
-          <TabsTrigger value="messages" data-testid="tab-messages">
-            <MessageSquare className="h-4 w-4 mr-1.5 hidden sm:inline" />
-            Chat
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="history">
-          <HistoryTab history={history} loading={loadingHistory} />
-        </TabsContent>
-        <TabsContent value="records">
-          <RecordsTab records={records} loading={loadingRecords} />
-        </TabsContent>
-        <TabsContent value="prescriptions">
-          <PrescriptionsTab prescriptions={prescriptions} loading={loadingPrescriptions} />
-        </TabsContent>
-        <TabsContent value="exams">
-          <ExamsTab examOrders={examOrders} loading={loadingExams} />
-        </TabsContent>
-        <TabsContent value="messages">
-          <MessagesTab messages={messages} loading={loadingMessages} />
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
-}
-
-function HistoryTab({ history, loading }: { history?: AppointmentHistory[]; loading: boolean }) {
-  if (loading) return <LoadingSkeleton />;
-  if (!history || history.length === 0) return <EmptyState text="No hay consultas registradas" icon={Calendar} />;
-
-  return (
-    <div className="space-y-2" data-testid="history-list">
-      {history.map((appt) => {
-        const cfg = statusConfig[appt.status] || { label: appt.status, variant: "outline" as const };
-        return (
-          <Card key={appt.id} data-testid={`history-item-${appt.id}`}>
-            <CardContent className="py-3 px-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <span className="text-sm font-medium">
-                      {new Date(appt.scheduledDate).toLocaleDateString("es-CL", { day: "2-digit", month: "short", year: "numeric" })}
-                    </span>
-                    <span className="text-xs text-muted-foreground font-mono">{appt.scheduledTime.slice(0, 5)}</span>
-                    {appt.consultationType === "video" ? (
-                      <Video className="h-3.5 w-3.5 text-muted-foreground" />
-                    ) : (
-                      <PhoneCall className="h-3.5 w-3.5 text-muted-foreground" />
-                    )}
-                    <Badge variant={cfg.variant} className="text-[10px]">{cfg.label}</Badge>
-                    {appt.hasPrescription && (
-                      <Badge variant="secondary" className="text-[10px] gap-1">
-                        <Pill className="h-3 w-3" /> Receta
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {appt.doctorName}{appt.doctorSpecialty ? ` · ${appt.doctorSpecialty}` : ""}
-                  </p>
-                  {appt.diagnosis && (
-                    <p className="text-xs mt-1"><span className="font-medium">Dx:</span> {appt.diagnosis}</p>
-                  )}
-                  {appt.notes && (
-                    <p className="text-xs text-muted-foreground mt-0.5">{appt.notes}</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
-                  <Clock className="h-3 w-3" />
-                  {appt.durationMinutes} min
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
-    </div>
-  );
-}
-
-function RecordsTab({ records, loading }: { records?: ClinicalRecord[]; loading: boolean }) {
-  if (loading) return <LoadingSkeleton />;
-  if (!records || records.length === 0) return <EmptyState text="No hay fichas clínicas" icon={ClipboardList} />;
-
-  return (
-    <div className="space-y-2" data-testid="records-list">
-      {records.map((rec) => (
-        <Card key={rec.id} data-testid={`record-item-${rec.id}`}>
-          <CardContent className="py-3 px-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap mb-1">
-                  <span className="text-sm font-medium">
-                    {new Date(rec.recordDate).toLocaleDateString("es-CL", { day: "2-digit", month: "short", year: "numeric" })}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {rec.doctorName}{rec.doctorSpecialty ? ` · ${rec.doctorSpecialty}` : ""}
-                  </span>
-                  {rec.hasPrescription && (
-                    <Badge variant="secondary" className="text-[10px] gap-1"><Pill className="h-3 w-3" /> Receta</Badge>
-                  )}
-                </div>
-                {rec.chiefComplaint && (
-                  <p className="text-xs"><span className="font-medium">Motivo:</span> {rec.chiefComplaint}</p>
-                )}
-                {rec.diagnosis && (
-                  <p className="text-xs mt-0.5"><span className="font-medium">Diagnóstico:</span> {rec.diagnosis}</p>
-                )}
-                {rec.symptoms && rec.symptoms.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {rec.symptoms.map((s, i) => (
-                      <Badge key={i} variant="outline" className="text-[10px]">{s}</Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+      <div className="grid lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Registro de cuidado</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <SpeechTextarea
+              value={anamnesis}
+              onChange={setAnamnesis}
+              placeholder="Notas sobre el residente. Usa el botón de escucha para dictar..."
+              rows={10}
+              data-testid="input-anamnesis"
+            />
+            <Button
+              variant="outline"
+              onClick={() => saveMutation.mutate({ anamnesis })}
+              disabled={saveMutation.isPending || isCompleted}
+            >
+              {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Guardar registro
+            </Button>
           </CardContent>
         </Card>
-      ))}
-    </div>
-  );
-}
 
-function PrescriptionsTab({ prescriptions, loading }: { prescriptions?: Prescription[]; loading: boolean }) {
-  if (loading) return <LoadingSkeleton />;
-  if (!prescriptions || prescriptions.length === 0) return <EmptyState text="No hay recetas" icon={Pill} />;
+        <PatientClinicalAssistant patientId={id} className="min-h-[420px]" />
+      </div>
 
-  return (
-    <div className="space-y-2" data-testid="prescriptions-list">
-      {prescriptions.map((rx) => (
-        <Card key={rx.id} data-testid={`prescription-item-${rx.id}`}>
-          <CardContent className="py-3 px-4">
-            <div className="flex items-center gap-2 flex-wrap mb-2">
-              <span className="text-sm font-medium">
-                {new Date(rx.issuedAt).toLocaleDateString("es-CL", { day: "2-digit", month: "short", year: "numeric" })}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {rx.doctorName}{rx.doctorSpecialty ? ` · ${rx.doctorSpecialty}` : ""}
-              </span>
-              <Badge variant={rx.status === "active" ? "default" : "secondary"} className="text-[10px]">
-                {rx.status === "active" ? "Activa" : rx.status === "expired" ? "Vencida" : rx.status}
-              </Badge>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Tareas de cuidado</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid sm:grid-cols-[1fr_auto_auto] gap-2 items-end">
+            <div className="space-y-1.5">
+              <Label htmlFor="new-task">Actividad</Label>
+              <Input
+                id="new-task"
+                value={newTask}
+                onChange={(e) => setNewTask(e.target.value)}
+                placeholder="Ej: Administrar medicamento, acompañar al comedor..."
+                disabled={isCompleted}
+                data-testid="input-new-task"
+              />
             </div>
-            <div className="space-y-1">
-              {rx.medications.map((med, i) => (
-                <div key={i} className="text-xs bg-muted/50 rounded p-2">
-                  <span className="font-medium">{med.name}</span>
-                  <span className="text-muted-foreground"> — {med.dosage}, {med.frequency}, {med.duration}</span>
-                </div>
-              ))}
+            <div className="space-y-1.5">
+              <Label htmlFor="task-due">Vence</Label>
+              <Input
+                id="task-due"
+                type="datetime-local"
+                value={newTaskDueAt}
+                onChange={(e) => setNewTaskDueAt(e.target.value)}
+                disabled={isCompleted}
+                data-testid="input-task-due"
+              />
             </div>
-            {rx.instructions && (
-              <p className="text-xs text-muted-foreground mt-2">{rx.instructions}</p>
-            )}
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-}
+            <Button
+              onClick={() => createTaskMutation.mutate()}
+              disabled={isCompleted || !newTask.trim() || createTaskMutation.isPending}
+              data-testid="button-add-task"
+            >
+              {createTaskMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
 
-function ExamsTab({ examOrders, loading }: { examOrders?: ExamOrder[]; loading: boolean }) {
-  if (loading) return <LoadingSkeleton />;
-  if (!examOrders || examOrders.length === 0) return <EmptyState text="No hay órdenes de exámenes" icon={FlaskConical} />;
-
-  return (
-    <div className="space-y-2" data-testid="exams-list">
-      {examOrders.map((eo) => (
-        <Card key={eo.id} data-testid={`exam-item-${eo.id}`}>
-          <CardContent className="py-3 px-4">
-            <div className="flex items-center gap-2 flex-wrap mb-2">
-              <span className="text-sm font-medium">
-                {new Date(eo.issuedAt).toLocaleDateString("es-CL", { day: "2-digit", month: "short", year: "numeric" })}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {eo.doctorName}{eo.doctorSpecialty ? ` · ${eo.doctorSpecialty}` : ""}
-              </span>
-              <Badge variant={eo.status === "pending" ? "secondary" : "default"} className="text-[10px]">
-                {eo.status === "pending" ? "Pendiente" : eo.status === "completed" ? "Completado" : eo.status}
-              </Badge>
-            </div>
-            <div className="space-y-1">
-              {eo.exams.map((exam, i) => (
-                <div key={i} className="text-xs bg-muted/50 rounded p-2">
-                  <span className="font-medium">{exam.name}</span>
-                  {exam.instructions && (
-                    <span className="text-muted-foreground"> — {exam.instructions}</span>
-                  )}
-                </div>
-              ))}
-            </div>
-            {eo.clinicalJustification && (
-              <p className="text-xs text-muted-foreground mt-2">
-                <span className="font-medium">Justificación:</span> {eo.clinicalJustification}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-function MessagesTab({ messages, loading }: { messages?: ChatMessage[]; loading: boolean }) {
-  if (loading) return <LoadingSkeleton />;
-  if (!messages || messages.length === 0) return <EmptyState text="No hay mensajes" icon={MessageSquare} />;
-
-  const groups = messages.reduce<Record<number, ChatMessage[]>>((acc, m) => {
-    (acc[m.appointmentId] ||= []).push(m);
-    return acc;
-  }, {});
-  const appointmentIds = Object.keys(groups).map(Number).sort((a, b) => b - a);
-
-  return (
-    <div className="space-y-4" data-testid="messages-list">
-      {appointmentIds.map((aptId) => {
-        const msgs = groups[aptId];
-        const first = msgs[0];
-        const dateLabel = first ? new Date(first.createdAt).toLocaleDateString("es-CL", {
-          day: "2-digit", month: "short", year: "numeric"
-        }) : "";
-        return (
-          <Card key={aptId} data-testid={`messages-group-${aptId}`}>
-            <CardHeader className="py-3 px-4 border-b">
-              <div className="flex items-center justify-between gap-2">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <Calendar className="h-4 w-4" />
-                  Consulta del {dateLabel}
-                </CardTitle>
-                <Badge variant="outline" className="text-[10px]">{msgs.length} mensajes</Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="py-3 px-4 space-y-2 max-h-80 overflow-y-auto">
-              {msgs.map((m) => {
-                const isDoctor = m.senderRole === "doctor";
+          {tasksLoading ? (
+            <Skeleton className="h-24 w-full" />
+          ) : pendingTasks.length === 0 && resolvedTasks.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Sin tareas. Las actividades asignadas aparecerán en el panel del hogar con código de colores según su plazo.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {pendingTasks.map((task) => {
+                const dueIso = typeof task.dueAt === "string" ? task.dueAt : new Date(task.dueAt).toISOString();
+                const urgency = getTaskUrgency(dueIso);
+                const style = urgencyStyles[urgency];
                 return (
-                  <div
-                    key={m.id}
-                    className={`flex ${isDoctor ? "justify-end" : "justify-start"}`}
-                    data-testid={`message-${m.id}`}
+                  <label
+                    key={task.id}
+                    className={`flex items-start gap-3 p-3 rounded-lg border ${style.border} ${style.bg} ${style.text}`}
                   >
-                    <div
-                      className={`max-w-[75%] rounded-lg px-3 py-2 text-xs ${
-                        isDoctor ? "bg-primary text-primary-foreground" : "bg-muted"
-                      }`}
-                    >
-                      <div className="font-medium text-[10px] uppercase opacity-70 mb-0.5">
-                        {isDoctor ? "Doctor" : "Paciente"}
+                    <Checkbox
+                      className="mt-0.5"
+                      checked={false}
+                      onCheckedChange={() => toggleTaskMutation.mutate({ taskId: task.id, resolved: true })}
+                      disabled={toggleTaskMutation.isPending}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium">{task.text}</span>
+                        <Badge className={`text-[10px] px-1.5 py-0 ${style.badge}`}>{style.label}</Badge>
                       </div>
-                      {m.content && <p className="whitespace-pre-wrap break-words">{m.content}</p>}
-                      {m.fileName && (
-                        <a
-                          href={m.fileUrl || "#"}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 mt-1 underline opacity-90"
-                        >
-                          <Paperclip className="h-3 w-3" />
-                          {m.fileName}
-                        </a>
-                      )}
-                      <div className="text-[10px] opacity-60 mt-1">
-                        {new Date(m.createdAt).toLocaleTimeString("es-CL", {
-                          hour: "2-digit", minute: "2-digit"
-                        })}
+                      <div className={`flex items-center gap-3 mt-1 text-xs ${style.muted}`}>
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {formatDueLabel(dueIso)}
+                        </span>
+                        <span>Por {task.createdByName}</span>
                       </div>
                     </div>
-                  </div>
+                  </label>
                 );
               })}
-            </CardContent>
-          </Card>
-        );
-      })}
-    </div>
-  );
-}
+              {resolvedTasks.length > 0 && (
+                <div className="pt-2 space-y-1">
+                  <p className="text-xs text-muted-foreground font-medium">Completadas</p>
+                  {resolvedTasks.map((task) => (
+                    <label
+                      key={task.id}
+                      className="flex items-center gap-3 p-2 rounded-lg border opacity-60"
+                    >
+                      <Checkbox
+                        checked
+                        onCheckedChange={() => toggleTaskMutation.mutate({ taskId: task.id, resolved: false })}
+                      />
+                      <span className="text-sm line-through flex-1">{task.text}</span>
+                      {task.resolvedByName && (
+                        <span className="text-xs text-muted-foreground">por {task.resolvedByName}</span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-function LoadingSkeleton() {
-  return (
-    <div className="space-y-2">
-      {[1, 2, 3].map((i) => (
-        <Skeleton key={i} className="h-20 w-full rounded-lg" />
-      ))}
+      {!isCompleted && (
+        <div className="flex justify-end">
+          <Button
+            size="lg"
+            onClick={() => completeMutation.mutate()}
+            disabled={completeMutation.isPending}
+            data-testid="button-complete-care"
+          >
+            {completeMutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+            )}
+            Finalizar registro
+          </Button>
+        </div>
+      )}
     </div>
-  );
-}
-
-function EmptyState({ text, icon: Icon }: { text: string; icon: typeof Calendar }) {
-  return (
-    <Card>
-      <CardContent className="py-10 text-center">
-        <Icon className="h-10 w-10 mx-auto mb-3 text-muted-foreground/40" />
-        <p className="text-muted-foreground text-sm">{text}</p>
-      </CardContent>
-    </Card>
   );
 }

@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: summari-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: summari
+    volumes:
+      - summari_pg_data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d summari"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  summari_pg_data:

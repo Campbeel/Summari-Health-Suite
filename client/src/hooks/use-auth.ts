@@ -27,7 +27,13 @@ async function fetchUser(): Promise<AuthResponse | null> {
     throw new Error(`${response.status}: ${response.statusText}`);
   }
 
-  return response.json();
+  const data = await response.json();
+  if (!data?.user?.id) {
+    localStorage.removeItem("auth_token");
+    return null;
+  }
+
+  return data;
 }
 
 export function useAuth() {
@@ -57,13 +63,31 @@ export function useAuth() {
     user: data?.user ?? null,
     patient: data?.patient ?? null,
     isLoading,
-    isAuthenticated: !!data,
+    isAuthenticated: !!data?.user?.id,
     logout: logoutMutation.mutate,
     isLoggingOut: logoutMutation.isPending,
   };
 }
 
-export function loginWithToken(token: string) {
+export function loginWithToken(
+  token: string,
+  user?: { id?: string; role?: string; organizationId?: string | null },
+) {
   localStorage.setItem("auth_token", token);
+
+  if (user?.id) {
+    globalQueryClient.setQueryData(["/api/auth/user"], { user, patient: null });
+  }
+  if (user?.role) {
+    const role = user.role === "doctor" ? "staff" : user.role;
+    globalQueryClient.setQueryData(["/api/admin/check"], {
+      isAdmin: role === "admin",
+      role,
+      organizationId: user.organizationId ?? null,
+    });
+  }
+
   globalQueryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+  globalQueryClient.invalidateQueries({ queryKey: ["/api/admin/check"] });
+  globalQueryClient.invalidateQueries({ queryKey: ["/api/doctors/me"] });
 }

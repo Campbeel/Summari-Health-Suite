@@ -59,6 +59,16 @@ export default function AdminUsersPage() {
   const { toast } = useToast();
   const { data: orgUsers, isLoading } = useQuery<OrgUser[]>({ queryKey: ["/api/admin/users"] });
   const [addOpen, setAddOpen] = useState(false);
+  const [newStaff, setNewStaff] = useState({
+    rut: "",
+    firstName: "",
+    lastName: "",
+    email: "",
+    password: "",
+    specialty: "Atención clínica",
+    licenseNumber: "",
+    consultationFee: 25000,
+  });
   const [detachUser, setDetachUser] = useState<OrgUser | null>(null);
   const [deleteAdmin, setDeleteAdmin] = useState<OrgUser | null>(null);
   const [editingUser, setEditingUser] = useState<OrgUser | null>(null);
@@ -66,9 +76,28 @@ export default function AdminUsersPage() {
     specialty: "", licenseNumber: "", consultationFee: 0, bio: "", isActive: true,
   });
 
-  const { data: availableDoctors, isLoading: loadingAvailable } = useQuery<AvailableDoctor[]>({
-    queryKey: ["/api/admin/doctors/available"],
-    enabled: addOpen,
+  const createStaff = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/staff", newStaff);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Personal creado" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      setAddOpen(false);
+      setNewStaff({
+        rut: "",
+        firstName: "",
+        lastName: "",
+        email: "",
+        password: "",
+        specialty: "Atención clínica",
+        licenseNumber: "",
+        consultationFee: 25000,
+      });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e?.message || "No se pudo crear", variant: "destructive" }),
   });
 
   const attachDoctor = useMutation({
@@ -131,6 +160,8 @@ export default function AdminUsersPage() {
     });
   };
 
+  const staffUsers = orgUsers?.filter((u) => u.role === "staff" || u.role === "doctor") ?? [];
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -144,75 +175,70 @@ export default function AdminUsersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2" data-testid="text-users-title">
-            <Users className="h-7 w-7" /> Doctor@s
+            <Users className="h-7 w-7" /> Personal del centro
           </h1>
           <p className="text-muted-foreground">
-            Agrega médicos previamente promovidos por el super administrador a tu organización
+            Crea y administra las cuentas staff (auxiliares, técnicos, personal clínico)
           </p>
         </div>
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
           <DialogTrigger asChild>
             <Button data-testid="button-add-doctor">
-              <UserPlus className="h-4 w-4 mr-2" /> Agregar médico
+              <UserPlus className="h-4 w-4 mr-2" /> Nuevo staff
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle>Agregar médico a tu organización</DialogTitle>
+              <DialogTitle>Crear usuario staff</DialogTitle>
               <DialogDescription>
-                Estos son los médicos promovidos por el super administrador que aún no pertenecen a ninguna organización.
-                Si no ves al médico que buscas, pídele al super administrador que lo promueva primero.
+                El personal podrá acceder al panel clínico con estas credenciales.
               </DialogDescription>
             </DialogHeader>
-            <div className="max-h-[60vh] overflow-y-auto">
-              {loadingAvailable ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>RUT</Label>
+                  <Input value={newStaff.rut} onChange={(e) => setNewStaff({ ...newStaff, rut: e.target.value })} placeholder="12.345.678-9" />
                 </div>
-              ) : !availableDoctors || availableDoctors.length === 0 ? (
-                <div className="text-center text-muted-foreground py-8">
-                  No hay médicos disponibles para agregar.
+                <div>
+                  <Label>Contraseña inicial</Label>
+                  <Input type="password" value={newStaff.password} onChange={(e) => setNewStaff({ ...newStaff, password: e.target.value })} />
                 </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Nombre</TableHead>
-                      <TableHead>Especialidad</TableHead>
-                      <TableHead>RUT</TableHead>
-                      <TableHead className="text-right">Acción</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {availableDoctors.map((d) => (
-                      <TableRow key={d.id} data-testid={`row-available-doctor-${d.id}`}>
-                        <TableCell>
-                          <div className="font-medium">
-                            {[d.firstName, d.lastName].filter(Boolean).join(" ") || "Sin nombre"}
-                          </div>
-                          <div className="text-xs text-muted-foreground">{d.email}</div>
-                        </TableCell>
-                        <TableCell>{d.specialty}</TableCell>
-                        <TableCell>{d.rut || "—"}</TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            onClick={() => attachDoctor.mutate(d.id)}
-                            disabled={attachDoctor.isPending}
-                            data-testid={`button-attach-doctor-${d.id}`}
-                          >
-                            {attachDoctor.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                            Agregar
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Nombre</Label>
+                  <Input value={newStaff.firstName} onChange={(e) => setNewStaff({ ...newStaff, firstName: e.target.value })} />
+                </div>
+                <div>
+                  <Label>Apellido</Label>
+                  <Input value={newStaff.lastName} onChange={(e) => setNewStaff({ ...newStaff, lastName: e.target.value })} />
+                </div>
+              </div>
+              <div>
+                <Label>Correo</Label>
+                <Input type="email" value={newStaff.email} onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Área / especialidad</Label>
+                  <Input value={newStaff.specialty} onChange={(e) => setNewStaff({ ...newStaff, specialty: e.target.value })} />
+                </div>
+                <div>
+                  <Label>Nº licencia (opcional)</Label>
+                  <Input value={newStaff.licenseNumber} onChange={(e) => setNewStaff({ ...newStaff, licenseNumber: e.target.value })} />
+                </div>
+              </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setAddOpen(false)}>Cerrar</Button>
+              <Button variant="outline" onClick={() => setAddOpen(false)}>Cancelar</Button>
+              <Button
+                onClick={() => createStaff.mutate()}
+                disabled={createStaff.isPending || !newStaff.rut || !newStaff.password || !newStaff.firstName || !newStaff.email}
+              >
+                {createStaff.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                Crear staff
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -220,8 +246,8 @@ export default function AdminUsersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Doctor@s de tu organización</CardTitle>
-          <CardDescription>{orgUsers?.length ?? 0} usuario(s)</CardDescription>
+          <CardTitle>Usuarios del centro</CardTitle>
+          <CardDescription>{staffUsers.length} staff · {orgUsers?.length ?? 0} total en el centro</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -248,8 +274,8 @@ export default function AdminUsersPage() {
                   <TableCell>
                     {u.role === "admin" ? (
                       <Badge variant="default" className="gap-1"><Shield className="h-3 w-3" /> Administrador</Badge>
-                    ) : u.role === "doctor" ? (
-                      <Badge variant="secondary" className="gap-1"><Stethoscope className="h-3 w-3" /> Médico</Badge>
+                    ) : u.role === "staff" || u.role === "doctor" ? (
+                      <Badge variant="secondary" className="gap-1"><Stethoscope className="h-3 w-3" /> Staff</Badge>
                     ) : (
                       <Badge variant="outline">{u.role}</Badge>
                     )}
@@ -306,7 +332,7 @@ export default function AdminUsersPage() {
       <Dialog open={!!editingUser} onOpenChange={(o) => !o && setEditingUser(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Editar médico</DialogTitle>
+            <DialogTitle>Editar staff</DialogTitle>
             <DialogDescription>
               {editingUser?.firstName} {editingUser?.lastName} — {editingUser?.email}
             </DialogDescription>

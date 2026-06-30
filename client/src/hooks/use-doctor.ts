@@ -52,7 +52,7 @@ export function useDoctor() {
         return stored;
       }
     }
-    return "patient";
+    return "doctor";
   });
 
   // Update role when doctor status is loaded

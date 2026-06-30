@@ -28,6 +28,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, sql as dsql, inArray, desc as ddesc } from "drizzle-orm";
+import { getTaskUrgency, sortByUrgency } from "@shared/care-tasks";
 import bcrypt from "bcryptjs";
 
 // WebRTC signaling room management
@@ -66,14 +67,23 @@ export async function registerRoutes(
     try {
       const userId = req.userId;
       const user = await storage.getUser(userId);
-      
-      // Ensure patient profile exists
-      let patient = await storage.getPatientByUserId(userId);
-      if (!patient) {
-        patient = await storage.createPatient({ userId });
+
+      if (!user) {
+        return res.status(401).json({ error: "Sesión inválida" });
       }
-      
-      const { passwordHash, ...safeUser } = user || {};
+
+      const isCareStaff =
+        user.role === "staff" || user.role === "doctor" || user.role === "admin";
+
+      let patient = null;
+      if (!isCareStaff) {
+        patient = await storage.getPatientByUserId(userId);
+        if (!patient) {
+          patient = await storage.createPatient({ userId });
+        }
+      }
+
+      const { passwordHash, ...safeUser } = user;
       res.json({ user: safeUser, patient });
     } catch (error) {
       console.error("Error fetching user:", error);
@@ -130,7 +140,7 @@ export async function registerRoutes(
   });
 
   // Doctor (current user) routes - must be before :id routes to prevent "me" being matched as an id
-  app.get("/api/doctors/me", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.get("/api/doctors/me", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
@@ -151,7 +161,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/stats", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.get("/api/doctors/me/stats", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
@@ -168,7 +178,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/appointments", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.get("/api/doctors/me/appointments", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
@@ -185,7 +195,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/doctors/me/profile", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.patch("/api/doctors/me/profile", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
@@ -223,7 +233,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/doctors/me/availability", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.patch("/api/doctors/me/availability", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const userId = req.userId;
       const doctor = await storage.getDoctorByUserId(userId);
@@ -256,7 +266,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/appointments/:id/status", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.patch("/api/appointments/:id/status", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
@@ -307,15 +317,10 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/patients", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.get("/api/doctors/me/patients", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
-      const userId = req.userId;
-      const doctor = await storage.getDoctorByUserId(userId);
-      if (!doctor) {
-        return res.status(403).json({ error: "User is not a doctor" });
-      }
-      const search = req.query.search as string | undefined;
-      const patients = await storage.getAllPatientsForDoctor(doctor.id, search);
+      const search = (req.query.rut as string) || (req.query.search as string) || undefined;
+      const patients = await storage.getAllPatients(search);
       res.json(patients);
     } catch (error) {
       console.error("Error fetching patients:", error);
@@ -323,20 +328,293 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/patients/:patientId", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.get("/api/staff/dashboard", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
-      const userId = req.userId;
-      const doctor = await storage.getDoctorByUserId(userId);
-      if (!doctor) {
-        return res.status(403).json({ error: "User is not a doctor" });
+      const userId = req.userId as string;
+      const user = await storage.getUser(userId);
+      const assignedPatients = await storage.getAssignedPatientsForStaff(userId);
+      const allPatients = await storage.getAllPatients();
+      const now = new Date();
+
+      const rawTasks = await storage.getAllPendingResidentCareTasks();
+      const pendingTasks = sortByUrgency(
+        rawTasks.map((t) => ({
+          id: t.id,
+          text: t.text,
+          dueAt: t.dueAt.toISOString(),
+          patientId: t.patientId,
+          patientName: t.patientName,
+          rut: t.rut,
+          createdByName: t.createdByName,
+          urgency: getTaskUrgency(t.dueAt.toISOString(), now),
+        })),
+        now,
+      );
+
+      const taskStats = {
+        critical: pendingTasks.filter((t) => t.urgency === "critical").length,
+        warning: pendingTasks.filter((t) => t.urgency === "warning").length,
+        normal: pendingTasks.filter((t) => t.urgency === "normal").length,
+      };
+
+      res.json({
+        greeting: `Hola${user?.firstName ? `, ${user.firstName}` : ""}`,
+        dateLabel: now.toLocaleDateString("es-CL", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        }),
+        timeLabel: now.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" }),
+        stats: {
+          totalResidents: allPatients.length,
+          assignedResidents: assignedPatients.length,
+          pendingTasks: pendingTasks.length,
+          criticalTasks: taskStats.critical,
+          warningTasks: taskStats.warning,
+        },
+        pendingTasks,
+        taskStats,
+        assignedResidents: assignedPatients.slice(0, 6).map((p) => ({
+          id: p.id,
+          firstName: p.firstName,
+          lastName: p.lastName,
+          rut: p.rut,
+        })),
+        recentResidents: allPatients.slice(0, 6).map((p) => ({
+          id: p.id,
+          firstName: p.firstName,
+          lastName: p.lastName,
+          rut: p.rut,
+        })),
+      });
+    } catch (error) {
+      console.error("Error fetching staff dashboard:", error);
+      res.status(500).json({ error: "Failed to load dashboard" });
+    }
+  });
+
+  app.get("/api/staff/patients/:patientId/care", isAuthenticated, requireRole("staff"), async (req: any, res) => {
+    try {
+      const patientId = parseInt(req.params.patientId);
+      if (isNaN(patientId)) return res.status(400).json({ error: "ID inválido" });
+      const profile = await storage.getPatientFullProfile(patientId);
+      if (!profile) return res.status(404).json({ error: "Paciente no encontrado" });
+      let session = await storage.getStaffCareSession(patientId, req.userId);
+      if (!session) {
+        session = await storage.upsertStaffCareSession({
+          patientId,
+          staffUserId: req.userId,
+          anamnesis: profile.medicalHistory || "",
+          pendingTasks: [],
+        });
       }
+      res.json({ profile, session });
+    } catch (error) {
+      console.error("Error fetching care session:", error);
+      res.status(500).json({ error: "Failed to load care session" });
+    }
+  });
+
+  app.put("/api/staff/patients/:patientId/care", isAuthenticated, requireRole("staff"), async (req: any, res) => {
+    try {
+      const patientId = parseInt(req.params.patientId);
+      if (isNaN(patientId)) return res.status(400).json({ error: "ID inválido" });
+      const profile = await storage.getPatientFullProfile(patientId);
+      if (!profile) return res.status(404).json({ error: "Paciente no encontrado" });
+
+      const schema = z.object({
+        anamnesis: z.string().optional(),
+        pendingTasks: z.array(z.object({
+          id: z.string(),
+          text: z.string(),
+          resolved: z.boolean(),
+          createdAt: z.string(),
+        })).optional(),
+        newTaskText: z.string().optional(),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Datos inválidos" });
+
+      let pendingTasks = parsed.data.pendingTasks;
+      const existing = await storage.getStaffCareSession(patientId, req.userId);
+      if (!pendingTasks) pendingTasks = existing?.pendingTasks || [];
+      if (parsed.data.newTaskText?.trim()) {
+        pendingTasks = [
+          ...pendingTasks,
+          {
+            id: crypto.randomUUID(),
+            text: parsed.data.newTaskText.trim(),
+            resolved: false,
+            createdAt: new Date().toISOString(),
+          },
+        ];
+      }
+
+      const session = await storage.upsertStaffCareSession({
+        patientId,
+        staffUserId: req.userId,
+        anamnesis: parsed.data.anamnesis ?? existing?.anamnesis ?? "",
+        pendingTasks,
+      });
+
+      if (parsed.data.anamnesis !== undefined) {
+        await storage.updatePatient(patientId, { medicalHistory: parsed.data.anamnesis } as any);
+      }
+
+      res.json(session);
+    } catch (error) {
+      console.error("Error saving care session:", error);
+      res.status(500).json({ error: "Failed to save" });
+    }
+  });
+
+  app.post("/api/staff/patients/:patientId/care/complete", isAuthenticated, requireRole("staff"), async (req: any, res) => {
+    try {
+      const patientId = parseInt(req.params.patientId);
+      const user = await storage.getUser(req.userId);
+      const name = `${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "Staff";
+      const session = await storage.completeStaffCareSession(patientId, req.userId, name);
+      if (!session) return res.status(404).json({ error: "No hay sesión activa" });
+      res.json(session);
+    } catch (error) {
+      console.error("Error completing care:", error);
+      res.status(500).json({ error: "Failed to complete" });
+    }
+  });
+
+  app.get("/api/staff/patients/:patientId/tasks", isAuthenticated, requireRole("staff"), async (req: any, res) => {
+    try {
+      const patientId = parseInt(req.params.patientId);
+      if (isNaN(patientId)) return res.status(400).json({ error: "ID inválido" });
+      const profile = await storage.getPatientFullProfile(patientId);
+      if (!profile) return res.status(404).json({ error: "Residente no encontrado" });
+      const tasks = await storage.getResidentCareTasks(patientId);
+      res.json(tasks);
+    } catch (error) {
+      console.error("Error fetching resident tasks:", error);
+      res.status(500).json({ error: "Failed to load tasks" });
+    }
+  });
+
+  app.post("/api/staff/patients/:patientId/tasks", isAuthenticated, requireRole("staff"), async (req: any, res) => {
+    try {
+      const patientId = parseInt(req.params.patientId);
+      if (isNaN(patientId)) return res.status(400).json({ error: "ID inválido" });
+      const profile = await storage.getPatientFullProfile(patientId);
+      if (!profile) return res.status(404).json({ error: "Residente no encontrado" });
+
+      const schema = z.object({
+        text: z.string().min(1).max(500),
+        dueAt: z.string().min(1),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Datos inválidos" });
+
+      const user = await storage.getUser(req.userId);
+      const createdByName = `${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "Staff";
+      const dueAt = new Date(parsed.data.dueAt);
+      if (Number.isNaN(dueAt.getTime())) return res.status(400).json({ error: "Fecha de vencimiento inválida" });
+
+      const task = await storage.createResidentCareTask({
+        patientId,
+        text: parsed.data.text.trim(),
+        dueAt,
+        createdByUserId: req.userId,
+        createdByName,
+      });
+
+      await storage.upsertStaffCareSession({
+        patientId,
+        staffUserId: req.userId,
+        anamnesis: profile.medicalHistory || "",
+      });
+
+      res.status(201).json(task);
+    } catch (error) {
+      console.error("Error creating resident task:", error);
+      res.status(500).json({ error: "Failed to create task" });
+    }
+  });
+
+  app.patch("/api/staff/patients/:patientId/tasks/:taskId", isAuthenticated, requireRole("staff"), async (req: any, res) => {
+    try {
+      const taskId = parseInt(req.params.taskId);
+      if (isNaN(taskId)) return res.status(400).json({ error: "ID inválido" });
+
+      const schema = z.object({ resolved: z.boolean() });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Datos inválidos" });
+
+      const user = await storage.getUser(req.userId);
+      const name = `${user?.firstName || ""} ${user?.lastName || ""}`.trim() || "Staff";
+
+      const task = parsed.data.resolved
+        ? await storage.resolveResidentCareTask(taskId, req.userId, name)
+        : await storage.unresolveResidentCareTask(taskId);
+
+      if (!task) return res.status(404).json({ error: "Tarea no encontrada" });
+      res.json(task);
+    } catch (error) {
+      console.error("Error updating resident task:", error);
+      res.status(500).json({ error: "Failed to update task" });
+    }
+  });
+
+  async function buildPatientAssistantContext(patientId: number, staffUserId: string) {
+    const patient = await storage.getPatientFullProfile(patientId);
+    if (!patient) throw new Error("Patient not found");
+    const staff = await storage.getUser(staffUserId);
+    const patientName = `${patient.firstName || ""} ${patient.lastName || ""}`.trim() || "Residente";
+    const records = await storage.getClinicalRecordsByPatient(patientId);
+    return {
+      doctorName: `${staff?.firstName || ""} ${staff?.lastName || ""}`.trim() || "Staff",
+      patientName,
+      patientGender: patient.gender || undefined,
+      patientAllergies: patient.allergies || undefined,
+      patientMedicalHistory: patient.medicalHistory || undefined,
+      isNewPatient: records.length === 0,
+      previousConsultationsCount: records.length,
+      previousConsultationsSummary: patient.medicalHistory || undefined,
+    };
+  }
+
+  app.post("/api/staff/patients/:patientId/assistant/welcome", isAuthenticated, requireRole("staff"), async (req: any, res) => {
+    try {
+      const patientId = parseInt(req.params.patientId);
+      const context = await buildPatientAssistantContext(patientId, req.userId);
+      const message = await generateAssistantWelcome(context);
+      res.json({ message });
+    } catch (error) {
+      console.error("Error patient assistant welcome:", error);
+      res.status(500).json({ error: "Error al generar bienvenida" });
+    }
+  });
+
+  app.post("/api/staff/patients/:patientId/assistant/chat", isAuthenticated, requireRole("staff"), async (req: any, res) => {
+    try {
+      const patientId = parseInt(req.params.patientId);
+      const parsed = z.object({
+        messages: z.array(z.object({
+          role: z.enum(["user", "assistant"]),
+          content: z.string().min(1).max(2000),
+        })).min(1).max(50),
+      }).safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Mensajes inválidos" });
+      const context = await buildPatientAssistantContext(patientId, req.userId);
+      const message = await chatWithAssistant(parsed.data.messages, context);
+      res.json({ message });
+    } catch (error) {
+      console.error("Error patient assistant chat:", error);
+      res.status(500).json({ error: "Error en chat" });
+    }
+  });
+
+  app.get("/api/doctors/me/patients/:patientId", isAuthenticated, requireRole("staff"), async (req: any, res) => {
+    try {
       const patientId = parseInt(req.params.patientId);
       if (isNaN(patientId) || patientId <= 0) {
         return res.status(400).json({ error: "Invalid patient ID" });
-      }
-      const hasRelationship = await storage.doctorHasPatientRelationship(doctor.id, patientId);
-      if (!hasRelationship) {
-        return res.status(403).json({ error: "No authorized relationship with this patient" });
       }
       const profile = await storage.getPatientFullProfile(patientId);
       if (!profile) {
@@ -349,20 +627,11 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/patients/:patientId/history", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.get("/api/doctors/me/patients/:patientId/history", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
-      const userId = req.userId;
-      const doctor = await storage.getDoctorByUserId(userId);
-      if (!doctor) {
-        return res.status(403).json({ error: "User is not a doctor" });
-      }
       const patientId = parseInt(req.params.patientId);
       if (isNaN(patientId) || patientId <= 0) {
         return res.status(400).json({ error: "Invalid patient ID" });
-      }
-      const hasRelationship = await storage.doctorHasPatientRelationship(doctor.id, patientId);
-      if (!hasRelationship) {
-        return res.status(403).json({ error: "No authorized relationship with this patient" });
       }
       const history = await storage.getPatientAppointmentHistory(patientId);
       res.json(history);
@@ -372,20 +641,11 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/patients/:patientId/records", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.get("/api/doctors/me/patients/:patientId/records", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
-      const userId = req.userId;
-      const doctor = await storage.getDoctorByUserId(userId);
-      if (!doctor) {
-        return res.status(403).json({ error: "User is not a doctor" });
-      }
       const patientId = parseInt(req.params.patientId);
       if (isNaN(patientId) || patientId <= 0) {
         return res.status(400).json({ error: "Invalid patient ID" });
-      }
-      const hasRelationship = await storage.doctorHasPatientRelationship(doctor.id, patientId);
-      if (!hasRelationship) {
-        return res.status(403).json({ error: "No authorized relationship with this patient" });
       }
       const records = await storage.getClinicalRecordsByPatient(patientId);
       res.json(records);
@@ -395,20 +655,11 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/patients/:patientId/prescriptions", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.get("/api/doctors/me/patients/:patientId/prescriptions", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
-      const userId = req.userId;
-      const doctor = await storage.getDoctorByUserId(userId);
-      if (!doctor) {
-        return res.status(403).json({ error: "User is not a doctor" });
-      }
       const patientId = parseInt(req.params.patientId);
       if (isNaN(patientId) || patientId <= 0) {
         return res.status(400).json({ error: "Invalid patient ID" });
-      }
-      const hasRelationship = await storage.doctorHasPatientRelationship(doctor.id, patientId);
-      if (!hasRelationship) {
-        return res.status(403).json({ error: "No authorized relationship with this patient" });
       }
       const prescriptions = await storage.getPrescriptionsByPatient(patientId);
       res.json(prescriptions);
@@ -418,20 +669,11 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/patients/:patientId/exam-orders", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.get("/api/doctors/me/patients/:patientId/exam-orders", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
-      const userId = req.userId;
-      const doctor = await storage.getDoctorByUserId(userId);
-      if (!doctor) {
-        return res.status(403).json({ error: "User is not a doctor" });
-      }
       const patientId = parseInt(req.params.patientId);
       if (isNaN(patientId) || patientId <= 0) {
         return res.status(400).json({ error: "Invalid patient ID" });
-      }
-      const hasRelationship = await storage.doctorHasPatientRelationship(doctor.id, patientId);
-      if (!hasRelationship) {
-        return res.status(403).json({ error: "No authorized relationship with this patient" });
       }
       const examOrders = await storage.getExamOrdersWithDoctorByPatient(patientId);
       res.json(examOrders);
@@ -442,7 +684,7 @@ export async function registerRoutes(
   });
 
   // T001: Doctor notifications (patient online + overtime)
-  app.get("/api/doctors/me/notifications", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.get("/api/doctors/me/notifications", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const doctor = await storage.getDoctorByUserId(req.userId);
       if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
@@ -523,22 +765,16 @@ export async function registerRoutes(
   });
 
   // T002: Chat history per patient
-  app.get("/api/doctors/me/patients/:patientId/messages", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.get("/api/doctors/me/patients/:patientId/messages", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
-      const doctor = await storage.getDoctorByUserId(req.userId);
-      if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
-
       const patientId = parseInt(req.params.patientId);
       if (isNaN(patientId) || patientId <= 0) {
         return res.status(400).json({ error: "Invalid patient ID" });
       }
-
-      const hasRelationship = await storage.doctorHasPatientRelationship(doctor.id, patientId);
-      if (!hasRelationship) {
-        return res.status(403).json({ error: "No authorized relationship with this patient" });
-      }
-
-      const messages = await storage.getConsultationMessagesByPatientDoctor(doctor.id, patientId);
+      const doctor = await storage.getDoctorByUserId(req.userId);
+      const messages = doctor
+        ? await storage.getConsultationMessagesByPatientDoctor(doctor.id, patientId)
+        : [];
       res.json(messages);
     } catch (error: any) {
       console.error("Error fetching patient messages:", error);
@@ -710,7 +946,7 @@ export async function registerRoutes(
   });
 
   // GET pending signatures across all consultations for the logged-in doctor
-  app.get("/api/doctors/me/pending-signatures", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.get("/api/doctors/me/pending-signatures", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const doctor = await storage.getDoctorByUserId(req.userId);
       if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
@@ -754,7 +990,7 @@ export async function registerRoutes(
             scheduledDate: apt.scheduledDate,
             scheduledTime: apt.scheduledTime,
             pendingDocs,
-            link: `/doctor/consultation/${apt.id}/validate`,
+            link: `/staff/consultation/${apt.id}/validate`,
           });
         }
       }
@@ -766,7 +1002,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/report-templates", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.get("/api/doctors/me/report-templates", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const doctor = await storage.getDoctorByUserId(req.userId);
       if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
@@ -778,7 +1014,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/doctors/me/report-templates/default-prompt", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.get("/api/doctors/me/report-templates/default-prompt", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const doctor = await storage.getDoctorByUserId(req.userId);
       if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
@@ -788,7 +1024,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/doctors/me/report-templates", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.post("/api/doctors/me/report-templates", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const doctor = await storage.getDoctorByUserId(req.userId);
       if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
@@ -809,7 +1045,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/doctors/me/report-templates/:templateId", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.put("/api/doctors/me/report-templates/:templateId", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const doctor = await storage.getDoctorByUserId(req.userId);
       if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
@@ -827,7 +1063,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/doctors/me/report-templates/:templateId", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.delete("/api/doctors/me/report-templates/:templateId", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const doctor = await storage.getDoctorByUserId(req.userId);
       if (!doctor) return res.status(403).json({ error: "User is not a doctor" });
@@ -1984,7 +2220,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/consultations/:id/end", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.post("/api/consultations/:id/end", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       const { audioData, notes, diagnosis, symptoms } = req.body;
@@ -2141,7 +2377,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/consultations/:id/regenerate-report", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.post("/api/consultations/:id/regenerate-report", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
@@ -2192,7 +2428,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/consultations/:id/validation", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.get("/api/consultations/:id/validation", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
@@ -2264,7 +2500,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/consultations/:id/validate", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.post("/api/consultations/:id/validate", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
@@ -2708,7 +2944,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/consultations/:id/generate-suggestions", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.post("/api/consultations/:id/generate-suggestions", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
@@ -2736,7 +2972,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/consultations/:id/alerts", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.post("/api/consultations/:id/alerts", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       const userId = req.userId;
@@ -2894,7 +3130,7 @@ export async function registerRoutes(
     };
   }
 
-  app.post("/api/consultations/:id/assistant/welcome", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.post("/api/consultations/:id/assistant/welcome", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       if (isNaN(appointmentId)) return res.status(400).json({ error: "ID inválido" });
@@ -2927,7 +3163,7 @@ export async function registerRoutes(
     })).min(1).max(50),
   });
 
-  app.post("/api/consultations/:id/assistant/chat", isAuthenticated, requireRole("doctor"), async (req: any, res) => {
+  app.post("/api/consultations/:id/assistant/chat", isAuthenticated, requireRole("staff"), async (req: any, res) => {
     try {
       const appointmentId = parseInt(req.params.id as string);
       if (isNaN(appointmentId)) return res.status(400).json({ error: "ID inválido" });
@@ -3036,10 +3272,14 @@ export async function registerRoutes(
     try {
       const userId = req.userId;
       const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(401).json({ error: "Sesión inválida" });
+      }
+      const isStaff = user.role === "staff" || user.role === "doctor";
       res.json({
-        isAdmin: !!user?.isAdmin,
-        role: user?.role || "patient",
-        organizationId: user?.organizationId || null,
+        isAdmin: user.role === "admin",
+        role: isStaff ? "staff" : user.role,
+        organizationId: user.organizationId || null,
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to check admin status" });
@@ -3435,13 +3675,72 @@ export async function registerRoutes(
     }
   });
 
-  // Org admin creates a doctor in their org
-  // DEPRECATED: org admins no longer create doctors from scratch.
-  // The flow is now: superAdmin promotes a user to doctor, then the org admin attaches that doctor
-  // to the organization via POST /api/admin/doctors/:id/attach.
+  // Org admin creates staff in their org
+  app.post("/api/admin/staff", isAuthenticated, requireRole("admin"), async (req: any, res) => {
+    try {
+      const orgId = await getRequestOrgId(req);
+      if (!orgId) return res.status(400).json({ error: "Sin organización asignada" });
+
+      const schema = z.object({
+        rut: z.string().min(3),
+        firstName: z.string().min(1),
+        lastName: z.string().min(1),
+        email: z.string().email(),
+        password: z.string().min(6),
+        specialty: z.string().min(1).default("Atención clínica"),
+        licenseNumber: z.string().min(1).default("000000"),
+        consultationFee: z.number().int().min(0).default(25000),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", errors: parsed.error.flatten() });
+      }
+
+      const cleanedRut = parsed.data.rut.replace(/\./g, "");
+      const [existingByRut] = await db.select().from(users).where(eq(users.rut, cleanedRut));
+      if (existingByRut) {
+        return res.status(409).json({ error: "Ya existe un usuario con este RUT" });
+      }
+      const [existingByEmail] = await db.select().from(users).where(eq(users.email, parsed.data.email));
+      if (existingByEmail) {
+        return res.status(409).json({ error: "Ya existe un usuario con este correo" });
+      }
+
+      const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+      const newUserId = `user_staff_${Math.random().toString(36).slice(2, 10)}`;
+
+      const [createdUser] = await db.insert(users).values({
+        id: newUserId,
+        rut: cleanedRut,
+        username: cleanedRut,
+        firstName: parsed.data.firstName,
+        lastName: parsed.data.lastName,
+        email: parsed.data.email,
+        passwordHash,
+        role: "staff",
+        organizationId: orgId,
+        isAdmin: false,
+      }).returning();
+
+      const [createdDoctor] = await db.insert(doctors).values({
+        userId: newUserId,
+        organizationId: orgId,
+        specialty: parsed.data.specialty,
+        licenseNumber: parsed.data.licenseNumber,
+        consultationFee: parsed.data.consultationFee,
+      }).returning();
+
+      const { passwordHash: _, ...safe } = createdUser;
+      res.status(201).json({ ...safe, doctorId: createdDoctor.id });
+    } catch (error: any) {
+      console.error("Error creating staff:", error);
+      res.status(500).json({ error: "No se pudo crear el usuario staff" });
+    }
+  });
+
   app.post("/api/admin/doctors", isAuthenticated, requireRole("admin"), async (_req, res) => {
     res.status(410).json({
-      error: "Flujo deshabilitado. Solicita al super administrador promover al usuario y luego agrégalo con 'Agregar médico existente'.",
+      error: "Usa POST /api/admin/staff para crear personal del centro.",
     });
   });
 
@@ -3508,9 +3807,9 @@ export async function registerRoutes(
       if (!target || target.organizationId !== orgId) {
         return res.status(404).json({ error: "Usuario no encontrado en su organización" });
       }
-      // If doctor, deactivate
+      // Staff: deactivate clinical profile
       const doc = await storage.getDoctorByUserId(userId);
-      if (doc) {
+      if (doc && (target.role === "staff" || target.role === "doctor")) {
         await db.update(doctors).set({ isActive: false }).where(eq(doctors.id, doc.id));
       }
       // For admins remove the user row outright (no FKs)

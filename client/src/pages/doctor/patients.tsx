@@ -61,10 +61,10 @@ export default function DoctorPatientsPage() {
     <div className="container mx-auto py-6 px-4 max-w-5xl">
       <div className="flex items-center gap-3 mb-6">
         <Users className="h-6 w-6 text-primary" />
-        <h1 className="text-2xl font-bold" data-testid="text-page-title">Pacientes</h1>
+        <h1 className="text-2xl font-bold" data-testid="text-page-title">Residentes</h1>
         {patients && (
           <Badge variant="secondary" data-testid="badge-patient-count">
-            {patients.length} {patients.length === 1 ? "paciente" : "pacientes"}
+            {patients.length} {patients.length === 1 ? "residente" : "residentes"}
           </Badge>
         )}
       </div>
@@ -72,7 +72,7 @@ export default function DoctorPatientsPage() {
       <div className="relative mb-6">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Buscar por nombre, RUT o email..."
+          placeholder="Buscar por RUT (ej: 12345678-9), nombre o email..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-10"
@@ -91,7 +91,7 @@ export default function DoctorPatientsPage() {
           <CardContent className="py-12 text-center">
             <Users className="h-12 w-12 mx-auto mb-3 text-muted-foreground/40" />
             <p className="text-muted-foreground" data-testid="text-no-patients">
-              {search.trim() ? "No se encontraron pacientes con ese criterio" : "No hay pacientes registrados"}
+              {search.trim() ? "No se encontraron residentes con ese criterio" : "No hay residentes registrados"}
             </p>
           </CardContent>
         </Card>
@@ -103,8 +103,8 @@ export default function DoctorPatientsPage() {
               role="button"
               tabIndex={0}
               className="cursor-pointer hover:ring-2 hover:ring-primary/30 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none transition-all"
-              onClick={() => navigate(`/doctor/patients/${patient.id}`)}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate(`/doctor/patients/${patient.id}`); }}}
+              onClick={() => navigate(`/staff/patients/${patient.id}`)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate(`/staff/patients/${patient.id}`); }}}
               aria-label={`Ver ficha de ${patient.firstName} ${patient.lastName}`}
               data-testid={`patient-card-${patient.id}`}
             >

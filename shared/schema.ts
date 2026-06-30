@@ -510,3 +510,66 @@ export const insertReportTemplateSchema = createInsertSchema(reportTemplates).om
 });
 export type ReportTemplate = typeof reportTemplates.$inferSelect;
 export type InsertReportTemplate = z.infer<typeof insertReportTemplateSchema>;
+
+export type StaffCareTask = {
+  id: string;
+  text: string;
+  resolved: boolean;
+  createdAt: string;
+  dueAt?: string;
+  createdByName?: string;
+};
+
+/** Tareas de cuidado asignadas a un residente (hogar de ancianos) */
+export const residentCareTasks = pgTable("resident_care_tasks", {
+  id: serial("id").primaryKey(),
+  patientId: integer("patient_id").notNull().references(() => patients.id),
+  text: text("text").notNull(),
+  dueAt: timestamp("due_at").notNull(),
+  resolved: boolean("resolved").notNull().default(false),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedByUserId: varchar("resolved_by_user_id"),
+  resolvedByName: text("resolved_by_name"),
+  createdByUserId: varchar("created_by_user_id").notNull(),
+  createdByName: text("created_by_name").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type ResidentCareTask = typeof residentCareTasks.$inferSelect;
+export const insertResidentCareTaskSchema = createInsertSchema(residentCareTasks).omit({
+  id: true,
+  createdAt: true,
+  resolvedAt: true,
+  resolvedByUserId: true,
+  resolvedByName: true,
+});
+export type InsertResidentCareTask = z.infer<typeof insertResidentCareTaskSchema>;
+
+export const staffPatientCare = pgTable("staff_patient_care", {
+  id: serial("id").primaryKey(),
+  patientId: integer("patient_id").notNull().references(() => patients.id),
+  staffUserId: varchar("staff_user_id").notNull(),
+  anamnesis: text("anamnesis"),
+  pendingTasks: jsonb("pending_tasks").$type<StaffCareTask[]>().default([]),
+  status: varchar("status").notNull().default("in_progress"),
+  completedByUserId: varchar("completed_by_user_id"),
+  completedByName: text("completed_by_name"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const staffPatientAssignments = pgTable("staff_patient_assignments", {
+  id: serial("id").primaryKey(),
+  patientId: integer("patient_id").notNull().references(() => patients.id),
+  staffUserId: varchar("staff_user_id").notNull(),
+  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
+});
+
+export const insertStaffPatientCareSchema = createInsertSchema(staffPatientCare).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type StaffPatientCare = typeof staffPatientCare.$inferSelect;
+export type InsertStaffPatientCare = z.infer<typeof insertStaffPatientCareSchema>;

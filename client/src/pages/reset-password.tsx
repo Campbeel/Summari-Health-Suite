@@ -165,7 +165,7 @@ export default function ResetPasswordPage() {
                 </p>
                 <Button
                   className="w-full"
-                  onClick={() => navigate("/login")}
+                  onClick={() => navigate("/")}
                   data-testid="button-go-to-login"
                 >
                   Ir a Iniciar Sesión

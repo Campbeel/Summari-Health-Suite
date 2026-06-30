@@ -15,6 +15,16 @@ import { useToast } from "@/hooks/use-toast";
 import { ConsultationSummaryDialog } from "@/components/consultation-summary-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface AppointmentWithPatient {
   id: number;
@@ -54,7 +64,7 @@ function AppointmentCard({ appointment, onStatusChange, onOpenSummary }: {
   const isSummaryView = appointment.status === "completed";
 
   const detailsUrl = appointment.status === "pending_validation"
-    ? `/doctor/consultation/${appointment.id}/validate`
+    ? `/staff/consultation/${appointment.id}/validate`
     : `/consultation/${appointment.id}`;
 
   return (
@@ -96,7 +106,7 @@ function AppointmentCard({ appointment, onStatusChange, onOpenSummary }: {
       <div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
         {canValidate && (
           <Button size="sm" asChild data-testid={`button-validate-${appointment.id}`}>
-            <Link href={`/doctor/consultation/${appointment.id}/validate`}>
+            <Link href={`/staff/consultation/${appointment.id}/validate`}>
               <FileCheck className="h-3.5 w-3.5 mr-1" />
               Validar
             </Link>
@@ -134,12 +144,9 @@ function AppointmentCard({ appointment, onStatusChange, onOpenSummary }: {
 export default function DoctorAppointmentsPage() {
   const { toast } = useToast();
   const [summaryId, setSummaryId] = useState<number | null>(null);
-<<<<<<< HEAD
   const [cancelTarget, setCancelTarget] = useState<AppointmentWithPatient | null>(null);
   const [cancellationReason, setCancellationReason] = useState("");
   const [cancelReasonError, setCancelReasonError] = useState<string | null>(null);
-=======
->>>>>>> 480090b (Restored to '1619327d460fd9cbaa7c50f288b524ae38bdb4b3')
 
   const { data: appointments, isLoading } = useQuery<AppointmentWithPatient[]>({
     queryKey: ["/api/doctors/me/appointments"],
@@ -304,7 +311,6 @@ export default function DoctorAppointmentsPage() {
           {renderAppointmentList(cancelledAppointments)}
         </TabsContent>
       </Tabs>
-<<<<<<< HEAD
 
       <AlertDialog open={!!cancelTarget} onOpenChange={(o) => !o && closeCancelDialog()}>
         <AlertDialogContent data-testid="dialog-cancel-appointment">
@@ -361,8 +367,6 @@ export default function DoctorAppointmentsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-=======
->>>>>>> 480090b (Restored to '1619327d460fd9cbaa7c50f288b524ae38bdb4b3')
     </div>
   );
 }

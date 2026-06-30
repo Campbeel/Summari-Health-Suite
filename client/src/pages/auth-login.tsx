@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { loginWithToken } from "@/hooks/use-auth";
+import { homeForRole, type UserRole } from "@/hooks/use-role";
 import { Eye, EyeOff } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function AuthLoginPage() {
   const [, navigate] = useLocation();
@@ -32,9 +34,10 @@ export default function AuthLoginPage() {
       return response.json();
     },
     onSuccess: (data) => {
-      loginWithToken(data.token);
+      loginWithToken(data.token, data.user);
       toast({ title: "Bienvenido", description: "Has iniciado sesión correctamente" });
-      navigate("/");
+      const role = (data.user?.role === "doctor" ? "staff" : data.user?.role) as UserRole;
+      navigate(homeForRole(role));
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -55,7 +58,10 @@ export default function AuthLoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-md space-y-6">
         <div className="flex flex-col items-center gap-3">
           <Link href="/" data-testid="link-login-home">
@@ -66,8 +72,8 @@ export default function AuthLoginPage() {
 
         <Card>
           <CardHeader className="space-y-1">
-            <CardTitle className="text-xl" data-testid="text-login-card-title">Iniciar Sesión</CardTitle>
-            <CardDescription>Ingresa tus credenciales para acceder</CardDescription>
+            <CardTitle className="text-xl" data-testid="text-login-card-title">Acceso personal</CardTitle>
+            <CardDescription>Solo personal autorizado del centro</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -131,12 +137,6 @@ export default function AuthLoginPage() {
                 </Link>
               </div>
             </form>
-            <div className="mt-4 text-center text-sm">
-              <span className="text-muted-foreground">¿No tienes cuenta? </span>
-              <Link href="/crear-cuenta" className="text-primary font-medium hover:underline" data-testid="link-register">
-                Crear cuenta
-              </Link>
-            </div>
           </CardContent>
         </Card>
       </div>

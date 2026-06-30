@@ -1,4 +1,6 @@
+import "./env";
 import express, { type Request, Response, NextFunction } from "express";
+import { isOpenAIConfigured } from "./openai-client";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -20,6 +22,13 @@ export function log(message: string, source = "express") {
 }
 
 (async () => {
+  if (!isOpenAIConfigured()) {
+    log(
+      "OpenAI no configurado: transcripción, GPT y asistente clínico no estarán disponibles.",
+      "openai",
+    );
+  }
+
   log("Initializing database...", "seed");
   // Only cleanup/seed in development, not in production
   if (process.env.NODE_ENV !== "production") {
@@ -95,6 +104,7 @@ export function log(message: string, source = "express") {
     },
     () => {
       log(`serving on port ${port}`);
+      log(`Abre http://localhost:${port} — staff: 22222222-2/staff123 | admin: 11111111-1/admin`, "express");
       startFitbitAutoSync();
     },
   );

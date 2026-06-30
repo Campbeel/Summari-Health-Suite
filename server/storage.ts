@@ -36,8 +36,14 @@ import {
   consultationRatings,
   type ConsultationRating,
   type InsertConsultationRating,
-  reimbursementRequests,
-  type ReimbursementRequest,
+  staffPatientCare,
+  staffPatientAssignments,
+  residentCareTasks,
+  type StaffPatientCare,
+  type StaffCareTask,
+  type ResidentCareTask,
+  type InsertResidentCareTask,
+  type InsertStaffPatientCare,
   type InsertReimbursementRequest,
   ges,
   type GesDiagnosis,
@@ -353,6 +359,7 @@ export interface IStorage {
 
   // Doctor Patient Management
   getAllPatientsForDoctor(doctorId: number, search?: string): Promise<PatientListItem[]>;
+  getAllPatients(search?: string): Promise<PatientListItem[]>;
   getPatientFullProfile(patientId: number): Promise<PatientFullProfile | undefined>;
   getPatientAppointmentHistory(patientId: number): Promise<PatientAppointmentHistory[]>;
   doctorHasPatientRelationship(doctorId: number, patientId: number): Promise<boolean>;
@@ -369,6 +376,13 @@ export interface IStorage {
   createReportTemplate(template: InsertReportTemplate): Promise<ReportTemplate>;
   updateReportTemplate(id: number, data: Partial<InsertReportTemplate>): Promise<ReportTemplate>;
   deleteReportTemplate(id: number): Promise<void>;
+
+  // Resident care tasks (hogar de ancianos)
+  getResidentCareTasks(patientId: number): Promise<ResidentCareTask[]>;
+  getAllPendingResidentCareTasks(): Promise<Array<ResidentCareTask & { patientName: string; rut: string | null }>>;
+  createResidentCareTask(task: InsertResidentCareTask): Promise<ResidentCareTask>;
+  resolveResidentCareTask(taskId: number, resolvedByUserId: string, resolvedByName: string): Promise<ResidentCareTask | undefined>;
+  unresolveResidentCareTask(taskId: number): Promise<ResidentCareTask | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1240,6 +1254,47 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
+  async getAllPatients(search?: string): Promise<PatientListItem[]> {
+    const result = await db
+      .select({
+        id: patients.id,
+        userId: patients.userId,
+        rut: patients.rut,
+        email: patients.email,
+        whatsapp: patients.whatsapp,
+        dateOfBirth: patients.dateOfBirth,
+        gender: patients.gender,
+        bloodType: patients.bloodType,
+        allergies: patients.allergies,
+        medicalHistory: patients.medicalHistory,
+        emergencyContact: patients.emergencyContact,
+        emergencyPhone: patients.emergencyPhone,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        profileImageUrl: users.profileImageUrl,
+        lastAppointmentDate: sql<string>`MAX(${appointments.scheduledDate})`.as("last_appointment_date"),
+        totalAppointments: sql<number>`COUNT(${appointments.id})::int`.as("total_appointments"),
+      })
+      .from(patients)
+      .innerJoin(users, eq(patients.userId, users.id))
+      .leftJoin(appointments, eq(appointments.patientId, patients.id))
+      .groupBy(patients.id, users.id)
+      .orderBy(desc(sql`MAX(${appointments.scheduledDate})`));
+
+    if (search && search.trim()) {
+      const searchLower = search.trim().toLowerCase();
+      return result.filter((p) => {
+        const fullName = `${p.firstName || ""} ${p.lastName || ""}`.toLowerCase();
+        const rut = (p.rut || "").toLowerCase().replace(/\./g, "");
+        const term = searchLower.replace(/\./g, "");
+        const email = (p.email || "").toLowerCase();
+        return fullName.includes(searchLower) || rut.includes(term) || email.includes(searchLower);
+      });
+    }
+
+    return result;
+  }
+
   async getPatientFullProfile(patientId: number): Promise<PatientFullProfile | undefined> {
     const [result] = await db
       .select({
@@ -1455,6 +1510,206 @@ export class DatabaseStorage implements IStorage {
 
   async deleteReportTemplate(id: number): Promise<void> {
     await db.delete(reportTemplates).where(eq(reportTemplates.id, id));
+  }
+
+  async getStaffCareSession(patientId: number, staffUserId: string): Promise<StaffPatientCare | undefined> {
+    const [row] = await db
+      .select()
+      .from(staffPatientCare)
+      .where(
+        and(
+          eq(staffPatientCare.patientId, patientId),
+          eq(staffPatientCare.staffUserId, staffUserId),
+          eq(staffPatientCare.status, "in_progress"),
+        ),
+      )
+      .orderBy(desc(staffPatientCare.updatedAt))
+      .limit(1);
+    return row;
+  }
+
+  async upsertStaffCareSession(data: {
+    patientId: number;
+    staffUserId: string;
+    anamnesis?: string;
+    pendingTasks?: StaffCareTask[];
+  }): Promise<StaffPatientCare> {
+    const existing = await this.getStaffCareSession(data.patientId, data.staffUserId);
+    if (existing) {
+      const [updated] = await db
+        .update(staffPatientCare)
+        .set({
+          anamnesis: data.anamnesis ?? existing.anamnesis,
+          pendingTasks: data.pendingTasks ?? existing.pendingTasks,
+          updatedAt: new Date(),
+        })
+        .where(eq(staffPatientCare.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db
+      .insert(staffPatientCare)
+      .values({
+        patientId: data.patientId,
+        staffUserId: data.staffUserId,
+        anamnesis: data.anamnesis ?? "",
+        pendingTasks: data.pendingTasks ?? [],
+        status: "in_progress",
+      })
+      .returning();
+    const [existingAssign] = await db
+      .select()
+      .from(staffPatientAssignments)
+      .where(
+        and(
+          eq(staffPatientAssignments.patientId, data.patientId),
+          eq(staffPatientAssignments.staffUserId, data.staffUserId),
+        ),
+      )
+      .limit(1);
+    if (!existingAssign) {
+      await db.insert(staffPatientAssignments).values({
+        patientId: data.patientId,
+        staffUserId: data.staffUserId,
+      });
+    }
+    return created;
+  }
+
+  async completeStaffCareSession(
+    patientId: number,
+    staffUserId: string,
+    completedByName: string,
+  ): Promise<StaffPatientCare | undefined> {
+    const existing = await this.getStaffCareSession(patientId, staffUserId);
+    if (!existing) return undefined;
+    const [updated] = await db
+      .update(staffPatientCare)
+      .set({
+        status: "completed",
+        completedByUserId: staffUserId,
+        completedByName,
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(staffPatientCare.id, existing.id))
+      .returning();
+    return updated;
+  }
+
+  async getOpenStaffTasksForUser(staffUserId: string) {
+    const rows = await db
+      .select()
+      .from(staffPatientCare)
+      .where(
+        and(eq(staffPatientCare.staffUserId, staffUserId), eq(staffPatientCare.status, "in_progress")),
+      );
+    return rows;
+  }
+
+  async getStaffSessionsWithPendingTasks(staffUserId: string) {
+    const rows = await db
+      .select()
+      .from(staffPatientCare)
+      .where(eq(staffPatientCare.staffUserId, staffUserId));
+    return rows.filter((row) => (row.pendingTasks || []).some((t) => !t.resolved));
+  }
+
+  async getAssignedPatientsForStaff(staffUserId: string): Promise<PatientListItem[]> {
+    const assignments = await db
+      .select({ patientId: staffPatientAssignments.patientId })
+      .from(staffPatientAssignments)
+      .where(eq(staffPatientAssignments.staffUserId, staffUserId));
+    const ids = assignments.map((a) => a.patientId);
+    if (ids.length === 0) return [];
+    const all = await this.getAllPatients();
+    return all.filter((p) => ids.includes(p.id));
+  }
+
+  async getResidentCareTasks(patientId: number): Promise<ResidentCareTask[]> {
+    return db
+      .select()
+      .from(residentCareTasks)
+      .where(eq(residentCareTasks.patientId, patientId))
+      .orderBy(residentCareTasks.dueAt);
+  }
+
+  async getAllPendingResidentCareTasks(): Promise<Array<ResidentCareTask & { patientName: string; rut: string | null }>> {
+    const rows = await db
+      .select({
+        id: residentCareTasks.id,
+        patientId: residentCareTasks.patientId,
+        text: residentCareTasks.text,
+        dueAt: residentCareTasks.dueAt,
+        resolved: residentCareTasks.resolved,
+        resolvedAt: residentCareTasks.resolvedAt,
+        resolvedByUserId: residentCareTasks.resolvedByUserId,
+        resolvedByName: residentCareTasks.resolvedByName,
+        createdByUserId: residentCareTasks.createdByUserId,
+        createdByName: residentCareTasks.createdByName,
+        createdAt: residentCareTasks.createdAt,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        rut: patients.rut,
+      })
+      .from(residentCareTasks)
+      .innerJoin(patients, eq(residentCareTasks.patientId, patients.id))
+      .innerJoin(users, eq(patients.userId, users.id))
+      .where(eq(residentCareTasks.resolved, false))
+      .orderBy(residentCareTasks.dueAt);
+
+    return rows.map((r) => ({
+      id: r.id,
+      patientId: r.patientId,
+      text: r.text,
+      dueAt: r.dueAt,
+      resolved: r.resolved,
+      resolvedAt: r.resolvedAt,
+      resolvedByUserId: r.resolvedByUserId,
+      resolvedByName: r.resolvedByName,
+      createdByUserId: r.createdByUserId,
+      createdByName: r.createdByName,
+      createdAt: r.createdAt,
+      patientName: `${r.firstName || ""} ${r.lastName || ""}`.trim() || "Residente",
+      rut: r.rut,
+    }));
+  }
+
+  async createResidentCareTask(task: InsertResidentCareTask): Promise<ResidentCareTask> {
+    const [created] = await db.insert(residentCareTasks).values(task).returning();
+    return created;
+  }
+
+  async resolveResidentCareTask(
+    taskId: number,
+    resolvedByUserId: string,
+    resolvedByName: string,
+  ): Promise<ResidentCareTask | undefined> {
+    const [updated] = await db
+      .update(residentCareTasks)
+      .set({
+        resolved: true,
+        resolvedAt: new Date(),
+        resolvedByUserId,
+        resolvedByName,
+      })
+      .where(eq(residentCareTasks.id, taskId))
+      .returning();
+    return updated;
+  }
+
+  async unresolveResidentCareTask(taskId: number): Promise<ResidentCareTask | undefined> {
+    const [updated] = await db
+      .update(residentCareTasks)
+      .set({
+        resolved: false,
+        resolvedAt: null,
+        resolvedByUserId: null,
+        resolvedByName: null,
+      })
+      .where(eq(residentCareTasks.id, taskId))
+      .returning();
+    return updated;
   }
 }
 

@@ -58,21 +58,25 @@ export function requireRole(...allowed: string[]): RequestHandler {
       if (!user) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      if (!allowed.includes(user.role)) {
+      const isStaff = user.role === "staff" || user.role === "doctor";
+      const roleAllowed =
+        allowed.includes(user.role) ||
+        (isStaff && allowed.includes("staff"));
+      if (!roleAllowed) {
         return res.status(403).json({ message: "Forbidden", role: user.role });
       }
       // For org-scoped roles, enforce that the organization is still active.
-      if ((user.role === "admin" || user.role === "doctor") && user.organizationId) {
+      if ((user.role === "admin" || isStaff) && user.organizationId) {
         const [org] = await db.select().from(organizations).where(eq(organizations.id, user.organizationId));
         if (org && org.isActive === false) {
           return res.status(403).json({ message: "Organization is inactive" });
         }
       }
-      // For doctor role, also block access if their doctor profile has been deactivated.
-      if (user.role === "doctor") {
+      // Staff clinical profile must be active.
+      if (isStaff) {
         const [doc] = await db.select().from(doctors).where(eq(doctors.userId, user.id));
         if (doc && doc.isActive === false) {
-          return res.status(403).json({ message: "Doctor account is inactive" });
+          return res.status(403).json({ message: "Staff account is inactive" });
         }
       }
       // Stash on req for downstream handlers.
@@ -130,67 +134,10 @@ const loginSchema = z.object({
 });
 
 export function registerAuthRoutes(app: Express) {
-  app.post("/api/auth/register", async (req: Request, res: Response) => {
-    try {
-      const validation = registerSchema.safeParse(req.body);
-      if (!validation.success) {
-        return res.status(400).json({
-          error: "Datos inválidos",
-          errors: validation.error.flatten().fieldErrors,
-        });
-      }
-
-      const { rut, email, whatsapp, password, firstName, lastName } = validation.data;
-
-      const cleanedRut = rut.replace(/\./g, "");
-
-      const [existingByRut] = await db.select().from(users).where(eq(users.rut, cleanedRut));
-      if (existingByRut) {
-        return res.status(409).json({ error: "Ya existe una cuenta con este RUT" });
-      }
-
-      const [existingByEmail] = await db.select().from(users).where(eq(users.email, email));
-      if (existingByEmail) {
-        return res.status(409).json({ error: "Ya existe una cuenta con este correo electrónico" });
-      }
-
-      const passwordHash = await bcrypt.hash(password, 10);
-
-      const [newUser] = await db.insert(users).values({
-        email,
-        rut: cleanedRut,
-        whatsapp,
-        passwordHash,
-        firstName,
-        lastName,
-        username: email,
-      }).returning();
-
-      await db.insert(patients).values({
-        userId: newUser.id,
-        rut: cleanedRut,
-        email,
-        whatsapp,
-      });
-
-      const token = generateToken(newUser.id, newUser.email!);
-
-      res.status(201).json({
-        token,
-        user: {
-          id: newUser.id,
-          email: newUser.email,
-          rut: newUser.rut,
-          firstName: newUser.firstName,
-          lastName: newUser.lastName,
-          profileImageUrl: newUser.profileImageUrl,
-          isAdmin: newUser.isAdmin,
-        },
-      });
-    } catch (error) {
-      console.error("Error en registro:", error);
-      res.status(500).json({ error: "Error al crear la cuenta" });
-    }
+  app.post("/api/auth/register", async (_req: Request, res: Response) => {
+    return res.status(403).json({
+      error: "El registro público está deshabilitado. Contacta al administrador del centro.",
+    });
   });
 
   app.post("/api/auth/login", async (req: Request, res: Response) => {
@@ -224,7 +171,15 @@ export function registerAuthRoutes(app: Express) {
         return res.status(401).json({ error: "Credenciales inválidas" });
       }
 
+      const isStaff = user.role === "staff" || user.role === "doctor";
+      if (user.role !== "admin" && !isStaff) {
+        return res.status(403).json({
+          error: "Acceso restringido al personal autorizado del centro.",
+        });
+      }
+
       const token = generateToken(user.id, user.email!);
+      const normalizedRole = isStaff ? "staff" : user.role;
 
       res.json({
         token,
@@ -236,6 +191,8 @@ export function registerAuthRoutes(app: Express) {
           lastName: user.lastName,
           profileImageUrl: user.profileImageUrl,
           isAdmin: user.isAdmin,
+          role: normalizedRole,
+          organizationId: user.organizationId,
         },
       });
     } catch (error) {

@@ -361,7 +361,7 @@ export default function ConsultationPage() {
         title: "Consulta finalizada",
         description: "Revisa y valida la información clínica generada",
       });
-      navigate(`/doctor/consultation/${id}/validate`);
+      navigate(`/staff/consultation/${id}/validate`);
     },
     onError: () => {
       setIsProcessing(false);
@@ -711,7 +711,7 @@ export default function ConsultationPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => navigate(isDoctor ? "/doctor/appointments" : "/appointments")}
+            onClick={() => navigate(isDoctor ? "/staff/appointments" : "/appointments")}
             data-testid="button-back-consultation"
           >
             <ArrowLeft className="h-4 w-4 mr-1" />

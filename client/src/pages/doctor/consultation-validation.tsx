@@ -319,11 +319,8 @@ export default function ConsultationValidationPage() {
   const [clinicalNotes, setClinicalNotes] = useState("");
 
   const [medications, setMedications] = useState<Medication[]>([]);
-<<<<<<< HEAD
   const [acknowledgedAllergyConflicts, setAcknowledgedAllergyConflicts] = useState<Set<number>>(new Set());
   const [acknowledgedPregLactConflicts, setAcknowledgedPregLactConflicts] = useState<Set<number>>(new Set());
-=======
->>>>>>> 480090b (Restored to '1619327d460fd9cbaa7c50f288b524ae38bdb4b3')
   const [instructionsText, setInstructionsText] = useState("");
   
   const [gesDiagnoses, setGesDiagnoses] = useState<GesDiagnosis[]>([]);
@@ -643,7 +640,6 @@ export default function ConsultationValidationPage() {
     setMedications(prev => prev.map((med, i) =>
       i === index ? { ...med, [field]: value } : med
     ));
-<<<<<<< HEAD
     if (field === "name") {
       const dropIndex = (prev: Set<number>) => {
         if (!prev.has(index)) return prev;
@@ -654,13 +650,10 @@ export default function ConsultationValidationPage() {
       setAcknowledgedAllergyConflicts(dropIndex);
       setAcknowledgedPregLactConflicts(dropIndex);
     }
-=======
->>>>>>> 480090b (Restored to '1619327d460fd9cbaa7c50f288b524ae38bdb4b3')
   };
 
   const removeMedication = (index: number) => {
     setMedications(prev => prev.filter((_, i) => i !== index));
-<<<<<<< HEAD
     const shiftIndices = (prev: Set<number>) => {
       if (prev.size === 0) return prev;
       const next = new Set<number>();
@@ -720,11 +713,6 @@ export default function ConsultationValidationPage() {
       !acknowledgedPregLactConflicts.has(c.index),
   );
 
-=======
-  };
-
->>>>>>> 480090b (Restored to '1619327d460fd9cbaa7c50f288b524ae38bdb4b3')
-
   const handlePdfPreview = async (types: string[]) => {
     setPdfPreviewLoading(true);
     setPdfPreviewOpen(true);
@@ -774,7 +762,7 @@ export default function ConsultationValidationPage() {
       <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
         <AlertCircle className="h-12 w-12 text-muted-foreground" />
         <h2 className="text-xl font-semibold">Consulta no encontrada</h2>
-        <Button onClick={() => navigate("/doctor/appointments")} data-testid="button-back-appointments">
+        <Button onClick={() => navigate("/staff/appointments")} data-testid="button-back-appointments">
           <ArrowLeft className="h-4 w-4 mr-2" />
           Volver a consultas
         </Button>
@@ -926,7 +914,7 @@ export default function ConsultationValidationPage() {
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => navigate("/doctor/appointments")}
+                    onClick={() => navigate("/staff/appointments")}
                     data-testid="button-skip-email"
                   >
                     Omitir
@@ -942,7 +930,7 @@ export default function ConsultationValidationPage() {
                   Documentos enviados exitosamente al paciente
                 </p>
                 <Button
-                  onClick={() => navigate("/doctor/appointments")}
+                  onClick={() => navigate("/staff/appointments")}
                   data-testid="button-done"
                 >
                   Volver a consultas
@@ -956,7 +944,7 @@ export default function ConsultationValidationPage() {
                   No hay documentos (receta, indicaciones o exámenes) para enviar.
                 </p>
                 <Button
-                  onClick={() => navigate("/doctor/appointments")}
+                  onClick={() => navigate("/staff/appointments")}
                   data-testid="button-done-no-docs"
                 >
                   Volver a consultas
@@ -1004,7 +992,7 @@ export default function ConsultationValidationPage() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate("/doctor/appointments")}
+            onClick={() => navigate("/staff/appointments")}
             data-testid="button-back"
           >
             <ArrowLeft className="h-5 w-5" />
@@ -1041,7 +1029,6 @@ export default function ConsultationValidationPage() {
             </Button>
           )}
           <Button
-<<<<<<< HEAD
             onClick={() => {
               if (absolutePregLactConflicts.length > 0) {
                 const first = absolutePregLactConflicts[0];
@@ -1075,9 +1062,6 @@ export default function ConsultationValidationPage() {
               }
               setIsConfirmOpen(true);
             }}
-=======
-            onClick={() => setIsConfirmOpen(true)}
->>>>>>> 480090b (Restored to '1619327d460fd9cbaa7c50f288b524ae38bdb4b3')
             disabled={validateMutation.isPending}
             data-testid="button-validate"
           >
@@ -1509,7 +1493,6 @@ export default function ConsultationValidationPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {medications.length === 0 ? (
-<<<<<<< HEAD
                     <>
                       {(validationData?.clinicalRecord as any)?.hasTranscription && (
                         <div
@@ -1538,19 +1521,8 @@ export default function ConsultationValidationPage() {
                           <Plus className="h-4 w-4 mr-1.5" />
                           Agregar medicamento
                         </Button>
-=======
-                    <div className="text-center py-10 px-4 border border-dashed rounded-lg" data-testid="prescription-empty">
-                      <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
-                        <Pill className="h-6 w-6 text-primary" />
->>>>>>> 480090b (Restored to '1619327d460fd9cbaa7c50f288b524ae38bdb4b3')
                       </div>
-                      <p className="text-sm font-medium">Sin medicamentos en la receta</p>
-                      <p className="text-xs text-muted-foreground mt-1 mb-4">Agrega el primer medicamento para empezar</p>
-                      <Button size="sm" onClick={addMedication} data-testid="button-add-first-medication">
-                        <Plus className="h-4 w-4 mr-1.5" />
-                        Agregar medicamento
-                      </Button>
-                    </div>
+                    </>
                   ) : (
                     <>
                       {medications.map((med, index) => (
@@ -1568,7 +1540,6 @@ export default function ConsultationValidationPage() {
                                 <Trash2 className="h-4 w-4 text-destructive" />
                               </Button>
                             </div>
-<<<<<<< HEAD
                             {(() => {
                               const conflicts = allergyConflictsByIndex[index]?.conflicts || [];
                               if (conflicts.length === 0) return null;
@@ -1673,8 +1644,6 @@ export default function ConsultationValidationPage() {
                                 </div>
                               );
                             })()}
-=======
->>>>>>> 480090b (Restored to '1619327d460fd9cbaa7c50f288b524ae38bdb4b3')
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                               <div>
                                 <Label>Nombre</Label>

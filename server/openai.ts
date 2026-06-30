@@ -1,11 +1,5 @@
-import OpenAI from "openai";
 import { speechToText, detectAudioFormat, ensureCompatibleFormat } from "./replit_integrations/audio";
-
-// Initialize OpenAI client with Replit AI Integrations credentials
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
+import { getOpenAIClient } from "./openai-client";
 
 export async function transcribeAudio(audioBase64: string): Promise<string> {
   try {
@@ -148,7 +142,7 @@ export async function generatePrescriptionFromTranscript(transcript: string): Pr
   instructions?: string;
 } | null> {
   try {
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAIClient().chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
@@ -200,7 +194,7 @@ export async function summarizeConsultation(transcript: string): Promise<{
   notes?: string;
 } | null> {
   try {
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAIClient().chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
@@ -265,7 +259,7 @@ export interface ConsultationAISuggestions {
 
 export async function generateFullConsultationSuggestions(transcript: string): Promise<ConsultationAISuggestions> {
   try {
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAIClient().chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
@@ -442,7 +436,7 @@ Responde siempre en español. Devuelve SOLO el JSON sin texto adicional.`;
 
 export async function generateMedicalReportWithTemplate(transcript: string, templatePrompt: string): Promise<string | null> {
   try {
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAIClient().chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
@@ -466,7 +460,7 @@ export async function generateMedicalReportWithTemplate(transcript: string, temp
 
 export async function generateMedicalReport(transcript: string): Promise<MedicalReport | null> {
   try {
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAIClient().chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
@@ -587,7 +581,7 @@ export async function generateClinicalAlerts(data: {
     const instructionsList = data.medicalInstructions?.map(i => `${i.title}: ${i.description}`).join("\n") || "Sin indicaciones";
     const examsList = data.examOrders?.map(e => `${e.name} (${e.type})`).join(", ") || "Sin exámenes";
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAIClient().chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
@@ -701,7 +695,7 @@ export interface AssistantContext {
 
 export async function generateAssistantWelcome(context: AssistantContext): Promise<string> {
   try {
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAIClient().chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
@@ -774,7 +768,7 @@ Tu rol:
 - NO diagnosticar por ti mismo, solo asistir al doctor
 - Máximo 150 palabras por respuesta`;
 
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAIClient().chat.completions.create({
       model: "gpt-4o",
       messages: [
         { role: "system", content: systemMessage },
@@ -821,7 +815,7 @@ export async function generatePatientHistorySummary(
   }));
 
   try {
-    const response = await openai.chat.completions.create({
+    const response = await getOpenAIClient().chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
