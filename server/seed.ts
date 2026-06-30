@@ -84,9 +84,9 @@ export async function cleanAndSetupDatabase() {
     await db.insert(doctors).values({
       userId: staffUserId,
       organizationId: demoOrgId,
-      specialty: "Atención clínica",
-      licenseNumber: "123456",
-      consultationFee: 25000,
+      specialty: "Cuidado de residentes",
+      licenseNumber: "STAFF-001",
+      consultationFee: 0,
     });
     console.log(`Created demo staff (RUT ${STAFF_RUT} / staff123)`);
 

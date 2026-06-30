@@ -25,9 +25,10 @@ import {
   doctors,
   patients,
   appointments,
+  residentCareTasks,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, sql as dsql, inArray, desc as ddesc } from "drizzle-orm";
+import { eq, and, sql as dsql, inArray, desc as ddesc, sql } from "drizzle-orm";
 import { getTaskUrgency, sortByUrgency } from "@shared/care-tasks";
 import bcrypt from "bcryptjs";
 
@@ -3571,77 +3572,47 @@ export async function registerRoutes(
       const orgId = await getRequestOrgId(req);
       if (!orgId) return res.status(404).json({ error: "Sin organización asignada" });
 
-      const orgDoctors = await db.select().from(doctors).where(eq(doctors.organizationId, orgId));
-      const doctorIds = orgDoctors.map(d => d.id);
+      const orgStaff = await db.select().from(doctors).where(eq(doctors.organizationId, orgId));
+      const activeStaff = orgStaff.filter((d) => d.isActive !== false);
 
-      if (doctorIds.length === 0) {
-        return res.json({
-          totalRevenue: 0, scheduled: 0, paid: 0, lost: 0, completed: 0,
-          totalAppointments: 0, doctorCount: 0, patientCount: 0,
-          revenueByDay: [], statusBreakdown: [], byDoctor: [],
-        });
+      const allResidents = await storage.getAllPatients();
+      const pendingTasksRaw = await storage.getAllPendingResidentCareTasks();
+      const now = new Date();
+
+      const recentTasks = sortByUrgency(
+        pendingTasksRaw.map((t) => ({
+          id: t.id,
+          text: t.text,
+          dueAt: t.dueAt.toISOString(),
+          patientId: t.patientId,
+          patientName: t.patientName,
+          rut: t.rut,
+          createdByName: t.createdByName,
+          urgency: getTaskUrgency(t.dueAt.toISOString(), now),
+        })),
+        now,
+      ).slice(0, 12);
+
+      const allUrgency = { critical: 0, warning: 0, normal: 0 };
+      for (const t of pendingTasksRaw) {
+        const u = getTaskUrgency(t.dueAt.toISOString(), now);
+        allUrgency[u] += 1;
       }
 
-      const allAppts = await db.select().from(appointments).where(inArray(appointments.doctorId, doctorIds));
-
-      let totalRevenue = 0;
-      let scheduled = 0, paid = 0, lost = 0, completed = 0;
-      const revenueByDay: Record<string, number> = {};
-      const byDoctorMap = new Map<number, { revenue: number; count: number; completed: number }>();
-
-      for (const a of allAppts) {
-        const doctor = orgDoctors.find(d => d.id === a.doctorId);
-        const fee = doctor?.consultationFee || 0;
-
-        if (a.paymentStatus === "paid") {
-          totalRevenue += fee;
-          paid += 1;
-          revenueByDay[a.scheduledDate] = (revenueByDay[a.scheduledDate] || 0) + fee;
-        }
-        if (a.status === "scheduled" || a.status === "confirmed") scheduled += 1;
-        if (a.status === "completed") completed += 1;
-        if (a.status === "cancelled" || a.paymentStatus === "rejected") lost += 1;
-
-        const cur = byDoctorMap.get(a.doctorId) || { revenue: 0, count: 0, completed: 0 };
-        cur.count += 1;
-        if (a.paymentStatus === "paid") cur.revenue += fee;
-        if (a.status === "completed") cur.completed += 1;
-        byDoctorMap.set(a.doctorId, cur);
-      }
-
-      const patientIds = Array.from(new Set(allAppts.map(a => a.patientId)));
-
-      const byDoctor = await Promise.all(orgDoctors.map(async (d) => {
-        const [u] = await db.select().from(users).where(eq(users.id, d.userId));
-        const stats = byDoctorMap.get(d.id) || { revenue: 0, count: 0, completed: 0 };
-        return {
-          id: d.id,
-          name: `${u?.firstName || ""} ${u?.lastName || ""}`.trim() || u?.email || "Doctor",
-          specialty: d.specialty,
-          consultationFee: d.consultationFee,
-          ...stats,
-        };
-      }));
+      const [resolvedRow] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(residentCareTasks)
+        .where(eq(residentCareTasks.resolved, true));
 
       res.json({
-        totalRevenue,
-        scheduled,
-        paid,
-        lost,
-        completed,
-        totalAppointments: allAppts.length,
-        doctorCount: orgDoctors.length,
-        patientCount: patientIds.length,
-        revenueByDay: Object.entries(revenueByDay)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([date, amount]) => ({ date, amount })),
-        statusBreakdown: [
-          { status: "scheduled", count: scheduled },
-          { status: "paid", count: paid },
-          { status: "completed", count: completed },
-          { status: "lost", count: lost },
-        ],
-        byDoctor,
+        staffCount: activeStaff.length,
+        residentCount: allResidents.length,
+        pendingTasks: pendingTasksRaw.length,
+        criticalTasks: allUrgency.critical,
+        warningTasks: allUrgency.warning,
+        normalTasks: allUrgency.normal,
+        resolvedTasks: resolvedRow?.count ?? 0,
+        recentTasks,
       });
     } catch (error) {
       console.error("Error fetching admin stats:", error);
@@ -3687,9 +3658,8 @@ export async function registerRoutes(
         lastName: z.string().min(1),
         email: z.string().email(),
         password: z.string().min(6),
-        specialty: z.string().min(1).default("Atención clínica"),
-        licenseNumber: z.string().min(1).default("000000"),
-        consultationFee: z.number().int().min(0).default(25000),
+        specialty: z.string().min(1).default("Cuidado de residentes"),
+        licenseNumber: z.string().optional().default(""),
       });
       const parsed = schema.safeParse(req.body);
       if (!parsed.success) {
@@ -3726,8 +3696,8 @@ export async function registerRoutes(
         userId: newUserId,
         organizationId: orgId,
         specialty: parsed.data.specialty,
-        licenseNumber: parsed.data.licenseNumber,
-        consultationFee: parsed.data.consultationFee,
+        licenseNumber: parsed.data.licenseNumber || "—",
+        consultationFee: 0,
       }).returning();
 
       const { passwordHash: _, ...safe } = createdUser;
@@ -3744,18 +3714,17 @@ export async function registerRoutes(
     });
   });
 
-  // Org admin edits doctor profile (specialty, fee, license)
+  // Org admin edits staff profile
   app.put("/api/admin/doctors/:id", isAuthenticated, requireRole("admin"), async (req: any, res) => {
     try {
       const orgId = await getRequestOrgId(req);
       const doctorId = parseInt(req.params.id);
       const [doc] = await db.select().from(doctors).where(eq(doctors.id, doctorId));
-      if (!doc || doc.organizationId !== orgId) return res.status(404).json({ error: "Doctor no encontrado en su organización" });
+      if (!doc || doc.organizationId !== orgId) return res.status(404).json({ error: "Personal no encontrado en su organización" });
 
       const schema = z.object({
         specialty: z.string().optional(),
         licenseNumber: z.string().optional(),
-        consultationFee: z.number().int().min(0).optional(),
         bio: z.string().nullable().optional(),
         isActive: z.boolean().optional(),
       });

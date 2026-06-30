@@ -1,31 +1,43 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, DollarSign, CalendarCheck, CalendarX, CheckCircle2, Stethoscope, Users, Building2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
+  Loader2,
+  Building2,
+  Users,
+  UserCog,
+  ClipboardList,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  ChevronRight,
+} from "lucide-react";
+import {
+  formatDueLabel,
+  urgencyStyles,
+  type TaskUrgency,
+} from "@shared/care-tasks";
 
 interface AdminStats {
-  totalRevenue: number;
-  scheduled: number;
-  paid: number;
-  lost: number;
-  completed: number;
-  totalAppointments: number;
-  doctorCount: number;
-  patientCount: number;
-  revenueByDay: { date: string; amount: number }[];
-  statusBreakdown: { status: string; count: number }[];
-  byDoctor: {
+  staffCount: number;
+  residentCount: number;
+  pendingTasks: number;
+  criticalTasks: number;
+  warningTasks: number;
+  normalTasks: number;
+  resolvedTasks: number;
+  recentTasks: Array<{
     id: number;
-    name: string;
-    specialty: string;
-    consultationFee: number;
-    revenue: number;
-    count: number;
-    completed: number;
-  }[];
+    text: string;
+    dueAt: string;
+    patientId: number;
+    patientName: string;
+    rut: string | null;
+    createdByName: string;
+    urgency: TaskUrgency;
+  }>;
 }
 
 interface OrgInfo {
@@ -37,7 +49,32 @@ interface OrgInfo {
   address: string | null;
 }
 
-const fmtCLP = (n: number) => new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(n);
+function TaskRow({ task }: { task: AdminStats["recentTasks"][number] }) {
+  const style = urgencyStyles[task.urgency];
+  return (
+    <Link
+      href={`/staff/patients/${task.patientId}`}
+      className={`flex items-start gap-3 p-3 rounded-lg border ${style.border} ${style.bg} ${style.text} hover:opacity-95 transition-opacity`}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap mb-1">
+          <span className="font-medium text-sm">{task.patientName}</span>
+          {task.rut && <span className={`text-xs font-mono ${style.muted}`}>{task.rut}</span>}
+          <Badge className={`text-[10px] px-1.5 py-0 ${style.badge}`}>{style.label}</Badge>
+        </div>
+        <p className="text-sm font-medium">{task.text}</p>
+        <div className={`flex items-center gap-3 mt-1 text-xs ${style.muted}`}>
+          <span className="flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {formatDueLabel(task.dueAt)}
+          </span>
+          <span>Asignada por {task.createdByName}</span>
+        </div>
+      </div>
+      <ChevronRight className={`h-4 w-4 shrink-0 mt-1 ${style.muted}`} />
+    </Link>
+  );
+}
 
 export default function AdminDashboardPage() {
   const { data: stats, isLoading } = useQuery<AdminStats>({ queryKey: ["/api/admin/stats"] });
@@ -55,146 +92,104 @@ export default function AdminDashboardPage() {
     return <div className="p-6">No hay estadísticas disponibles</div>;
   }
 
-  const maxRevenue = Math.max(1, ...stats.revenueByDay.map(d => d.amount));
-
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold" data-testid="text-admin-title">Dashboard Administración</h1>
-        {org && (
-          <p className="text-muted-foreground flex items-center gap-2 mt-1" data-testid="text-org-name">
-            <Building2 className="h-4 w-4" /> {org.name}
-          </p>
-        )}
-      </div>
-
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card data-testid="card-revenue">
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-2"><DollarSign className="h-4 w-4" /> Ingresos totales</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold" data-testid="stat-revenue">{fmtCLP(stats.totalRevenue)}</p>
-          </CardContent>
-        </Card>
-        <Card data-testid="card-scheduled">
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-2"><CalendarCheck className="h-4 w-4" /> Consultas agendadas</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold" data-testid="stat-scheduled">{stats.scheduled}</p>
-          </CardContent>
-        </Card>
-        <Card data-testid="card-paid">
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4" /> Consultas pagadas</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold" data-testid="stat-paid">{stats.paid}</p>
-          </CardContent>
-        </Card>
-        <Card data-testid="card-lost">
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-2"><CalendarX className="h-4 w-4" /> Consultas perdidas</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold" data-testid="stat-lost">{stats.lost}</p>
-          </CardContent>
-        </Card>
-        <Card data-testid="card-completed">
-          <CardHeader className="pb-2">
-            <CardDescription>Completadas</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold" data-testid="stat-completed">{stats.completed}</p>
-          </CardContent>
-        </Card>
-        <Card data-testid="card-total-appts">
-          <CardHeader className="pb-2">
-            <CardDescription>Total de consultas</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold" data-testid="stat-total-appts">{stats.totalAppointments}</p>
-          </CardContent>
-        </Card>
-        <Card data-testid="card-doctors">
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-2"><Stethoscope className="h-4 w-4" /> Médicos</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold" data-testid="stat-doctors">{stats.doctorCount}</p>
-          </CardContent>
-        </Card>
-        <Card data-testid="card-patients">
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-2"><Users className="h-4 w-4" /> Pacientes únicos</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold" data-testid="stat-patients">{stats.patientCount}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Revenue chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Ingresos por día</CardTitle>
-          <CardDescription>Suma de tarifas pagadas por fecha de consulta</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {stats.revenueByDay.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-8 text-center">Sin datos suficientes</p>
-          ) : (
-            <div className="space-y-2">
-              {stats.revenueByDay.map(d => (
-                <div key={d.date} className="flex items-center gap-3" data-testid={`row-revenue-${d.date}`}>
-                  <span className="text-xs w-24 text-muted-foreground">{d.date}</span>
-                  <div className="flex-1 bg-muted rounded h-6 relative">
-                    <div
-                      className="absolute inset-y-0 left-0 bg-primary rounded"
-                      style={{ width: `${(d.amount / maxRevenue) * 100}%` }}
-                    />
-                  </div>
-                  <span className="text-sm font-medium w-24 text-right">{fmtCLP(d.amount)}</span>
-                </div>
-              ))}
-            </div>
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold" data-testid="text-admin-title">Panel del hogar</h1>
+          {org && (
+            <p className="text-muted-foreground flex items-center gap-2 mt-1" data-testid="text-org-name">
+              <Building2 className="h-4 w-4" /> {org.name}
+            </p>
           )}
-        </CardContent>
-      </Card>
+        </div>
+        <Button asChild variant="outline">
+          <Link href="/admin/users">Gestionar personal</Link>
+        </Button>
+      </div>
 
-      {/* Per-doctor breakdown */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card data-testid="card-residents">
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2">
+              <Users className="h-4 w-4" /> Residentes
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold" data-testid="stat-residents">{stats.residentCount}</p>
+          </CardContent>
+        </Card>
+        <Card data-testid="card-staff">
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2">
+              <UserCog className="h-4 w-4" /> Personal activo
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold" data-testid="stat-staff">{stats.staffCount}</p>
+          </CardContent>
+        </Card>
+        <Card data-testid="card-pending-tasks">
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2">
+              <ClipboardList className="h-4 w-4" /> Tareas pendientes
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold" data-testid="stat-pending-tasks">{stats.pendingTasks}</p>
+          </CardContent>
+        </Card>
+        <Card data-testid="card-resolved-tasks">
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4" /> Tareas completadas
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold" data-testid="stat-resolved-tasks">{stats.resolvedTasks}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-red-200 dark:border-red-900">
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-2 text-red-600 dark:text-red-400">
+              <AlertTriangle className="h-4 w-4" /> Urgentes / vencidas
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-red-600" data-testid="stat-critical">{stats.criticalTasks}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-amber-200 dark:border-amber-900">
+          <CardHeader className="pb-2">
+            <CardDescription className="text-amber-600 dark:text-amber-400">Próximas a vencer</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-amber-600" data-testid="stat-warning">{stats.warningTasks}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>A tiempo</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-blue-600" data-testid="stat-normal">{stats.normalTasks}</p>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card>
         <CardHeader>
-          <CardTitle>Desempeño por médico</CardTitle>
-          <CardDescription>Ingresos y consultas por profesional</CardDescription>
+          <CardTitle>Tareas de cuidado pendientes</CardTitle>
+          <CardDescription>Actividades del hogar que requieren atención del personal</CardDescription>
         </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Médico</TableHead>
-                <TableHead>Especialidad</TableHead>
-                <TableHead className="text-right">Tarifa</TableHead>
-                <TableHead className="text-right">Consultas</TableHead>
-                <TableHead className="text-right">Completadas</TableHead>
-                <TableHead className="text-right">Ingresos</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {stats.byDoctor.map(d => (
-                <TableRow key={d.id} data-testid={`row-doctor-${d.id}`}>
-                  <TableCell className="font-medium">{d.name}</TableCell>
-                  <TableCell><Badge variant="secondary">{d.specialty}</Badge></TableCell>
-                  <TableCell className="text-right">{fmtCLP(d.consultationFee)}</TableCell>
-                  <TableCell className="text-right">{d.count}</TableCell>
-                  <TableCell className="text-right">{d.completed}</TableCell>
-                  <TableCell className="text-right font-semibold">{fmtCLP(d.revenue)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <CardContent className="space-y-2">
+          {stats.recentTasks.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-6 text-center">
+              No hay tareas pendientes en el hogar
+            </p>
+          ) : (
+            stats.recentTasks.map((task) => <TaskRow key={task.id} task={task} />)
+          )}
         </CardContent>
       </Card>
     </div>
