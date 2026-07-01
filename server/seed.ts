@@ -175,11 +175,11 @@ export async function cleanAndSetupDatabase() {
     const staffName = "María González";
 
     const demoTasks = [
-      { rut: "33333333-3", text: "Administrar medicación matutina", dueAt: new Date(now - 45 * 60 * 1000) },
-      { rut: "44444444-4", text: "Acompañar al comedor del almuerzo", dueAt: new Date(now + 90 * 60 * 1000) },
-      { rut: "55555555-5", text: "Control de glucosa pre-cena", dueAt: new Date(now + 10 * 60 * 60 * 1000) },
-      { rut: "33333333-3", text: "Llamar a familiar de contacto", dueAt: new Date(now + 36 * 60 * 60 * 1000) },
-      { rut: "44444444-4", text: "Cambio de ropa de cama", dueAt: new Date(now + 72 * 60 * 60 * 1000) },
+      { rut: "33333333-3", text: "Administrar medicación matutina", dueAt: new Date(now - 20 * 60 * 1000) },
+      { rut: "44444444-4", text: "Acompañar al comedor del almuerzo", dueAt: new Date(now + 20 * 60 * 1000) },
+      { rut: "55555555-5", text: "Control de glucosa pre-cena", dueAt: new Date(now + 75 * 60 * 1000) },
+      { rut: "33333333-3", text: "Higiene y cambio de ropa", dueAt: new Date(now + 45 * 60 * 1000) },
+      { rut: "44444444-4", text: "Paseo en patio", dueAt: new Date(now + 4 * 60 * 60 * 1000) },
     ];
 
     for (const t of demoTasks) {

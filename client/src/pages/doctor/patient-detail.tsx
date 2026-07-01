@@ -28,8 +28,8 @@ import {
 import {
   formatDueLabel,
   getTaskUrgency,
-  urgencyStyles,
 } from "@shared/care-tasks";
+import { CareTaskUrgencyBadge } from "@/components/care-task-urgency-badge";
 
 type PatientProfile = {
   id: number;
@@ -352,11 +352,10 @@ export default function PatientDetailPage() {
               {pendingTasks.map((task) => {
                 const dueIso = typeof task.dueAt === "string" ? task.dueAt : new Date(task.dueAt).toISOString();
                 const urgency = getTaskUrgency(dueIso);
-                const style = urgencyStyles[urgency];
                 return (
                   <label
                     key={task.id}
-                    className={`flex items-start gap-3 p-3 rounded-lg border ${style.border} ${style.bg} ${style.text}`}
+                    className="flex items-start gap-3 p-3 rounded-lg border bg-card hover:bg-muted/30"
                   >
                     <Checkbox
                       className="mt-0.5"
@@ -367,9 +366,9 @@ export default function PatientDetailPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium">{task.text}</span>
-                        <Badge className={`text-[10px] px-1.5 py-0 ${style.badge}`}>{style.label}</Badge>
+                        <CareTaskUrgencyBadge dueAt={dueIso} urgency={urgency} />
                       </div>
-                      <div className={`flex items-center gap-3 mt-1 text-xs ${style.muted}`}>
+                      <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
                           {formatDueLabel(dueIso)}

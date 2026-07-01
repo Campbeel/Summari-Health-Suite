@@ -29,7 +29,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, sql as dsql, inArray, desc as ddesc, sql } from "drizzle-orm";
-import { getTaskUrgency, sortByUrgency } from "@shared/care-tasks";
+import { getTaskUrgency, sortByUrgency, filterTodayTasks } from "@shared/care-tasks";
 import bcrypt from "bcryptjs";
 
 // WebRTC signaling room management
@@ -338,16 +338,20 @@ export async function registerRoutes(
       const now = new Date();
 
       const rawTasks = await storage.getAllPendingResidentCareTasks();
+      const todayTasks = filterTodayTasks(
+        rawTasks.map((t) => ({ ...t, dueAt: t.dueAt.toISOString() })),
+        now,
+      );
       const pendingTasks = sortByUrgency(
-        rawTasks.map((t) => ({
+        todayTasks.map((t) => ({
           id: t.id,
           text: t.text,
-          dueAt: t.dueAt.toISOString(),
+          dueAt: t.dueAt,
           patientId: t.patientId,
           patientName: t.patientName,
           rut: t.rut,
           createdByName: t.createdByName,
-          urgency: getTaskUrgency(t.dueAt.toISOString(), now),
+          urgency: getTaskUrgency(t.dueAt, now),
         })),
         now,
       );
@@ -3579,23 +3583,28 @@ export async function registerRoutes(
       const pendingTasksRaw = await storage.getAllPendingResidentCareTasks();
       const now = new Date();
 
+      const todayTasks = filterTodayTasks(
+        pendingTasksRaw.map((t) => ({ ...t, dueAt: t.dueAt.toISOString() })),
+        now,
+      );
+
       const recentTasks = sortByUrgency(
-        pendingTasksRaw.map((t) => ({
+        todayTasks.map((t) => ({
           id: t.id,
           text: t.text,
-          dueAt: t.dueAt.toISOString(),
+          dueAt: t.dueAt,
           patientId: t.patientId,
           patientName: t.patientName,
           rut: t.rut,
           createdByName: t.createdByName,
-          urgency: getTaskUrgency(t.dueAt.toISOString(), now),
+          urgency: getTaskUrgency(t.dueAt, now),
         })),
         now,
-      ).slice(0, 12);
+      );
 
       const allUrgency = { critical: 0, warning: 0, normal: 0 };
-      for (const t of pendingTasksRaw) {
-        const u = getTaskUrgency(t.dueAt.toISOString(), now);
+      for (const t of todayTasks) {
+        const u = getTaskUrgency(t.dueAt, now);
         allUrgency[u] += 1;
       }
 
@@ -3607,11 +3616,16 @@ export async function registerRoutes(
       res.json({
         staffCount: activeStaff.length,
         residentCount: allResidents.length,
-        pendingTasks: pendingTasksRaw.length,
+        pendingTasks: todayTasks.length,
         criticalTasks: allUrgency.critical,
         warningTasks: allUrgency.warning,
         normalTasks: allUrgency.normal,
         resolvedTasks: resolvedRow?.count ?? 0,
+        dateLabel: now.toLocaleDateString("es-CL", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+        }),
         recentTasks,
       });
     } catch (error) {
