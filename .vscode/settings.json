@@ -1,0 +1,7 @@
+{
+  "git.autoRepositoryDetection": true,
+  "git.openRepositoryInParentFolders": "never",
+  "git.branchSortOrder": "committerdate",
+  "git.showProgress": true,
+  "scm.defaultViewMode": "tree"
+}
